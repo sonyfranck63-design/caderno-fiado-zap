@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CadernoFiado & Cobrança Zap - Gestão de Fiados, Cobrança WhatsApp e PIX</title>
+  
+  <!-- Meta tags SEO & PWA -->
+  <meta name="description" content="Aplicativo moderno para autônomos, pequenos comerciantes e manicures gerenciarem vendas fiadas, cobranças no WhatsApp e PIX automático com modelo híbrido realista.">
+  <meta name="theme-color" content="#090d16">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CadernoFiado">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+  <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              200: '#a7f3d0',
+              300: '#6ee7b7',
+              400: '#34d399',
+              500: '#10b981', // Emerald financeiro
+              600: '#059669',
+              700: '#047857',
+              800: '#065f46',
+              900: '#064e3b',
+              950: '#022c22',
+            },
+            fintech: {
+              purple: '#7c3aed',
+              violet: '#8b5cf6',
+              dark: '#090d16',
+              card: '#111827',
+              cardLight: '#1f2937',
+              border: '#1f293d',
+            },
+            gold: {
+              400: '#fbbf24',
+              500: '#f59e0b',
+              600: '#d97706',
+            }
+          },
+          boxShadow: {
+            'glow-emerald': '0 0 25px -5px rgba(16, 185, 129, 0.35)',
+            'glow-violet': '0 0 25px -5px rgba(139, 92, 246, 0.35)',
+            'glow-gold': '0 0 25px -5px rgba(245, 158, 11, 0.35)',
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Capturador de Erros de Diagnóstico -->
+  <script>
+    window.__appErrors = [];
+    window.onerror = function(msg, url, line, col, error) {
+      var err = "Erro JS: " + msg + " (" + url + ":" + line + ":" + col + ")";
+      window.__appErrors.push(err);
+      var el = document.getElementById('debug-error');
+      if (el) {
+        el.style.display = 'block';
+        el.innerText += '\n' + err + (error && error.stack ? '\n' + error.stack : '');
+      }
+      return false;
+    };
+    window.onunhandledrejection = function(e) {
+      var err = "Promise rejeitada: " + (e.reason && e.reason.stack ? e.reason.stack : e.reason);
+      window.__appErrors.push(err);
+      var el = document.getElementById('debug-error');
+      if (el) {
+        el.style.display = 'block';
+        el.innerText += '\n' + err;
+      }
+    };
+  </script>
+
+  <!-- Bibliotecas Externas UMD -->
+  <!-- React 18 & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel Standalone para transpilação JSX em tempo real no cliente -->
+  <script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
+  <!-- QRCode.js para geração de QR Code de PIX sem API externa -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- jsPDF para emissão de Recibos e Extratos timbrados profissionais -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- Canvas Confetti para efeitos visuais ao quitar dívidas ou ativar VIP -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+
+  <!-- Estilos Globais -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans selection:bg-brand-500 selection:text-white transition-colors duration-200">
+  <div id="debug-error" style="display:none; background:#7f1d1d; color:#fef2f2; padding:16px; font-family:monospace; white-space:pre-wrap; border-bottom:3px solid #ef4444; z-index:999999; position:relative;"></div>
+  
+  <!-- Root do App React -->
+  <div id="root"></div>
+
+  <!-- Script Unificado da Aplicação (Garante ordem exata de execução no Babel) -->
+  <script type="text/babel" src="js/bundle.js"></script>
+
+  <!-- Registro do Service Worker & Suporte PWA -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('./sw.js', { scope: './' })
+          .then(function(reg) {
+            console.log('[PWA] Service Worker registrado no escopo:', reg.scope);
+          })
+          .catch(function(err) {
+            console.warn('[PWA] Falha ao registrar Service Worker:', err);
+          });
+      });
+    }
+
+    // Captura de evento de instalação PWA (beforeinstallprompt)
+    window.__deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();
+      window.__deferredInstallPrompt = e;
+      if (typeof window.__onPwaInstallAvailable === 'function') {
+        window.__onPwaInstallAvailable();
+      }
+    });
+
+    window.addEventListener('appinstalled', function() {
+      console.log('[PWA] Aplicativo instalado com sucesso na tela inicial!');
+      window.__deferredInstallPrompt = null;
+    });
+  </script>
+</body>
+</html>
