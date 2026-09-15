@@ -14,13 +14,13 @@ const PRECACHE_ASSETS = [
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  'https://cdn.tailwindcss.com',
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone@7.23.6/babel.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-  'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js'
+  './vendor/tailwindcss.js',
+  './vendor/react.production.min.js',
+  './vendor/react-dom.production.min.js',
+  './vendor/babel.min.js',
+  './vendor/qrcode.min.js',
+  './vendor/jspdf.umd.min.js',
+  './vendor/confetti.browser.min.js'
 ];
 
 // Instalação do Service Worker e pré-cache dos recursos vitais

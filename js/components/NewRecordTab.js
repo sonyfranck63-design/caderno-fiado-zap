@@ -8,7 +8,9 @@ window.NewRecordTab = function NewRecordTab({
   onRecordCreated,
   onClientCreated
 }) {
-  const [recordType, setRecordType] = React.useState('sale'); // 'sale' | 'client'
+  const [recordType, setRecordType] = React.useState(() => {
+    return (!clients || clients.length === 0) ? 'client' : 'sale';
+  });
 
   // Estado do formulário de venda fiada
   const [selectedClientId, setSelectedClientId] = React.useState('');
@@ -175,7 +177,11 @@ window.NewRecordTab = function NewRecordTab({
               required
               className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm font-semibold text-white focus:outline-none focus:border-brand-500 shadow-inner"
             >
-              <option value="">Selecione um cliente cadastrado...</option>
+              <option value="">
+                {clients.length === 0 
+                  ? 'Nenhum cliente cadastrado ainda (clique acima em "+ Novo Cliente")' 
+                  : 'Selecione um cliente cadastrado...'}
+              </option>
               {clients.map(c => {
                 const debt = window.AppState.computeBalance(c);
                 return (

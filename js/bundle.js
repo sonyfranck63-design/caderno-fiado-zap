@@ -436,108 +436,16 @@ window.AppState = (function() {
   const STORAGE_KEY_VIP = 'cadernofiado_vip_v1';
   const STORAGE_KEY_REWARDED = 'cadernofiado_rewarded_pass_v1';
 
-  // Semente de dados realistas de demonstração
-  const MOCK_CLIENTS = [
-    {
-      id: 'c1',
-      name: 'Maria das Dores (Salão & Manicure)',
-      phone: '11987654321',
-      address: 'Rua das Flores, 142 - Bairro Alto',
-      creditLimit: 350.00,
-      createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
-      transactions: [
-        {
-          id: 't101',
-          type: 'sale',
-          amount: 80.00,
-          description: 'Alongamento em Gel + Esmaltação francesa',
-          date: new Date(Date.now() - 12 * 86400000).toISOString(),
-          dueDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
-          photoUrl: null
-        },
-        {
-          id: 't102',
-          type: 'sale',
-          amount: 90.00,
-          description: 'Escova Modeladora + Kit Reparador de Pontas',
-          date: new Date(Date.now() - 7 * 86400000).toISOString(),
-          dueDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
-          photoUrl: null
-        },
-        {
-          id: 't103',
-          type: 'payment',
-          amount: 50.00,
-          paymentMethod: 'Dinheiro',
-          notes: 'Entregou na loja (abatimento parcial)',
-          date: new Date(Date.now() - 3 * 86400000).toISOString()
-        }
-      ]
-    },
-    {
-      id: 'c2',
-      name: 'Seu Jorge da Silva (Oficina)',
-      phone: '21998765432',
-      address: 'Av. dos Trabalhadores, 50 - Galpão 2',
-      creditLimit: 500.00,
-      createdAt: new Date(Date.now() - 25 * 86400000).toISOString(),
-      transactions: [
-        {
-          id: 't201',
-          type: 'sale',
-          amount: 180.00,
-          description: 'Troca de Óleo Sintético 10w40 + Filtros de ar',
-          date: new Date(Date.now() - 20 * 86400000).toISOString(),
-          dueDate: new Date(Date.now() - 5 * 86400000).toISOString().split('T')[0], // Atrasado há 5 dias!
-          photoUrl: null
-        },
-        {
-          id: 't202',
-          type: 'sale',
-          amount: 100.00,
-          description: 'Jogo de Velas de Ignição Bosh',
-          date: new Date(Date.now() - 14 * 86400000).toISOString(),
-          dueDate: new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0], // Atrasado há 2 dias!
-          photoUrl: null
-        }
-      ]
-    },
-    {
-      id: 'c3',
-      name: 'Carla Mendes (Revendedora Cosméticos)',
-      phone: '31976543210',
-      address: 'Condomínio Primavera, Bloco B Apto 304',
-      creditLimit: 250.00,
-      createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-      transactions: [
-        {
-          id: 't301',
-          type: 'sale',
-          amount: 150.00,
-          description: 'Kit Perfume Floral + Hidratante Corporal 400ml',
-          date: new Date(Date.now() - 22 * 86400000).toISOString(),
-          dueDate: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],
-          photoUrl: null
-        },
-        {
-          id: 't302',
-          type: 'payment',
-          amount: 150.00,
-          paymentMethod: 'PIX',
-          notes: 'Pagou valor integral via PIX no prazo',
-          date: new Date(Date.now() - 5 * 86400000).toISOString()
-        }
-      ]
-    }
-  ];
+  // Estado inicial padrão sem clientes simulados (pronto para uso real em produção)
+  const INITIAL_CLIENTS = [];
 
   const DEFAULT_SETTINGS = {
-    shopName: 'Espaço & Cantinho da Cris',
-    ownerName: 'Cristina Alves',
-    phone: '11987650000',
+    shopName: 'Meu Caderno',
+    ownerName: '',
+    phone: '',
     pixKeyType: 'telefone',
-    pixKey: '11987650000',
-    city: 'SAO PAULO',
+    pixKey: '',
+    city: '',
     supportPhone: '51985661499'
   };
 
@@ -562,11 +470,21 @@ window.AppState = (function() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY_CLIENTS);
       if (!raw) {
-        // Inicializa com semente
-        localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(MOCK_CLIENTS));
-        return JSON.parse(JSON.stringify(MOCK_CLIENTS));
+        // Inicializa com lista vazia para uso real
+        localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(INITIAL_CLIENTS));
+        return [];
       }
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      // Higienização automática: se contiver apenas os clientes demonstrativos antigos (c1, c2, c3), limpa para produção
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const isLegacyMock = parsed.some(c => c.id === 'c1' || c.id === 'c2' || c.id === 'c3') &&
+                             parsed.some(c => (c.name && c.name.includes('Maria das Dores')) || (c.name && c.name.includes('Seu Jorge')));
+        if (isLegacyMock) {
+          localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify([]));
+          return [];
+        }
+      }
+      return parsed;
     } catch(e) {
       console.error('Erro ao ler clientes do localStorage:', e);
       return [];
@@ -692,6 +610,15 @@ window.AppState = (function() {
       const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
       if (!raw) return { ...DEFAULT_SETTINGS };
       const parsed = JSON.parse(raw);
+      // Se for a loja de exemplo antiga ("Cristina Alves" / "Espaço & Cantinho da Cris"), reseta para padrão limpo
+      if (parsed.ownerName === 'Cristina Alves' || parsed.shopName === 'Espaço & Cantinho da Cris') {
+        const cleaned = {
+          ...DEFAULT_SETTINGS,
+          supportPhone: (parsed.supportPhone && parsed.supportPhone.trim()) ? parsed.supportPhone : DEFAULT_SETTINGS.supportPhone
+        };
+        localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(cleaned));
+        return cleaned;
+      }
       return { 
         ...DEFAULT_SETTINGS, 
         ...parsed,
@@ -3084,18 +3011,22 @@ window.ClientsTab = function ClientsTab({
             <div className="w-12 h-12 rounded-2xl bg-slate-800/80 text-slate-400 flex items-center justify-center mx-auto mb-3">
               <Users size={24} />
             </div>
-            <h3 className="text-sm font-bold text-white">Nenhum cliente encontrado</h3>
+            <h3 className="text-sm font-bold text-white">
+              {searchTerm ? 'Nenhum cliente encontrado' : clients.length === 0 ? 'Seu Caderno está pronto!' : 'Nenhum cliente nessa categoria'}
+            </h3>
             <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
               {searchTerm 
                 ? 'Não encontramos nenhum cliente correspondente à sua busca.' 
-                : 'Você ainda não possui clientes nessa categoria.'}
+                : clients.length === 0
+                  ? 'Cadastre seu primeiro cliente ou anote uma venda fiada para começar a usar o CadernoFiado.'
+                  : 'Você não possui clientes com esse filtro no momento.'}
             </p>
             <button
               onClick={onOpenNewRecord}
-              className="mt-4 px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-bold shadow-glow-emerald inline-flex items-center space-x-1.5"
+              className="mt-4 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-bold shadow-glow-emerald inline-flex items-center space-x-1.5 transition-transform active:scale-95"
             >
-              <PlusCircle size={15} />
-              <span>Registrar Novo Fiado</span>
+              <PlusCircle size={16} />
+              <span>{clients.length === 0 ? 'Adicionar Primeiro Cliente' : 'Registrar Novo Fiado'}</span>
             </button>
           </div>
         ) : (
@@ -3219,7 +3150,9 @@ window.NewRecordTab = function NewRecordTab({
   onRecordCreated,
   onClientCreated
 }) {
-  const [recordType, setRecordType] = React.useState('sale'); // 'sale' | 'client'
+  const [recordType, setRecordType] = React.useState(() => {
+    return (!clients || clients.length === 0) ? 'client' : 'sale';
+  });
 
   // Estado do formulário de venda fiada
   const [selectedClientId, setSelectedClientId] = React.useState('');
@@ -3386,7 +3319,11 @@ window.NewRecordTab = function NewRecordTab({
               required
               className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm font-semibold text-white focus:outline-none focus:border-brand-500 shadow-inner"
             >
-              <option value="">Selecione um cliente cadastrado...</option>
+              <option value="">
+                {clients.length === 0 
+                  ? 'Nenhum cliente cadastrado ainda (clique acima em "+ Novo Cliente")' 
+                  : 'Selecione um cliente cadastrado...'}
+              </option>
               {clients.map(c => {
                 const debt = window.AppState.computeBalance(c);
                 return (

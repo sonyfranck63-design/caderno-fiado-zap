@@ -37,6 +37,7 @@ try {
                     ".png"  { "image/png" }
                     ".jpg"  { "image/jpeg" }
                     ".jpeg" { "image/jpeg" }
+                    ".apk"  { "application/vnd.android.package-archive" }
                     default { "application/octet-stream" }
                 }
 

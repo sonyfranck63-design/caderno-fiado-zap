@@ -179,18 +179,22 @@ window.ClientsTab = function ClientsTab({
             <div className="w-12 h-12 rounded-2xl bg-slate-800/80 text-slate-400 flex items-center justify-center mx-auto mb-3">
               <Users size={24} />
             </div>
-            <h3 className="text-sm font-bold text-white">Nenhum cliente encontrado</h3>
+            <h3 className="text-sm font-bold text-white">
+              {searchTerm ? 'Nenhum cliente encontrado' : clients.length === 0 ? 'Seu Caderno está pronto!' : 'Nenhum cliente nessa categoria'}
+            </h3>
             <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
               {searchTerm 
                 ? 'Não encontramos nenhum cliente correspondente à sua busca.' 
-                : 'Você ainda não possui clientes nessa categoria.'}
+                : clients.length === 0
+                  ? 'Cadastre seu primeiro cliente ou anote uma venda fiada para começar a usar o CadernoFiado.'
+                  : 'Você não possui clientes com esse filtro no momento.'}
             </p>
             <button
               onClick={onOpenNewRecord}
-              className="mt-4 px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-bold shadow-glow-emerald inline-flex items-center space-x-1.5"
+              className="mt-4 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-bold shadow-glow-emerald inline-flex items-center space-x-1.5 transition-transform active:scale-95"
             >
-              <PlusCircle size={15} />
-              <span>Registrar Novo Fiado</span>
+              <PlusCircle size={16} />
+              <span>{clients.length === 0 ? 'Adicionar Primeiro Cliente' : 'Registrar Novo Fiado'}</span>
             </button>
           </div>
         ) : (
