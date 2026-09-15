@@ -17,6 +17,7 @@ $files = @(
     "js\components\ReportsTab.js",
     "js\components\VipTab.js",
     "js\components\InstallPwaModal.js",
+    "js\components\AdminLicenseModal.js",
     "js\app.js"
 )
 

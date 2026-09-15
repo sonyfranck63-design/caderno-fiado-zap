@@ -2,7 +2,7 @@
  * Modal de Configurações do Estabelecimento, Chave PIX e Backup de Dados
  */
 
-window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, onSaveSettings }) {
+window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, onSaveSettings, onOpenAdmin }) {
   const [formData, setFormData] = React.useState({ ...shopSettings });
   const [saveSuccess, setSaveSuccess] = React.useState(false);
   const fileInputRef = React.useRef(null);
@@ -211,6 +211,39 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
                   accept=".json"
                   className="hidden"
                 />
+              </div>
+
+              {/* Seção WhatsApp de Vendas / Dono */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <span className="text-xs font-semibold text-slate-300 block">
+                  Contato de Suporte & Vendas do App
+                </span>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">
+                    WhatsApp para os lojistas solicitarem a assinatura VIP:
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.supportPhone || ''}
+                    onChange={e => handleChange('supportPhone', e.target.value)}
+                    placeholder="Ex: 51985661499 (Seu WhatsApp oficial de vendas)"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-brand-500 font-mono"
+                  />
+                </div>
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      if (onOpenAdmin) onOpenAdmin();
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-semibold text-xs border border-amber-500/30 flex items-center justify-center space-x-1.5 transition-colors"
+                  >
+                    <ShieldCheck size={15} />
+                    <span>🔐 Abrir Painel do Dono (Gerador de Códigos)</span>
+                  </button>
+                </div>
               </div>
 
               <div className="pt-2">
