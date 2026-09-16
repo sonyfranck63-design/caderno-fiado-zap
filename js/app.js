@@ -9,7 +9,9 @@ function App() {
   const [shopSettings, setShopSettings] = React.useState(() => window.AppState.getSettings());
   const [vipInfo, setVipInfo] = React.useState(() => window.AppState.getVipInfo());
   const [remainingPassTime, setRemainingPassTime] = React.useState(() => window.AppState.getPassRemainingTimeFormatted());
-  const [isDark, setIsDark] = React.useState(true);
+  const [isDark, setIsDark] = React.useState(() => {
+    return localStorage.getItem('cf_theme') !== 'light';
+  });
 
   // Modais
   const [selectedClientId, setSelectedClientId] = React.useState(null);
@@ -19,6 +21,20 @@ function App() {
   const [rewardedModalOpen, setRewardedModalOpen] = React.useState(false);
   const [installModalOpen, setInstallModalOpen] = React.useState(false);
   const [paywallReason, setPaywallReason] = React.useState(null);
+
+  // Aplica classe de tema inicial no documento
+  React.useEffect(() => {
+    const savedTheme = localStorage.getItem('cf_theme');
+    const darkActive = savedTheme !== 'light';
+    setIsDark(darkActive);
+    if (darkActive) {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.add('light');
+    }
+  }, []);
 
   // Sincronização reativa com o AppState
   React.useEffect(() => {
@@ -41,10 +57,11 @@ function App() {
     };
   }, []);
 
-  // Alternador de tema Escuro / Claro
+  // Alternador de tema Escuro / Claro com persistência
   const handleToggleTheme = () => {
     const nextDark = !isDark;
     setIsDark(nextDark);
+    localStorage.setItem('cf_theme', nextDark ? 'dark' : 'light');
     if (nextDark) {
       document.documentElement.classList.add('dark');
       document.documentElement.classList.remove('light');
@@ -57,6 +74,7 @@ function App() {
   // Acionamento de Paywall a partir de tentativa de uso de recurso VIP
   const handleTriggerPaywall = (reason) => {
     setPaywallReason(reason);
+    setSelectedClientId(null); // Fecha o modal da frente para a tela VIP ser vista na hora
     setActiveTab('vip');
   };
 
@@ -64,10 +82,10 @@ function App() {
   const overdueCount = clients.filter(c => window.AppState.getClientStatus(c) === 'atrasado').length;
 
   return (
-    <div className={`min-h-screen ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>
+    <div className={`min-h-screen transition-colors duration-200 ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>
       
       {/* Container Principal Mobile-First com Estilo de App Nativo */}
-      <div className="app-container bg-slate-950 relative min-h-screen flex flex-col transition-colors duration-200 shadow-2xl">
+      <div className={`app-container relative min-h-screen flex flex-col transition-colors duration-200 shadow-2xl ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
         
         {/* Top Header */}
         <window.Header

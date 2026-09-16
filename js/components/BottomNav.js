@@ -1,6 +1,7 @@
 /**
  * Barra de Navegação Inferior Estilo Android / Mobile App Nativo
  * 4 Atalhos Fixos: 'Clientes & Fiados', 'Novo Registro', 'Relatórios de Caixa' e 'Plano VIP Pro'
+ * Suporte a tema Claro e Escuro com micro-interações táteis.
  */
 
 window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, isVip }) {
@@ -35,7 +36,7 @@ window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, is
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 dark:bg-slate-950/95 light:bg-white/95 backdrop-blur-lg border-t border-slate-800/90 max-w-md mx-auto transition-colors duration-200">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800/90 max-w-md mx-auto transition-colors duration-200">
       <div className="flex items-center justify-around px-2 py-1.5 safe-area-bottom">
         {tabs.map(tab => {
           const isActive = activeTab === tab.id;
@@ -46,18 +47,18 @@ window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, is
               <button
                 key={tab.id}
                 onClick={() => onSelectTab(tab.id)}
-                className="flex flex-col items-center justify-center -mt-5 group focus:outline-none"
+                className="flex flex-col items-center justify-center -mt-5 group focus:outline-none btn-smooth"
                 aria-label={tab.label}
               >
                 <div className={`w-13 h-13 p-3 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200 group-active:scale-95 ${
                   isActive
-                    ? 'bg-gradient-to-tr from-brand-600 to-emerald-400 text-slate-950 shadow-glow-emerald'
+                    ? 'bg-gradient-to-tr from-brand-600 to-emerald-400 text-slate-950 shadow-md dark:shadow-glow-emerald'
                     : 'bg-brand-500 hover:bg-brand-400 text-slate-950 shadow-brand-500/30'
                 }`}>
                   <Icon size={24} strokeWidth={2.4} />
                 </div>
-                <span className={`text-[10px] font-semibold mt-1 tracking-tight ${
-                  isActive ? 'text-brand-400' : 'text-slate-400 group-hover:text-slate-200'
+                <span className={`text-[10px] font-bold mt-1 tracking-tight ${
+                  isActive ? 'text-emerald-600 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
                 }`}>
                   {tab.label}
                 </span>
@@ -69,10 +70,10 @@ window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, is
             <button
               key={tab.id}
               onClick={() => onSelectTab(tab.id)}
-              className={`relative flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all duration-200 focus:outline-none ${
+              className={`relative flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all duration-200 focus:outline-none btn-smooth ${
                 isActive 
-                  ? 'text-brand-400 font-semibold' 
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'text-emerald-600 dark:text-brand-400 font-bold' 
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               {/* Ícone com badge se houver */}
@@ -86,13 +87,13 @@ window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, is
               </div>
 
               {/* Rótulo */}
-              <span className={`text-[10px] tracking-tight mt-1 ${isActive ? 'text-brand-400 font-bold' : 'text-slate-400'}`}>
+              <span className={`text-[10px] tracking-tight mt-1 ${isActive ? 'text-emerald-600 dark:text-brand-400 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
                 {tab.label}
               </span>
 
               {/* Indicador de aba ativa */}
               {isActive && (
-                <div className="w-1.5 h-1.5 rounded-full bg-brand-400 mt-0.5 shadow-glow-emerald"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-brand-400 mt-0.5 shadow-sm"></div>
               )}
             </button>
           );

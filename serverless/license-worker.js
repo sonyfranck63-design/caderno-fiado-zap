@@ -30,8 +30,17 @@ function stringToBase64Url(str) {
   return toBase64Url(new TextEncoder().encode(str));
 }
 
+function formatDeviceId(val) {
+  if (!val) return '';
+  let clean = val.toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (clean.startsWith('CF')) {
+    clean = clean.slice(2);
+  }
+  return clean ? `CF-${clean}` : '';
+}
+
 async function createSignedToken(deviceId, planType, privateKeyJwk) {
-  const cleanId = (deviceId || '').trim().toUpperCase();
+  const cleanId = formatDeviceId(deviceId);
   const now = Date.now();
   let expiresAt = null;
   let planName = 'Plano VIP Mensal (30 Dias)';

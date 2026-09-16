@@ -158,6 +158,55 @@ window.AppState = (function() {
     return newSale;
   }
 
+  function addInstallmentSale(clientId, { totalAmount, description, startDate, installmentCount = 2, intervalDays = 30, photoUrl }) {
+    const clients = getClients();
+    const client = clients.find(c => c.id === clientId);
+    if (!client) throw new Error('Cliente não encontrado');
+
+    const total = parseFloat(totalAmount) || 0;
+    const count = Math.max(2, parseInt(installmentCount, 10) || 2);
+    const daysInterval = parseInt(intervalDays, 10) || 30;
+    const installmentValue = Math.round((total / count) * 100) / 100;
+    const remainder = Math.round((total - (installmentValue * count)) * 100) / 100;
+
+    const groupId = 'inst_' + Date.now();
+    const start = startDate ? new Date(startDate + 'T12:00:00') : new Date();
+    const createdSales = [];
+
+    if (!Array.isArray(client.transactions)) client.transactions = [];
+
+    for (let i = 1; i <= count; i++) {
+      const currentDueDate = new Date(start);
+      currentDueDate.setDate(start.getDate() + (i - 1) * daysInterval);
+      const dueDateStr = currentDueDate.toISOString().split('T')[0];
+
+      // Ajusta dízima/centavos na 1ª parcela para bater a soma exata
+      const currentAmount = i === 1 ? Math.round((installmentValue + remainder) * 100) / 100 : installmentValue;
+
+      const saleItem = {
+        id: `sale_${Date.now()}_${i}`,
+        type: 'sale',
+        amount: currentAmount,
+        description: `[${i}/${count}] ${(description || 'Venda no fiado').trim()}`,
+        date: new Date().toISOString(),
+        dueDate: dueDateStr,
+        photoUrl: photoUrl || null,
+        installment: {
+          groupId,
+          current: i,
+          total: count,
+          totalAmount: total
+        }
+      };
+
+      createdSales.push(saleItem);
+      client.transactions.unshift(saleItem);
+    }
+
+    saveClients(clients);
+    return createdSales;
+  }
+
   function addPayment(clientId, { amount, paymentMethod, notes }) {
     const clients = getClients();
     const client = clients.find(c => c.id === clientId);
@@ -288,8 +337,12 @@ window.AppState = (function() {
       const payloadJson = fromBase64Url(payloadB64);
       const payload = JSON.parse(payloadJson);
 
+      function normalizeDeviceId(id) {
+        return (id || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      }
+
       const currentDeviceId = getInstallationId();
-      if (payload.d && payload.d.toUpperCase() !== currentDeviceId.toUpperCase()) {
+      if (payload.d && normalizeDeviceId(payload.d) !== normalizeDeviceId(currentDeviceId)) {
         return {
           success: false,
           message: `Esta chave pertence ao aparelho ${payload.d}. O identificador deste aparelho é ${currentDeviceId}. Solicite uma chave para o seu ID.`
@@ -451,25 +504,64 @@ window.AppState = (function() {
   }
 
   // --- BACKUP & RESTAURAÇÃO ---
-  function exportBackup() {
-    const data = {
+  function getBackupData() {
+    return {
       version: '1.0',
       exportedAt: new Date().toISOString(),
       shopSettings: getSettings(),
       clients: getClients()
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backup-cadernofiado-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  }
+
+  function getBackupJsonString() {
+    return JSON.stringify(getBackupData(), null, 2);
+  }
+
+  async function exportBackup() {
+    const dataStr = getBackupJsonString();
+    const filename = `backup-cadernofiado-${new Date().toISOString().split('T')[0]}.json`;
+    const blob = new Blob([dataStr], { type: 'application/json' });
+
+    // 1. Web Share API para Android/iOS se suportado (compartilha direto no WhatsApp/Drive/Arquivos)
+    if (typeof File !== 'undefined' && navigator.canShare) {
+      try {
+        const file = new File([blob], filename, { type: 'application/json' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'Backup CadernoFiado',
+            text: 'Backup completo dos clientes e fiados do CadernoFiado.'
+          });
+          return { success: true, method: 'share', filename };
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return { success: true, method: 'cancelled', filename };
+        console.warn('Share API falhou no backup, tentando download direto:', err);
+      }
+    }
+
+    // 2. Download direto com atraso no revoke para não abortar no Chrome Mobile
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return { success: true, method: 'download', filename };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
   }
 
   function importBackup(jsonText) {
     try {
-      const data = JSON.parse(jsonText);
+      if (!jsonText || typeof jsonText !== 'string') {
+        throw new Error('Texto de backup vazio ou inválido.');
+      }
+      const data = JSON.parse(jsonText.trim());
       if (!data.clients || !Array.isArray(data.clients)) {
         throw new Error('Arquivo de backup inválido: lista de clientes ausente.');
       }
@@ -501,6 +593,7 @@ window.AppState = (function() {
     updateClient,
     deleteClient,
     addSale,
+    addInstallmentSale,
     addPayment,
     getSettings,
     saveSettings,
@@ -510,6 +603,8 @@ window.AppState = (function() {
     getPassRemainingTimeFormatted,
     getInstallationId,
     activateLicenseKey,
+    getBackupData,
+    getBackupJsonString,
     exportBackup,
     importBackup,
     resetAll

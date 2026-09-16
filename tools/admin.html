@@ -184,8 +184,17 @@
       return toBase64Url(new TextEncoder().encode(str));
     }
 
+    function formatDeviceId(val) {
+      if (!val) return '';
+      let clean = val.toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (clean.startsWith('CF')) {
+        clean = clean.slice(2);
+      }
+      return clean ? `CF-${clean}` : '';
+    }
+
     async function generateSignedLicense(deviceId, planType) {
-      const cleanId = (deviceId || '').trim().toUpperCase();
+      const cleanId = formatDeviceId(deviceId);
       const now = Date.now();
       let expiresAt = null;
       let planName = 'Plano VIP Mensal (30 Dias)';
@@ -248,8 +257,15 @@
     const btnCopyKey = document.getElementById('btnCopyKey');
     const btnCopyMessage = document.getElementById('btnCopyMessage');
 
+    deviceIdInput.addEventListener('blur', () => {
+      if (deviceIdInput.value.trim()) {
+        deviceIdInput.value = formatDeviceId(deviceIdInput.value);
+      }
+    });
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      deviceIdInput.value = formatDeviceId(deviceIdInput.value);
       const deviceId = deviceIdInput.value;
       const planType = document.querySelector('input[name="planType"]:checked').value;
 

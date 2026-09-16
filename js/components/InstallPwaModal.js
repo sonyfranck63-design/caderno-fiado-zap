@@ -41,15 +41,15 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-slate-100 overflow-hidden">
+      <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl text-slate-900 dark:text-slate-100 overflow-hidden animate-pop-in">
         
         {/* Detalhe de iluminação de fundo */}
-        <div className="absolute -top-16 -right-16 w-36 h-36 bg-brand-500/20 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute -top-16 -right-16 w-36 h-36 bg-brand-500/15 rounded-full blur-2xl pointer-events-none" />
 
         {/* Botão de Fechar */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors btn-smooth"
           aria-label="Fechar"
         >
           <X size={20} />
@@ -58,49 +58,49 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
         {/* Cabeçalho do Modal */}
         <div className="flex items-center space-x-3 mb-5">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-600 to-emerald-400 p-0.5 shadow-glow-emerald flex items-center justify-center">
-            <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+            <div className="w-full h-full bg-slate-900 rounded-[14px] flex items-center justify-center">
               <span className="text-2xl">📲</span>
             </div>
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white tracking-tight">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
               Instalar CadernoFiado
             </h2>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Tenha o app direto na sua tela inicial
             </p>
           </div>
         </div>
 
         {/* Benefícios da instalação */}
-        <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-3.5 mb-5 space-y-2.5">
-          <div className="flex items-center space-x-2.5 text-xs text-slate-300">
-            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">✓</span>
+        <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-3.5 mb-5 space-y-2.5">
+          <div className="flex items-center space-x-2.5 text-xs text-slate-700 dark:text-slate-300">
+            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">✓</span>
             <span><strong>100% Offline:</strong> Funciona mesmo sem sinal de internet.</span>
           </div>
-          <div className="flex items-center space-x-2.5 text-xs text-slate-300">
-            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">✓</span>
+          <div className="flex items-center space-x-2.5 text-xs text-slate-700 dark:text-slate-300">
+            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">✓</span>
             <span><strong>Acesso Instantâneo:</strong> Abra direto pelo ícone sem digitar link.</span>
           </div>
-          <div className="flex items-center space-x-2.5 text-xs text-slate-300">
-            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">✓</span>
+          <div className="flex items-center space-x-2.5 text-xs text-slate-700 dark:text-slate-300">
+            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">✓</span>
             <span><strong>Sem Ocupar Memória:</strong> Super leve e não trava o seu celular.</span>
           </div>
         </div>
 
         {/* Bloco de Ação / Instruções conforme dispositivo */}
         {installed ? (
-          <div className="text-center py-4 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl text-emerald-300 font-semibold text-sm flex items-center justify-center gap-2">
+          <div className="text-center py-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-500/40 rounded-2xl text-emerald-700 dark:text-emerald-300 font-semibold text-sm flex items-center justify-center gap-2">
             <Check size={18} />
             Aplicativo instalado com sucesso!
           </div>
         ) : isIos ? (
           /* Instruções para iPhone / Safari */
-          <div className="space-y-3 bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4 text-xs text-slate-300">
-            <p className="font-semibold text-amber-300 flex items-center gap-1.5 text-sm">
+          <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-4 text-xs text-slate-700 dark:text-slate-300">
+            <p className="font-semibold text-amber-600 dark:text-amber-300 flex items-center gap-1.5 text-sm">
               <span>🍎</span> No iPhone ou iPad (Safari):
             </p>
-            <ol className="space-y-2 list-decimal list-inside pl-1 text-slate-300">
+            <ol className="space-y-2 list-decimal list-inside pl-1 text-slate-600 dark:text-slate-300">
               <li>Toque no botão <strong>Compartilhar</strong> (ícone com quadrado e seta para cima).</li>
               <li>Role as opções e toque em <strong>"Adicionar à Tela de Início"</strong>.</li>
               <li>Toque em <strong>"Adicionar"</strong> no canto superior direito.</li>
@@ -110,18 +110,18 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
           /* Botão Direto para Android / Chrome / Edge */
           <button
             onClick={handleInstallClick}
-            className="w-full py-3.5 px-4 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 hover:to-emerald-700 text-slate-950 font-bold rounded-2xl shadow-glow-emerald flex items-center justify-center space-x-2 transition-all transform active:scale-95 text-sm"
+            className="w-full py-3.5 px-4 bg-gradient-to-r from-brand-500 to-emerald-600 hover:from-brand-600 hover:to-emerald-700 text-slate-950 font-bold rounded-2xl shadow-glow-emerald flex items-center justify-center space-x-2 transition-all transform active:scale-95 text-sm btn-smooth"
           >
             <Download size={18} />
             <span>Instalar Aplicativo Agora</span>
           </button>
         ) : (
           /* Instruções Genéricas / Menu do Navegador */
-          <div className="space-y-3 bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4 text-xs text-slate-300">
-            <p className="font-semibold text-white flex items-center gap-1.5 text-sm">
+          <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-4 text-xs text-slate-700 dark:text-slate-300">
+            <p className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 text-sm">
               <span>🤖</span> Como adicionar à sua tela inicial:
             </p>
-            <ol className="space-y-2 list-decimal list-inside pl-1 text-slate-300">
+            <ol className="space-y-2 list-decimal list-inside pl-1 text-slate-600 dark:text-slate-300">
               <li>Toque nos <strong>três pontinhos (⋮)</strong> no canto superior do navegador.</li>
               <li>Selecione <strong>"Instalar aplicativo"</strong> ou <strong>"Adicionar à tela inicial"</strong>.</li>
               <li>Confirme para criar o atalho com o ícone do CadernoFiado.</li>
@@ -132,7 +132,7 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
         <div className="mt-4 text-center">
           <button
             onClick={onClose}
-            className="text-xs text-slate-400 hover:text-slate-200 transition-colors font-medium"
+            className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors font-medium btn-smooth"
           >
             Continuar no navegador
           </button>

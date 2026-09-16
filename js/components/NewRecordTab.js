@@ -1,6 +1,6 @@
 /**
- * Aba de Novo Registro: Venda no Fiado ou Cadastro de Novo Cliente
- * Suporte a anexo de foto/comprovante, tags rápidas e prazos pré-configurados.
+ * Aba de Novo Registro: Venda no Fiado, Parcelamento de Boca ou Cadastro de Novo Cliente
+ * Suporte a parcelamento com cálculo automático de parcelas, anexo de foto e modos Claro/Escuro.
  */
 
 window.NewRecordTab = function NewRecordTab({
@@ -22,6 +22,11 @@ window.NewRecordTab = function NewRecordTab({
     return d.toISOString().split('T')[0];
   });
   const [photoPreview, setPhotoPreview] = React.useState(null);
+
+  // Estados de Parcelamento de Boca
+  const [isInstallment, setIsInstallment] = React.useState(false);
+  const [installmentCount, setInstallmentCount] = React.useState(2);
+  const [installmentInterval, setInstallmentInterval] = React.useState(30); // 30 = mensal, 15 = quinzenal, 7 = semanal
 
   // Estado do formulário de novo cliente
   const [clientName, setClientName] = React.useState('');
@@ -66,7 +71,7 @@ window.NewRecordTab = function NewRecordTab({
     reader.readAsDataURL(file);
   };
 
-  // Submissão de Venda no Fiado
+  // Submissão de Venda no Fiado (À vista ou Parcelado de Boca)
   const handleSaleSubmit = (e) => {
     e.preventDefault();
     if (!selectedClientId) {
@@ -90,16 +95,28 @@ window.NewRecordTab = function NewRecordTab({
     }
 
     try {
-      window.AppState.addSale(selectedClientId, {
-        amount: val,
-        description: saleDesc || 'Venda no fiado',
-        dueDate: dueDate,
-        photoUrl: photoPreview
-      });
+      if (isInstallment) {
+        window.AppState.addInstallmentSale(selectedClientId, {
+          totalAmount: val,
+          description: saleDesc || 'Venda parcelada',
+          startDate: dueDate,
+          installmentCount: installmentCount,
+          intervalDays: installmentInterval,
+          photoUrl: photoPreview
+        });
+      } else {
+        window.AppState.addSale(selectedClientId, {
+          amount: val,
+          description: saleDesc || 'Venda no fiado',
+          dueDate: dueDate,
+          photoUrl: photoPreview
+        });
+      }
 
       setSaleAmount('');
       setSaleDesc('');
       setPhotoPreview(null);
+      setIsInstallment(false);
 
       onRecordCreated(selectedClientId);
     } catch(err) {
@@ -141,30 +158,30 @@ window.NewRecordTab = function NewRecordTab({
   };
 
   return (
-    <div className="space-y-4 pb-28 animate-fadeIn">
+    <div className="space-y-4 pb-24 tab-enter">
       
-      {/* Alternador de Tipo de Registro: Fiado OU Novo Cliente */}
-      <div className="grid grid-cols-2 p-1 rounded-2xl bg-slate-900 border border-slate-800 text-xs font-bold">
+      {/* Seletor de Tipo de Registro: Venda Fiada vs Novo Cliente */}
+      <div className="flex rounded-2xl bg-slate-200/80 dark:bg-slate-900 p-1 border border-slate-300 dark:border-slate-800 transition-colors">
         <button
           type="button"
           onClick={() => setRecordType('sale')}
-          className={`py-2.5 rounded-xl transition-all flex items-center justify-center space-x-1.5 ${
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 btn-smooth ${
             recordType === 'sale'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-emerald-600 text-white shadow-md'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <DollarSign size={15} />
+          <PlusCircle size={15} />
           <span>Anotar Fiado</span>
         </button>
 
         <button
           type="button"
           onClick={() => setRecordType('client')}
-          className={`py-2.5 rounded-xl transition-all flex items-center justify-center space-x-1.5 ${
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 btn-smooth ${
             recordType === 'client'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-emerald-600 text-white shadow-md'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <UserPlus size={15} />
@@ -175,28 +192,15 @@ window.NewRecordTab = function NewRecordTab({
       {recordType === 'sale' ? (
         /* FORMULÁRIO DE ANOTAR VENDA FIADA */
         <form onSubmit={handleSaleSubmit} className="space-y-4">
-          
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3.5 shadow-sm">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <DollarSign size={16} className="text-emerald-400" />
-              Dados da Venda no Fiado
-            </h3>
-
-            {/* Seletor de Cliente */}
+          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3.5 shadow-sm transition-colors">
+            
+            {/* Seleção do Cliente */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-300">Cliente:</label>
-                <button
-                  type="button"
-                  onClick={() => setRecordType('client')}
-                  className="text-[11px] text-emerald-400 hover:underline"
-                >
-                  + Cadastrar novo
-                </button>
-              </div>
-
-              {(!clients || clients.length === 0) ? (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                Cliente que está comprando:
+              </label>
+              {clients.length === 0 ? (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-300">
                   Nenhum cliente cadastrado ainda. 
                   <button
                     type="button"
@@ -211,14 +215,14 @@ window.NewRecordTab = function NewRecordTab({
                   value={selectedClientId}
                   onChange={e => setSelectedClientId(e.target.value)}
                   required
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                 >
                   <option value="">Selecione o cliente...</option>
                   {clients.map(c => {
                     const debt = window.AppState.computeBalance(c);
                     return (
                       <option key={c.id} value={c.id}>
-                        {c.name} {debt > 0 ? `(Deve R$ ${debt.toFixed(2)})` : '(Quitado)'}
+                        {c.name} {debt > 0 ? `(Deve R$ ${debt.toFixed(2).replace('.', ',')})` : '(Sem débitos)'}
                       </option>
                     );
                   })}
@@ -228,7 +232,7 @@ window.NewRecordTab = function NewRecordTab({
 
             {/* Valor da Venda */}
             <div>
-              <label className="text-xs font-bold text-slate-300 block mb-1">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                 Valor Total (R$):
               </label>
               <div className="relative">
@@ -241,14 +245,101 @@ window.NewRecordTab = function NewRecordTab({
                   onChange={e => setSaleAmount(e.target.value)}
                   placeholder="0,00"
                   required
-                  className="w-full pl-11 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base font-bold text-white focus:outline-none focus:border-emerald-500 font-mono"
+                  className="w-full pl-11 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-base font-bold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 font-mono shadow-inner"
                 />
               </div>
             </div>
 
+            {/* Opção: Parcelamento de Boca */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-3 transition-colors">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center space-x-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isInstallment}
+                    onChange={e => setIsInstallment(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                      🤝 Parcelamento de Boca
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
+                      Dividir em parcelas com datas automáticas
+                    </span>
+                  </div>
+                </label>
+                {isInstallment && parseFloat(saleAmount) > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-500/30">
+                    {installmentCount}x de R$ {(parseFloat(saleAmount) / installmentCount).toFixed(2).replace('.', ',')}
+                  </span>
+                )}
+              </div>
+
+              {isInstallment && (
+                <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800 animate-fadeIn">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                        Qtd. de Parcelas:
+                      </label>
+                      <select
+                        value={installmentCount}
+                        onChange={e => setInstallmentCount(parseInt(e.target.value, 10))}
+                        className="w-full px-2.5 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-emerald-500"
+                      >
+                        {[2, 3, 4, 5, 6, 8, 10, 12].map(n => (
+                          <option key={n} value={n}>{n}x parcelas</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                        Frequência:
+                      </label>
+                      <select
+                        value={installmentInterval}
+                        onChange={e => setInstallmentInterval(parseInt(e.target.value, 10))}
+                        className="w-full px-2.5 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value={30}>Mensal (a cada 30 dias)</option>
+                        <option value={15}>Quinzenal (a cada 15 dias)</option>
+                        <option value={7}>Semanal (a cada 7 dias)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Resumo visual do cronograma de parcelas */}
+                  {parseFloat(saleAmount) > 0 && (
+                    <div className="p-2.5 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 text-[11px] space-y-1">
+                      <span className="font-bold text-emerald-800 dark:text-emerald-300 block text-[10px] uppercase tracking-wider">
+                        📅 Cronograma Previsto:
+                      </span>
+                      <div className="space-y-1 text-slate-700 dark:text-slate-300">
+                        {Array.from({ length: installmentCount }).map((_, idx) => {
+                          const baseD = dueDate ? new Date(dueDate + 'T12:00:00') : new Date();
+                          const currentD = new Date(baseD);
+                          currentD.setDate(baseD.getDate() + (idx * installmentInterval));
+                          const dStr = currentD.toLocaleDateString('pt-BR');
+                          const instVal = (parseFloat(saleAmount) / installmentCount).toFixed(2).replace('.', ',');
+                          return (
+                            <div key={idx} className="flex justify-between text-[10.5px]">
+                              <span>Parcela {idx + 1} de {installmentCount}:</span>
+                              <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">R$ {instVal} ({dStr})</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Descrição do Fiado */}
             <div>
-              <label className="text-xs font-bold text-slate-300 block mb-1">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                 Descrição do Produto ou Serviço:
               </label>
               <input
@@ -257,7 +348,7 @@ window.NewRecordTab = function NewRecordTab({
                 onChange={e => setSaleDesc(e.target.value)}
                 placeholder="Ex: Manicure + Pedicure / 2 Calças Jeans"
                 required
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
               />
 
               {/* Tags rápidas */}
@@ -267,7 +358,7 @@ window.NewRecordTab = function NewRecordTab({
                     key={idx}
                     type="button"
                     onClick={() => setSaleDesc(tag)}
-                    className="text-[10px] px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-colors"
+                    className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
                   >
                     + {tag}
                   </button>
@@ -275,17 +366,17 @@ window.NewRecordTab = function NewRecordTab({
               </div>
             </div>
 
-            {/* Data de Vencimento */}
+            {/* Data de Vencimento (1ª Parcela ou Total) */}
             <div>
-              <label className="text-xs font-bold text-slate-300 block mb-1">
-                Data do Vencimento Acordada:
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                {isInstallment ? 'Vencimento da 1ª Parcela:' : 'Data do Vencimento Acordada:'}
               </label>
               <input
                 type="date"
                 value={dueDate}
                 onChange={e => setDueDate(e.target.value)}
                 required
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
               />
 
               {/* Atalhos de prazo */}
@@ -293,21 +384,21 @@ window.NewRecordTab = function NewRecordTab({
                 <button
                   type="button"
                   onClick={() => handleQuickDue(7)}
-                  className="py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-[10px] text-slate-300 border border-slate-700"
+                  className="py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-[10px] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 btn-smooth"
                 >
                   +7 Dias
                 </button>
                 <button
                   type="button"
                   onClick={() => handleQuickDue(15)}
-                  className="py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-[10px] text-slate-300 border border-slate-700"
+                  className="py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-[10px] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 btn-smooth"
                 >
                   +15 Dias
                 </button>
                 <button
                   type="button"
                   onClick={() => handleQuickDue(30)}
-                  className="py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-[10px] text-slate-300 border border-slate-700"
+                  className="py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-[10px] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 btn-smooth"
                 >
                   +30 Dias
                 </button>
@@ -317,7 +408,7 @@ window.NewRecordTab = function NewRecordTab({
                     const today = new Date().toISOString().split('T')[0];
                     setDueDate(today);
                   }}
-                  className="py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-[10px] text-slate-300 border border-slate-700"
+                  className="py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-[10px] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 btn-smooth"
                 >
                   Hoje
                 </button>
@@ -326,13 +417,13 @@ window.NewRecordTab = function NewRecordTab({
           </div>
 
           {/* Anexo de Foto / Cupom / Assinatura */}
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2.5">
-            <span className="text-xs font-bold text-slate-300 block">
+          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5 shadow-sm transition-colors">
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
               Foto do Comprovante / Cupom (Opcional):
             </span>
 
             {photoPreview ? (
-              <div className="relative rounded-xl overflow-hidden border border-slate-700 max-h-40">
+              <div className="relative rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 max-h-40">
                 <img src={photoPreview} alt="Comprovante" className="w-full h-40 object-cover" />
                 <button
                   type="button"
@@ -343,8 +434,8 @@ window.NewRecordTab = function NewRecordTab({
                 </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center p-4 rounded-xl border border-dashed border-slate-700 bg-slate-950/60 hover:bg-slate-950 cursor-pointer text-slate-400 hover:text-slate-200 transition-colors">
-                <Camera size={22} className="mb-1 text-slate-500" />
+              <label className="flex flex-col items-center justify-center p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/60 hover:bg-slate-100 dark:hover:bg-slate-950 cursor-pointer text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors btn-smooth">
+                <Camera size={22} className="mb-1 text-slate-400 dark:text-slate-500" />
                 <span className="text-xs font-semibold">Tirar Foto ou Anexar Imagem</span>
                 <input
                   type="file"
@@ -359,24 +450,24 @@ window.NewRecordTab = function NewRecordTab({
           {/* Botão Salvar Fiado */}
           <button
             type="submit"
-            className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-[0.99] shadow-md"
+            className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-[0.99] shadow-md btn-smooth"
           >
             <Check size={18} />
-            <span>Salvar Fiado no Caderno</span>
+            <span>{isInstallment ? `Salvar Venda em ${installmentCount}x Parcelas` : 'Salvar Fiado no Caderno'}</span>
           </button>
 
         </form>
       ) : (
         /* FORMULÁRIO DE CADASTRAR NOVO CLIENTE */
         <form onSubmit={handleClientSubmit} className="space-y-4">
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3.5 shadow-sm">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <UserPlus size={16} className="text-emerald-400" />
+          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3.5 shadow-sm transition-colors">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <UserPlus size={16} className="text-emerald-600 dark:text-emerald-400" />
               Cadastrar Novo Cliente no Caderno
             </h3>
 
             <div>
-              <label className="text-xs font-bold text-slate-300 block mb-1">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                 Nome Completo ou Apelido Conhecido:
               </label>
               <input
@@ -385,12 +476,12 @@ window.NewRecordTab = function NewRecordTab({
                 onChange={e => setClientName(e.target.value)}
                 placeholder="Ex: Dona Neide / Seu Jorge"
                 required
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
               />
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-300 block mb-1">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                 WhatsApp com DDD:
               </label>
               <input
@@ -399,15 +490,15 @@ window.NewRecordTab = function NewRecordTab({
                 onChange={e => setClientPhone(e.target.value)}
                 placeholder="Ex: 11987654321 (apenas números)"
                 required
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
               />
-              <span className="text-[10px] text-slate-400 mt-1 block">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
                 Fundamental para a cobrança automática e envio do PIX com 1 clique.
               </span>
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-300 block mb-1">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                 Endereço ou Ponto de Referência (Opcional):
               </label>
               <input
@@ -415,12 +506,12 @@ window.NewRecordTab = function NewRecordTab({
                 value={clientAddress}
                 onChange={e => setClientAddress(e.target.value)}
                 placeholder="Ex: Rua das Flores, 120 / Bloco B Apto 10"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
               />
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-300 block mb-1">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                 Limite de Crédito Fiado (R$):
               </label>
               <input
@@ -429,16 +520,16 @@ window.NewRecordTab = function NewRecordTab({
                 value={clientLimit}
                 onChange={e => setClientLimit(e.target.value)}
                 placeholder="350,00"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 font-mono"
               />
-              <span className="text-[10px] text-slate-400 mt-1 block">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
                 O app avisará quando a dívida acumulada ultrapassar esse limite.
               </span>
             </div>
 
             <button
               type="submit"
-              className="w-full mt-2 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all active:scale-[0.99] shadow-md"
+              className="w-full mt-2 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all active:scale-[0.99] shadow-md btn-smooth"
             >
               <Check size={16} />
               <span>Concluir Cadastro de Cliente</span>

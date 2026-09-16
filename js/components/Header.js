@@ -1,29 +1,30 @@
 /**
  * Componente de Cabeçalho (Top Bar)
  * Exibe nome do estabelecimento, badge dinâmico de status VIP/Passe e atalhos rápidos.
+ * Suporte completo a tema Claro e Escuro com transição suave.
  */
 
 window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpenVip, isDark, onToggleTheme, shopSettings, onOpenInstall }) {
   const { Crown, Sparkles, Settings, Moon, Sun, Clock, Download } = window.Icons;
 
   return (
-    <header className="sticky top-0 z-30 bg-slate-950/90 dark:bg-slate-950/90 light:bg-white/95 backdrop-blur-md border-b border-slate-800/80 px-4 py-3 transition-colors duration-200">
+    <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 px-4 py-3 transition-colors duration-200">
       <div className="flex items-center justify-between">
         
         {/* Lado Esquerdo: Identidade do App e Estabelecimento */}
         <div className="flex items-center space-x-2.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 p-0.5 shadow-glow-emerald flex items-center justify-center">
-            <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 p-0.5 shadow-md dark:shadow-glow-emerald flex items-center justify-center">
+            <div className="w-full h-full bg-white dark:bg-slate-950 rounded-[10px] flex items-center justify-center">
               <span className="text-xl">📒</span>
             </div>
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
-              <h1 className="font-extrabold text-sm tracking-tight text-white flex items-center gap-1">
-                CadernoFiado <span className="text-brand-400 font-black">Zap</span>
+              <h1 className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white flex items-center gap-1">
+                CadernoFiado <span className="text-emerald-600 dark:text-brand-400 font-black">Zap</span>
               </h1>
             </div>
-            <p className="text-[11px] text-emerald-400/90 font-semibold truncate max-w-[140px] sm:max-w-[200px]">
+            <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold truncate max-w-[140px] sm:max-w-[200px]">
               {shopSettings?.shopName || 'Meu Estabelecimento'}
             </p>
           </div>
@@ -36,27 +37,27 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
           {vipInfo.isVipPermanent ? (
             <button
               onClick={onOpenVip}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500/20 to-gold-500/20 border border-amber-500/50 text-amber-300 text-xs font-semibold shadow-glow-gold hover:opacity-90 transition-opacity"
+              className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-semibold shadow-sm hover:opacity-90 transition-opacity btn-smooth"
               title="Assinante VIP Pro Permanente"
             >
-              <Crown size={13} className="text-amber-400" />
+              <Crown size={13} className="text-amber-500 dark:text-amber-400" />
               <span>VIP PRO</span>
             </button>
           ) : vipInfo.isPassActive ? (
             <button
               onClick={onOpenVip}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-semibold shadow-glow-emerald hover:opacity-90 transition-opacity"
+              className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold shadow-sm hover:opacity-90 transition-opacity btn-smooth"
               title="Passe VIP Temporário Ativo"
             >
-              <Clock size={12} className="text-emerald-400 animate-pulse" />
-              <span className="text-[11px]">{remainingTime || 'VIP 24h'}</span>
+              <Clock size={12} className="text-emerald-600 dark:text-emerald-400 animate-pulse" />
+              <span className="text-[11px] font-bold">{remainingTime || 'VIP 24h'}</span>
             </button>
           ) : (
             <button
               onClick={onOpenVip}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-medium transition-colors"
+              className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors btn-smooth"
             >
-              <Sparkles size={12} className="text-amber-400" />
+              <Sparkles size={12} className="text-amber-500 dark:text-amber-400" />
               <span className="hidden sm:inline">Virar</span> <span>VIP</span>
             </button>
           )}
@@ -64,7 +65,7 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
           {/* Botão de Instalar App */}
           <button
             onClick={onOpenInstall}
-            className="p-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+            className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 transition-colors flex items-center gap-1.5 text-xs font-semibold btn-smooth"
             aria-label="Instalar Aplicativo no Celular"
             title="Instalar App no Celular / Computador"
           >
@@ -75,17 +76,17 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
           {/* Alternador de Tema Escuro / Claro */}
           <button
             onClick={onToggleTheme}
-            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-300 dark:border-slate-800 transition-all btn-smooth"
             aria-label="Alternar Tema"
             title="Alternar Modo Escuro / Claro"
           >
-            {isDark ? <Sun size={17} /> : <Moon size={17} />}
+            {isDark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-slate-700" />}
           </button>
 
           {/* Botão de Configurações */}
           <button
             onClick={onOpenSettings}
-            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-300 dark:border-slate-800 transition-all btn-smooth"
             aria-label="Configurações do Negócio"
             title="Configurações & Backup"
           >

@@ -93,6 +93,19 @@
         const actResult = await window.AppState.activateLicenseKey(validCode);
         log('Ativação da chave ECDSA no AppState: ' + actResult.message, actResult.success);
 
+        // 5b. Testar ativação de chave gerada sem o hífen (ex: CF1352 para aparelho CF-1352)
+        const unhyphenatedId = currentId.replace('-', '');
+        const payloadUnhyphenated = { d: unhyphenatedId, p: '30D', e: Date.now() + 30*86400000, t: Date.now() };
+        const payloadUnhyphenatedB64 = stringToBase64Url(JSON.stringify(payloadUnhyphenated));
+        const sigUnhyphenated = await window.crypto.subtle.sign(
+          { name: "ECDSA", hash: { name: "SHA-256" } },
+          privKey,
+          new TextEncoder().encode(payloadUnhyphenatedB64)
+        );
+        const validCodeUnhyphenated = `CFVIP.${payloadUnhyphenatedB64}.${toBase64Url(new Uint8Array(sigUnhyphenated))}`;
+        const actResult2 = await window.AppState.activateLicenseKey(validCodeUnhyphenated);
+        log('Ativação com ID sem hífen (tolerância e normalização): ' + actResult2.message, actResult2.success);
+
         const vipInfo = window.AppState.getVipInfo();
         log('Verificação do status VIP ativo: isVip=' + vipInfo.isVip + ', dias=' + vipInfo.daysRemaining, vipInfo.isVip && vipInfo.daysRemaining > 0);
 
