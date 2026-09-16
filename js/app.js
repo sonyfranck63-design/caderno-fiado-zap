@@ -15,7 +15,7 @@ function App() {
 
   // Modais
   const [selectedClientId, setSelectedClientId] = React.useState(null);
-  const [whatsAppModalData, setWhatsAppModalData] = React.useState({ open: false, client: null, pixPayload: null });
+  const [whatsAppModalData, setWhatsAppModalData] = React.useState({ open: false, client: null, pixPayload: null, targetInstallment: null });
   const [pixModalData, setPixModalData] = React.useState({ open: false, client: null });
   const [settingsModalOpen, setSettingsModalOpen] = React.useState(false);
   const [rewardedModalOpen, setRewardedModalOpen] = React.useState(false);
@@ -176,7 +176,7 @@ function App() {
           isOpen={!!selectedClientId}
           onClose={() => setSelectedClientId(null)}
           clientId={selectedClientId}
-          onOpenWhatsApp={(client, payload) => setWhatsAppModalData({ open: true, client, pixPayload: payload })}
+          onOpenWhatsApp={(client, payload, targetInstallment) => setWhatsAppModalData({ open: true, client, pixPayload: payload, targetInstallment: targetInstallment || null })}
           onOpenPix={(client) => setPixModalData({ open: true, client })}
           isVip={vipInfo.isVip}
           onTriggerPaywall={handleTriggerPaywall}
@@ -186,10 +186,11 @@ function App() {
         {/* Modal de Cobrança no WhatsApp */}
         <window.WhatsAppModal
           isOpen={whatsAppModalData.open}
-          onClose={() => setWhatsAppModalData({ open: false, client: null, pixPayload: null })}
+          onClose={() => setWhatsAppModalData({ open: false, client: null, pixPayload: null, targetInstallment: null })}
           client={whatsAppModalData.client}
           shopSettings={shopSettings}
           pixPayload={whatsAppModalData.pixPayload}
+          targetInstallment={whatsAppModalData.targetInstallment}
         />
 
         {/* Modal de PIX Automático VIP */}
@@ -199,7 +200,7 @@ function App() {
           client={pixModalData.client}
           shopSettings={shopSettings}
           onOpenWhatsApp={(client, payload) => {
-            setWhatsAppModalData({ open: true, client, pixPayload: payload });
+            setWhatsAppModalData({ open: true, client, pixPayload: payload, targetInstallment: null });
           }}
         />
 

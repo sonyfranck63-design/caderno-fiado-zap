@@ -14,6 +14,8 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   const fileInputRef = React.useRef(null);
   const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck, Store, Phone, QrCode, Copy, FileText } = window.Icons || {};
 
+  const [confirmRestoreData, setConfirmRestoreData] = React.useState(null);
+
   React.useEffect(() => {
     if (isOpen) {
       setFormData({ ...shopSettings });
@@ -38,13 +40,38 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   };
 
   const handleExportBackup = async () => {
-    const res = await window.AppState.exportBackup();
-    if (res && res.method === 'share') {
+    try {
+      const res = await window.AppState.exportBackup();
+      if (!res || !res.success) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Aviso de Exportação',
+          message: 'Não foi possível gerar o arquivo de backup. Tente a opção "Copiar Código".',
+          variant: 'warning'
+        });
+        return;
+      }
+      if (res.method === 'share') {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Backup Compartilhado',
+          message: `Arquivo "${res.filename}" gerado com ${res.clientCount} cliente(s) e ${res.salesCount} venda(s). O menu de compartilhamento do seu aparelho foi aberto para você salvar no WhatsApp, Drive ou Gerenciador de Arquivos.`,
+          variant: 'success'
+        });
+      } else {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Backup Salvo',
+          message: `Download do arquivo de backup iniciado com sucesso!\nArquivo: ${res.filename}\nContém: ${res.clientCount} cliente(s) e ${res.salesCount} venda(s)/parcela(s).`,
+          variant: 'success'
+        });
+      }
+    } catch (err) {
       setFeedbackDialog({
         isOpen: true,
-        title: 'Backup Compartilhado',
-        message: 'O menu de compartilhamento do seu aparelho foi aberto para você salvar no WhatsApp, Drive ou Arquivos.',
-        variant: 'success'
+        title: 'Erro ao Exportar',
+        message: 'Ocorreu um erro durante a exportação: ' + err.message,
+        variant: 'danger'
       });
     }
   };
@@ -56,7 +83,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
       setFeedbackDialog({
         isOpen: true,
         title: 'Código Copiado!',
-        message: 'O código completo do seu backup foi copiado! Você pode colar nas suas anotações ou enviar para você mesmo no WhatsApp.',
+        message: 'O código completo do seu backup foi copiado para a área de transferência! Você pode colar nas suas anotações ou enviar para você mesmo no WhatsApp.',
         variant: 'success'
       });
     } catch(err) {
@@ -75,22 +102,19 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const result = window.AppState.importBackup(event.target.result);
-      if (result.success) {
+      const validation = window.AppState.validateBackup(event.target.result);
+      if (!validation.valid) {
         setFeedbackDialog({
           isOpen: true,
-          title: 'Backup Restaurado',
-          message: `Backup restaurado com sucesso! Foram importados ${result.count} clientes com seus respectivos históricos.`,
-          variant: 'success'
-        });
-      } else {
-        setFeedbackDialog({
-          isOpen: true,
-          title: 'Falha no Backup',
-          message: `Não foi possível importar o arquivo: ${result.error}`,
+          title: 'Arquivo Inválido',
+          message: `O arquivo selecionado não é um backup válido do CadernoFiado:\n${validation.error}`,
           variant: 'danger'
         });
+        return;
       }
+
+      // Abre confirmação com resumo dos dados antes de sobrescrever
+      setConfirmRestoreData(validation);
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -107,21 +131,41 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
       return;
     }
 
-    const result = window.AppState.importBackup(pastedJson);
-    if (result.success) {
-      setPasteBackupOpen(false);
-      setPastedJson('');
+    const validation = window.AppState.validateBackup(pastedJson);
+    if (!validation.valid) {
       setFeedbackDialog({
         isOpen: true,
-        title: 'Backup Restaurado',
-        message: `Backup restaurado com sucesso! Foram recuperados ${result.count} clientes e suas transações.`,
+        title: 'Código de Backup Inválido',
+        message: `Não foi possível ler o código colado:\n${validation.error}`,
+        variant: 'danger'
+      });
+      return;
+    }
+
+    setPasteBackupOpen(false);
+    // Abre confirmação com resumo dos dados antes de sobrescrever
+    setConfirmRestoreData(validation);
+  };
+
+  const handleConfirmRestore = () => {
+    if (!confirmRestoreData || !confirmRestoreData.data) return;
+    const ok = window.AppState.restoreBackupData(confirmRestoreData.data);
+    const summary = confirmRestoreData.summary;
+    setConfirmRestoreData(null);
+    setPastedJson('');
+
+    if (ok) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Backup Restaurado com Sucesso!',
+        message: `Seus dados foram recuperados com sucesso!\n• Clientes: ${summary.clientsCount}\n• Vendas e Parcelas: ${summary.salesCount}\n• Pagamentos: ${summary.paymentsCount}\n• Saldo Devedor: R$ ${(summary.totalDebtCents / 100).toFixed(2)}`,
         variant: 'success'
       });
     } else {
       setFeedbackDialog({
         isOpen: true,
-        title: 'Erro na Restauração',
-        message: 'Código de backup inválido ou corrompido: ' + result.error,
+        title: 'Falha na Restauração',
+        message: 'Ocorreu um erro ao gravar os dados restaurados no navegador.',
         variant: 'danger'
       });
     }
@@ -380,6 +424,25 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
             </div>
           </div>
         )}
+
+        {/* Modal de Confirmação para Restauração com Resumo dos Dados */}
+        <window.ConfirmModal
+          isOpen={!!confirmRestoreData}
+          title="Substituir Dados pelo Backup?"
+          message={confirmRestoreData ? (
+            `Atenção: A restauração substituirá os dados atuais deste aparelho pelos dados contidos no backup:\n\n` +
+            `• Clientes cadastrados: ${confirmRestoreData.summary.clientsCount}\n` +
+            `• Vendas e parcelas: ${confirmRestoreData.summary.salesCount}\n` +
+            `• Pagamentos registrados: ${confirmRestoreData.summary.paymentsCount}\n` +
+            `• Dívida total pendente: R$ ${(confirmRestoreData.summary.totalDebtCents / 100).toFixed(2)}\n\n` +
+            `Deseja realmente prosseguir e carregar este backup agora?`
+          ) : ''}
+          confirmText="Sim, Restaurar Dados"
+          cancelText="Cancelar"
+          variant="warning"
+          onConfirm={handleConfirmRestore}
+          onCancel={() => setConfirmRestoreData(null)}
+        />
 
         {/* Modal de Confirmação para Limpeza de Dados */}
         <window.ConfirmModal

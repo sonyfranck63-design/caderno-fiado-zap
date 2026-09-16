@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Suite de Testes Automatizados - CadernoFiado Zap</title>
+  <script src="../vendor/react.production.min.js"></script>
+  <script src="../vendor/react-dom.production.min.js"></script>
+  <script src="../vendor/babel.min.js"></script>
+  <script src="../vendor/qrcode.min.js"></script>
+  <script src="../vendor/jspdf.umd.min.js"></script>
+</head>
+<body style="font-family: sans-serif; padding: 20px; background: #0f172a; color: #f8fafc;">
+  <h1>Suite de Testes da Auditoria - CadernoFiado Zap</h1>
+  <div id="results" style="white-space: pre-wrap; font-family: monospace; font-size: 13px; line-height: 1.6;"></div>
+
+  <script src="../js/pix.js"></script>
+  <script src="../js/pdf.js"></script>
+  <script src="../js/state.js"></script>
+
+  <script>
+    (async function runAllTests() {
+      const output = document.getElementById('results');
+      function log(msg, pass = null) {
+        let color = '#94a3b8';
+        let prefix = '[-] ';
+        if (pass === true) { color = '#22c55e'; prefix = '[PASS] '; }
+        if (pass === false) { color = '#ef4444'; prefix = '[FAIL] '; }
+        output.innerHTML += `<div style="color:${color}">${prefix}${msg}</div>`;
+        console.log(prefix + msg);
+      }
+
+      let totalTests = 0;
+      let passedTests = 0;
+
+      function assert(desc, condition) {
+        totalTests++;
+        if (condition) {
+          passedTests++;
+          log(desc, true);
+        } else {
+          log(desc + ' - FALHOU!', false);
+        }
+      }
+
+      log("INICIANDO TESTES DOS 10 CENÁRIOS DA AUDITORIA...");
+
+      // Limpar localStorage para ambiente isolado
+      localStorage.clear();
+      window.AppState.resetAll();
+
+      // Setup de Clientes
+      const c1 = window.AppState.addClient({ name: 'Cliente Teste 1', phone: '11988887777', creditLimit: 1000 });
+      const c2 = window.AppState.addClient({ name: 'Cliente Teste 2', phone: '11977776666', creditLimit: 1000 });
+
+      // ==========================================
+      // Cenário 1: Venda à vista (1 parcela / fiado à vista)
+      // ==========================================
+      log("\n--- Cenário 1: Venda à vista (1 parcela) ---");
+      const s1 = window.AppState.addInstallmentSale(c1.id, {
+        description: 'Blusa de Lã',
+        amount: 50.00,
+        installments: 1,
+        startDate: '2026-09-16'
+      });
+      let client1 = window.AppState.getClient(c1.id);
+      let balance1 = window.AppState.computeBalance(client1);
+      assert("Cenário 1.1: Saldo total do cliente é R$ 50.00", Math.abs(balance1 - 50.00) < 0.001);
+      
+      let s1Detail = window.AppState.getInstallmentDetails(client1, client1.transactions[0]);
+      assert("Cenário 1.2: Parcela 1/1 identificada com valor R$ 50.00", s1Detail.remainingAmount === 50 && s1Detail.isInstallment === false);
+      assert("Cenário 1.3: Status em_aberto", s1Detail.status === 'em_aberto');
+
+      // ==========================================
+      // Cenário 2: Venda parcelada em 2 vezes
+      // ==========================================
+      log("\n--- Cenário 2: Venda parcelada em 2 vezes (R$ 50.00) ---");
+      window.AppState.addInstallmentSale(c1.id, {
+        description: 'Calça Jeans',
+        amount: 50.00,
+        installments: 2,
+        startDate: '2026-09-16'
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const jeansSales = client1.transactions.filter(t => t.type === 'sale' && t.description.includes('Calça Jeans'));
+      assert("Cenário 2.1: Criou 2 parcelas para Calça Jeans", jeansSales.length === 2);
+      assert("Cenário 2.2: Cada parcela é R$ 25.00", jeansSales[0].amount === 25 && jeansSales[1].amount === 25);
+      
+      const p1Due = jeansSales[0].dueDate; // 2026-09-16
+      const p2Due = jeansSales[1].dueDate; // 2026-10-16
+      assert("Cenário 2.3: Vencimento preserva mesmo dia no mês seguinte (16/09 e 16/10)", p1Due === '2026-09-16' && p2Due === '2026-10-16');
+
+      // ==========================================
+      // Cenário 3: Venda de R$ 100 em 3 parcelas (divisão de centavos)
+      // ==========================================
+      log("\n--- Cenário 3: Venda de R$ 100 em 3 parcelas ---");
+      window.AppState.addInstallmentSale(c1.id, {
+        description: 'Tênis Esportivo',
+        amount: 100.00,
+        installments: 3,
+        startDate: '2026-09-16'
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const tenisSales = client1.transactions.filter(t => t.type === 'sale' && t.description.includes('Tênis Esportivo'));
+      assert("Cenário 3.1: Criou exatamente 3 parcelas", tenisSales.length === 3);
+      const sumTenis = tenisSales.reduce((acc, s) => acc + s.amount, 0);
+      assert("Cenário 3.2: Soma exata das parcelas é R$ 100.00 (sem perda de centavos)", Math.abs(sumTenis - 100.00) < 0.001);
+      assert("Cenário 3.3: Parcelas distribuídas corretamente (33.33, 33.33, 33.34)", 
+        tenisSales[0].amount === 33.33 && tenisSales[1].amount === 33.33 && tenisSales[2].amount === 33.34);
+
+      // ==========================================
+      // Cenário 4: Venda parcelada em 6 vezes
+      // ==========================================
+      log("\n--- Cenário 4: Venda parcelada em 6 vezes (R$ 100.00) ---");
+      window.AppState.addInstallmentSale(c1.id, {
+        description: 'Kit Perfumaria',
+        amount: 100.00,
+        installments: 6,
+        startDate: '2026-09-16'
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const kitSales = client1.transactions.filter(t => t.type === 'sale' && t.description.includes('Kit Perfumaria'));
+      assert("Cenário 4.1: Criou 6 parcelas", kitSales.length === 6);
+      const sumKit = kitSales.reduce((acc, s) => acc + s.amount, 0);
+      assert("Cenário 4.2: Soma exata das 6 parcelas é R$ 100.00", Math.abs(sumKit - 100.00) < 0.001);
+
+      // ==========================================
+      // Cenário 5: Cobrança de parcela individual (detalhes isolados)
+      // ==========================================
+      log("\n--- Cenário 5: Cobrança de parcela individual ---");
+      const inst1Tenis = tenisSales[0];
+      const inst1Detail = window.AppState.getInstallmentDetails(client1, inst1Tenis);
+      assert("Cenário 5.1: Parcela atual é 1 e total é 3", inst1Detail.current === 1 && inst1Detail.total === 3);
+      assert("Cenário 5.2: Descrição limpa do produto sem prefixo [1/3]", inst1Detail.baseDescription === 'Tênis Esportivo');
+      assert("Cenário 5.3: Valor da parcela individual é R$ 33.33 (não a dívida total)", inst1Detail.remainingAmount === 33.33);
+
+      // ==========================================
+      // Cenário 6: Cobrança com pagamento parcial de parcela
+      // ==========================================
+      log("\n--- Cenário 6: Pagamento parcial de parcela específica ---");
+      // Abater R$ 13.33 na parcela 1 do Tênis
+      window.AppState.addPayment(c1.id, {
+        amount: 13.33,
+        paymentMethod: 'PIX',
+        notes: 'Entrada parcial',
+        targetSaleId: inst1Tenis.id
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const inst1AfterPay = window.AppState.getInstallmentDetails(client1, inst1Tenis);
+      assert("Cenário 6.1: Saldo restante da parcela 1 é exatamente R$ 20.00", Math.abs(inst1AfterPay.remainingAmount - 20.00) < 0.001);
+      assert("Cenário 6.2: Status da parcela mudou para 'parcial'", inst1AfterPay.status === 'parcial');
+      assert("Cenário 6.3: Valor pago registrado como R$ 13.33", Math.abs(inst1AfterPay.paidAmount - 13.33) < 0.001);
+
+      // ==========================================
+      // Cenário 7: Cobrança de parcela já quitada
+      // ==========================================
+      log("\n--- Cenário 7: Quitação de parcela e status 'quitada' ---");
+      // Pagar os R$ 20 restantes da parcela 1 do Tênis
+      window.AppState.addPayment(c1.id, {
+        amount: 20.00,
+        paymentMethod: 'Dinheiro',
+        notes: 'Restante da parcela 1',
+        targetSaleId: inst1Tenis.id
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const inst1Quitada = window.AppState.getInstallmentDetails(client1, inst1Tenis);
+      assert("Cenário 7.1: Parcela 1 agora tem saldo restante R$ 0.00", inst1Quitada.remainingAmount === 0);
+      assert("Cenário 7.2: Status é 'quitada'", inst1Quitada.status === 'quitada');
+
+      // ==========================================
+      // Cenário 8: Baixa de pagamento avulso (ordem cronológica FIFO)
+      // ==========================================
+      log("\n--- Cenário 8: Pagamento avulso FIFO ---");
+      window.AppState.addPayment(c1.id, {
+        amount: 30.00,
+        paymentMethod: 'Dinheiro',
+        notes: 'Pagamento avulso'
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const blusaSale = client1.transactions.find(t => t.type === 'sale' && t.description === 'Blusa de Lã');
+      const blusaDetails = window.AppState.getInstallmentDetails(client1, blusaSale);
+      assert("Cenário 8.1: Blusa de Lã recebeu os R$ 30 e tem saldo restante R$ 20.00", Math.abs(blusaDetails.remainingAmount - 20.00) < 0.001);
+      assert("Cenário 8.2: Status da Blusa é 'parcial'", blusaDetails.status === 'parcial');
+
+      // ==========================================
+      // Cenário 9: Baixa de pagamento vinculado a parcela específica
+      // ==========================================
+      log("\n--- Cenário 9: Pagamento vinculado a parcela específica (targetSaleId) ---");
+      const inst2Tenis = tenisSales[1];
+      window.AppState.addPayment(c1.id, {
+        amount: 33.33,
+        paymentMethod: 'PIX',
+        targetSaleId: inst2Tenis.id
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const inst2Details = window.AppState.getInstallmentDetails(client1, inst2Tenis);
+      assert("Cenário 9.1: Parcela 2 do Tênis quitada diretamente por targetSaleId", inst2Details.status === 'quitada' && inst2Details.remainingAmount === 0);
+      const blusaCheck = window.AppState.getInstallmentDetails(client1, blusaSale);
+      assert("Cenário 9.2: Blusa continua com saldo restante R$ 20.00 intocada", Math.abs(blusaCheck.remainingAmount - 20.00) < 0.001);
+
+      // ==========================================
+      // Cenário 10: Isolamento de dados entre clientes
+      // ==========================================
+      log("\n--- Cenário 10: Isolamento total entre clientes ---");
+      window.AppState.addInstallmentSale(c2.id, {
+        description: 'Bolsa de Couro',
+        amount: 150.00,
+        installments: 1,
+        startDate: '2026-09-16'
+      });
+      let client2 = window.AppState.getClient(c2.id);
+      let balance2 = window.AppState.computeBalance(client2);
+      assert("Cenário 10.1: Cliente 2 tem saldo isolado de R$ 150.00", Math.abs(balance2 - 150.00) < 0.001);
+      
+      window.AppState.addPayment(c2.id, { amount: 150.00, paymentMethod: 'Dinheiro' });
+      client2 = window.AppState.getClient(c2.id);
+      assert("Cenário 10.2: Cliente 2 quitou R$ 150.00 e tem saldo R$ 0.00", window.AppState.computeBalance(client2) === 0);
+      
+      client1 = window.AppState.getClient(c1.id);
+      const actualBalance1 = window.AppState.computeBalance(client1);
+      assert("Cenário 10.3: Saldo devedor do Cliente 1 permaneceu R$ 203.34 sem interferência", Math.abs(actualBalance1 - 203.34) < 0.01);
+
+      // ==========================================
+      // Teste Bônus: Validação e Restauração de Backup
+      // ==========================================
+      log("\n--- Teste Bônus: Validação e Restauração Segura de Backup ---");
+      const backupJson = window.AppState.getBackupJsonString();
+      const validation = window.AppState.validateBackup(backupJson);
+      assert("Bônus 1: Validação de backup gerado é válida", validation.valid === true);
+      assert("Bônus 2: Resumo identificou 2 clientes", validation.summary.clientsCount === 2);
+      
+      const corruptedValidation = window.AppState.validateBackup('{"invalid": true}');
+      assert("Bônus 3: Backup inválido é rejeitado com mensagem de erro", corruptedValidation.valid === false && !!corruptedValidation.error);
+
+      log(`\n==========================================`);
+      log(`RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`, passedTests === totalTests);
+      log(`==========================================`);
+
+      window.__TEST_RESULTS__ = {
+        total: totalTests,
+        passed: passedTests,
+        success: totalTests === passedTests
+      };
+    })();
+  </script>
+</body>
+</html>

@@ -326,60 +326,22 @@ window.PdfService = (function() {
       doc.setTextColor(148, 163, 184);
       doc.text('Documento gerado eletronicamente pelo CadernoFiado & Cobrança Zap Pro • Autenticidade Garantida', pageWidth / 2, 287, { align: 'center' });
 
-      const cleanClientName = client.name.replace(/[^a-zA-Z0-9]/g, '_');
+      const cleanClientName = (client.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
       const filename = `Recibo_Fiado_${cleanClientName}_${new Date().toISOString().split('T')[0]}.pdf`;
-
-      // =========================================================================
-      // ESTRATÉGIA DE SALVAMENTO MULTI-CAMADA (Robusto para Mobile, WebView e Web)
-      // =========================================================================
-
-      // 1. Ponte Nativa Android (se disponível via AppJavaScriptProxy)
-      if (window.androidAppProxy && typeof window.androidAppProxy.saveBase64File === 'function') {
-        const base64Data = doc.output('datauristring').split(',')[1];
-        window.androidAppProxy.saveBase64File(base64Data, filename, 'application/pdf');
-        return { success: true, method: 'android_proxy', filename };
-      }
-
-      // 2. Web Share API com File (Suporte Nativo a Android/iOS para envio direto ao Zap/Drive)
       const pdfBlob = doc.output('blob');
-      if (typeof File !== 'undefined' && navigator.canShare) {
-        try {
-          const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
-          if (navigator.canShare({ files: [pdfFile] })) {
-            await navigator.share({
-              files: [pdfFile],
-              title: `Recibo Fiado - ${client.name}`,
-              text: `Recibo de fiado de ${client.name} emitido por ${shopInfo.shopName || 'CadernoFiado'}.`
-            });
-            return { success: true, method: 'web_share', filename };
-          }
-        } catch (shareErr) {
-          // Se o usuário apenas cancelou o menu nativo de compartilhamento
-          if (shareErr.name === 'AbortError') {
-            return { success: true, method: 'web_share_cancelled', filename };
-          }
-          console.warn('Web Share API não concluiu, tentando fallback tradicional:', shareErr);
-        }
-      }
+      const blobUrl = URL.createObjectURL(pdfBlob);
 
-      // 3. Fallback Tradicional via Blob Download
-      try {
-        doc.save(filename);
-        return { success: true, method: 'blob_download', filename };
-      } catch (blobErr) {
-        console.warn('doc.save falhou, tentando link de dados:', blobErr);
-        const dataUri = doc.output('datauristring');
-        const link = document.createElement('a');
-        link.href = dataUri;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        return { success: true, method: 'data_uri_download', filename };
-      }
+      return {
+        success: true,
+        blob: pdfBlob,
+        blobUrl: blobUrl,
+        filename: filename,
+        clientName: client.name,
+        receiptText: generateReceiptText(client, shopInfo)
+      };
 
     } catch (error) {
-      console.error('Erro na geração/download do PDF:', error);
+      console.error('Erro na geração do PDF:', error);
       return {
         success: false,
         error: error.message || 'Falha ao processar o arquivo PDF.',
@@ -388,8 +350,72 @@ window.PdfService = (function() {
     }
   }
 
+  /**
+   * Baixa diretamente o arquivo PDF com segurança
+   */
+  function downloadPdf(blob, filename) {
+    try {
+      const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'recibo-fiado.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      if (typeof blob !== 'string') {
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+      return { success: true };
+    } catch(err) {
+      console.error('Falha no download direto do PDF:', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Compartilha o arquivo PDF através da Web Share API nativa a partir de um gesto direto
+   */
+  async function sharePdfFile(blob, filename, title, text) {
+    if (typeof File === 'undefined' || !navigator.canShare) {
+      return { success: false, reason: 'unsupported' };
+    }
+    try {
+      const file = new File([blob], filename || 'recibo-fiado.pdf', { type: 'application/pdf' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: title || 'Recibo Fiado',
+          text: text || 'Recibo de compras e fiado emitido pelo CadernoFiado.'
+        });
+        return { success: true };
+      }
+      return { success: false, reason: 'cannot_share_files' };
+    } catch(err) {
+      if (err.name === 'AbortError') return { success: true, cancelled: true };
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Abre o PDF para visualização imediata em nova aba
+   */
+  function openPdfPreview(blobUrl) {
+    try {
+      const win = window.open(blobUrl, '_blank');
+      if (!win) {
+        return { success: false, reason: 'popup_blocked' };
+      }
+      return { success: true };
+    } catch(err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   return {
     generateReceiptPdf,
-    generateReceiptText
+    generateReceiptText,
+    downloadPdf,
+    sharePdfFile,
+    openPdfPreview
   };
 })();

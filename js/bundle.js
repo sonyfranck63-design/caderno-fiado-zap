@@ -461,60 +461,22 @@ window.PdfService = (function() {
       doc.setTextColor(148, 163, 184);
       doc.text('Documento gerado eletronicamente pelo CadernoFiado & Cobrança Zap Pro • Autenticidade Garantida', pageWidth / 2, 287, { align: 'center' });
 
-      const cleanClientName = client.name.replace(/[^a-zA-Z0-9]/g, '_');
+      const cleanClientName = (client.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
       const filename = `Recibo_Fiado_${cleanClientName}_${new Date().toISOString().split('T')[0]}.pdf`;
-
-      // =========================================================================
-      // ESTRATÉGIA DE SALVAMENTO MULTI-CAMADA (Robusto para Mobile, WebView e Web)
-      // =========================================================================
-
-      // 1. Ponte Nativa Android (se disponível via AppJavaScriptProxy)
-      if (window.androidAppProxy && typeof window.androidAppProxy.saveBase64File === 'function') {
-        const base64Data = doc.output('datauristring').split(',')[1];
-        window.androidAppProxy.saveBase64File(base64Data, filename, 'application/pdf');
-        return { success: true, method: 'android_proxy', filename };
-      }
-
-      // 2. Web Share API com File (Suporte Nativo a Android/iOS para envio direto ao Zap/Drive)
       const pdfBlob = doc.output('blob');
-      if (typeof File !== 'undefined' && navigator.canShare) {
-        try {
-          const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
-          if (navigator.canShare({ files: [pdfFile] })) {
-            await navigator.share({
-              files: [pdfFile],
-              title: `Recibo Fiado - ${client.name}`,
-              text: `Recibo de fiado de ${client.name} emitido por ${shopInfo.shopName || 'CadernoFiado'}.`
-            });
-            return { success: true, method: 'web_share', filename };
-          }
-        } catch (shareErr) {
-          // Se o usuário apenas cancelou o menu nativo de compartilhamento
-          if (shareErr.name === 'AbortError') {
-            return { success: true, method: 'web_share_cancelled', filename };
-          }
-          console.warn('Web Share API não concluiu, tentando fallback tradicional:', shareErr);
-        }
-      }
+      const blobUrl = URL.createObjectURL(pdfBlob);
 
-      // 3. Fallback Tradicional via Blob Download
-      try {
-        doc.save(filename);
-        return { success: true, method: 'blob_download', filename };
-      } catch (blobErr) {
-        console.warn('doc.save falhou, tentando link de dados:', blobErr);
-        const dataUri = doc.output('datauristring');
-        const link = document.createElement('a');
-        link.href = dataUri;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        return { success: true, method: 'data_uri_download', filename };
-      }
+      return {
+        success: true,
+        blob: pdfBlob,
+        blobUrl: blobUrl,
+        filename: filename,
+        clientName: client.name,
+        receiptText: generateReceiptText(client, shopInfo)
+      };
 
     } catch (error) {
-      console.error('Erro na geração/download do PDF:', error);
+      console.error('Erro na geração do PDF:', error);
       return {
         success: false,
         error: error.message || 'Falha ao processar o arquivo PDF.',
@@ -523,9 +485,73 @@ window.PdfService = (function() {
     }
   }
 
+  /**
+   * Baixa diretamente o arquivo PDF com segurança
+   */
+  function downloadPdf(blob, filename) {
+    try {
+      const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'recibo-fiado.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      if (typeof blob !== 'string') {
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+      return { success: true };
+    } catch(err) {
+      console.error('Falha no download direto do PDF:', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Compartilha o arquivo PDF através da Web Share API nativa a partir de um gesto direto
+   */
+  async function sharePdfFile(blob, filename, title, text) {
+    if (typeof File === 'undefined' || !navigator.canShare) {
+      return { success: false, reason: 'unsupported' };
+    }
+    try {
+      const file = new File([blob], filename || 'recibo-fiado.pdf', { type: 'application/pdf' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: title || 'Recibo Fiado',
+          text: text || 'Recibo de compras e fiado emitido pelo CadernoFiado.'
+        });
+        return { success: true };
+      }
+      return { success: false, reason: 'cannot_share_files' };
+    } catch(err) {
+      if (err.name === 'AbortError') return { success: true, cancelled: true };
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Abre o PDF para visualização imediata em nova aba
+   */
+  function openPdfPreview(blobUrl) {
+    try {
+      const win = window.open(blobUrl, '_blank');
+      if (!win) {
+        return { success: false, reason: 'popup_blocked' };
+      }
+      return { success: true };
+    } catch(err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   return {
     generateReceiptPdf,
-    generateReceiptText
+    generateReceiptText,
+    downloadPdf,
+    sharePdfFile,
+    openPdfPreview
   };
 })();
 
@@ -645,7 +671,7 @@ window.AppState = (function() {
   function addClient({ name, phone, address, creditLimit }) {
     const clients = getClients();
     const newClient = {
-      id: 'c_' + Date.now(),
+      id: 'c_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       name: name.trim(),
       phone: (phone || '').replace(/\D/g, ''),
       address: (address || '').trim(),
@@ -678,10 +704,10 @@ window.AppState = (function() {
     if (!client) throw new Error('Cliente não encontrado');
 
     const newSale = {
-      id: 'sale_' + Date.now(),
+      id: 'sale_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       type: 'sale',
       amount: parseFloat(amount) || 0,
-      description: description.trim() || 'Venda no fiado',
+      description: (description || 'Venda no fiado').trim(),
       date: new Date().toISOString(),
       dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
       photoUrl: photoUrl || null
@@ -693,15 +719,27 @@ window.AppState = (function() {
     return newSale;
   }
 
-  function addInstallmentSale(clientId, { totalAmount, description, startDate, installmentCount = 2, intervalDays = 30, photoUrl }) {
+  function addInstallmentSale(clientId, { totalAmount, amount, description, startDate, installmentCount, installments, intervalDays = 30, photoUrl }) {
     const clients = getClients();
     const client = clients.find(c => c.id === clientId);
     if (!client) throw new Error('Cliente não encontrado');
 
-    const total = parseFloat(totalAmount) || 0;
-    const count = Math.max(2, parseInt(installmentCount, 10) || 2);
+    const total = parseFloat(totalAmount !== undefined ? totalAmount : amount) || 0;
+    const rawCount = parseInt(installmentCount !== undefined ? installmentCount : installments, 10);
+    const count = isNaN(rawCount) || rawCount < 1 ? 1 : rawCount;
+
+    if (count <= 1) {
+      const singleSale = addSale(clientId, {
+        amount: total,
+        description: description || 'Venda no fiado',
+        dueDate: startDate,
+        photoUrl: photoUrl
+      });
+      return [singleSale];
+    }
+
     const daysInterval = parseInt(intervalDays, 10) || 30;
-    const installmentValue = Math.round((total / count) * 100) / 100;
+    const installmentValue = Math.floor((total / count) * 100) / 100;
     const remainder = Math.round((total - (installmentValue * count)) * 100) / 100;
 
     const groupId = 'inst_' + Date.now();
@@ -711,12 +749,25 @@ window.AppState = (function() {
     if (!Array.isArray(client.transactions)) client.transactions = [];
 
     for (let i = 1; i <= count; i++) {
-      const currentDueDate = new Date(start);
-      currentDueDate.setDate(start.getDate() + (i - 1) * daysInterval);
-      const dueDateStr = currentDueDate.toISOString().split('T')[0];
+      let dueDateStr = '';
+      if (daysInterval === 30) {
+        // Para parcelamento mensal: avança mês a mês preservando o dia original combinado
+        const currentDueDate = new Date(start);
+        const originalDay = start.getDate();
+        currentDueDate.setDate(1); // Evita pular mês se o mês seguinte tiver menos dias
+        currentDueDate.setMonth(start.getMonth() + (i - 1));
+        const maxDaysInMonth = new Date(currentDueDate.getFullYear(), currentDueDate.getMonth() + 1, 0).getDate();
+        currentDueDate.setDate(Math.min(originalDay, maxDaysInMonth));
+        dueDateStr = currentDueDate.toISOString().split('T')[0];
+      } else {
+        // Para quinzenal (15 dias) ou semanal (7 dias)
+        const currentDueDate = new Date(start);
+        currentDueDate.setDate(start.getDate() + (i - 1) * daysInterval);
+        dueDateStr = currentDueDate.toISOString().split('T')[0];
+      }
 
-      // Ajusta dízima/centavos na 1ª parcela para bater a soma exata
-      const currentAmount = i === 1 ? Math.round((installmentValue + remainder) * 100) / 100 : installmentValue;
+      // Ajusta centavos restantes na última parcela para totalizar a soma exata
+      const currentAmount = i === count ? Math.round((installmentValue + remainder) * 100) / 100 : installmentValue;
 
       const saleItem = {
         id: `sale_${Date.now()}_${i}`,
@@ -735,24 +786,27 @@ window.AppState = (function() {
       };
 
       createdSales.push(saleItem);
-      client.transactions.unshift(saleItem);
     }
+
+    // Insere o lote de parcelas mantendo a ordem sequencial [p1, p2, p3] no topo do extrato
+    client.transactions = [...createdSales, ...client.transactions];
 
     saveClients(clients);
     return createdSales;
   }
 
-  function addPayment(clientId, { amount, paymentMethod, notes }) {
+  function addPayment(clientId, { amount, paymentMethod, notes, targetSaleId }) {
     const clients = getClients();
     const client = clients.find(c => c.id === clientId);
     if (!client) throw new Error('Cliente não encontrado');
 
     const newPayment = {
-      id: 'pay_' + Date.now(),
+      id: 'pay_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       type: 'payment',
       amount: parseFloat(amount) || 0,
       paymentMethod: paymentMethod || 'Dinheiro',
       notes: notes ? notes.trim() : 'Abatimento efetuado',
+      targetSaleId: targetSaleId || null,
       date: new Date().toISOString()
     };
 
@@ -762,6 +816,127 @@ window.AppState = (function() {
 
     const newDebt = computeBalance(client);
     return { payment: newPayment, remainingDebt: newDebt };
+  }
+
+  /**
+   * Calcula detalhes exatos de uma parcela ou venda individual em centavos.
+   * Aloca pagamentos direcionados (targetSaleId) e pagamentos gerais por ordem cronológica (FIFO).
+   */
+  function getInstallmentDetails(client, saleItem) {
+    if (!client || !saleItem || saleItem.type !== 'sale') return null;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const transactions = Array.isArray(client.transactions) ? client.transactions : [];
+
+    // Clona e ordena todas as vendas cronologicamente (FIFO) para abatimento de pagamentos genéricos
+    const allSales = transactions
+      .filter(t => t.type === 'sale')
+      .slice()
+      .sort((a, b) => {
+        const dateA = a.dueDate || a.date || '';
+        const dateB = b.dueDate || b.date || '';
+        return dateA.localeCompare(dateB) || a.id.localeCompare(b.id);
+      });
+
+    const allPayments = transactions.filter(t => t.type === 'payment');
+
+    // Mapeamento de quanto cada venda já recebeu em centavos (garantindo precisão inteira)
+    const allocatedCentsBySaleId = {};
+    allSales.forEach(s => {
+      allocatedCentsBySaleId[s.id] = 0;
+    });
+
+    // 1. Aplica primeiro pagamentos direcionados especificamente para uma venda/parcela
+    let generalPaymentsCents = 0;
+    allPayments.forEach(p => {
+      const pCents = Math.round((parseFloat(p.amount) || 0) * 100);
+      if (p.targetSaleId && allocatedCentsBySaleId[p.targetSaleId] !== undefined) {
+        allocatedCentsBySaleId[p.targetSaleId] += pCents;
+      } else {
+        generalPaymentsCents += pCents;
+      }
+    });
+
+    // 2. Aloca pagamentos gerais para as vendas em ordem cronológica (FIFO)
+    for (const sale of allSales) {
+      if (generalPaymentsCents <= 0) break;
+      const saleTotalCents = Math.round((parseFloat(sale.amount) || 0) * 100);
+      const alreadyAllocated = allocatedCentsBySaleId[sale.id] || 0;
+      const neededCents = Math.max(0, saleTotalCents - alreadyAllocated);
+
+      if (neededCents > 0) {
+        const toAllocate = Math.min(neededCents, generalPaymentsCents);
+        allocatedCentsBySaleId[sale.id] = alreadyAllocated + toAllocate;
+        generalPaymentsCents -= toAllocate;
+      }
+    }
+
+    // Métricas da venda solicitada
+    const originalCents = Math.round((parseFloat(saleItem.amount) || 0) * 100);
+    const paidCents = allocatedCentsBySaleId[saleItem.id] || 0;
+    const remainingCents = Math.max(0, originalCents - paidCents);
+
+    const originalAmount = originalCents / 100;
+    const paidAmount = Math.min(originalAmount, paidCents / 100);
+    const remainingAmount = remainingCents / 100;
+
+    const isPaidOff = remainingCents === 0;
+    const isPartial = paidCents > 0 && !isPaidOff;
+    const isOverdue = !isPaidOff && saleItem.dueDate && saleItem.dueDate < todayStr;
+
+    let status = 'em_aberto';
+    let statusText = 'Em aberto';
+    if (isPaidOff) {
+      status = 'quitada';
+      statusText = 'Quitada';
+    } else if (isOverdue) {
+      status = 'atrasada';
+      statusText = 'Vencida';
+    } else if (isPartial) {
+      status = 'parcial';
+      statusText = 'Parcialmente paga';
+    }
+
+    // Extrai descrição base limpa removendo prefixos automáticos como [1/3]
+    let baseDescription = (saleItem.description || 'Compra no fiado').trim();
+    if (baseDescription.startsWith('[') && baseDescription.indexOf(']') !== -1) {
+      baseDescription = baseDescription.replace(/^\[\d+\/\d+\]\s*/, '').trim();
+    }
+    if (!baseDescription) baseDescription = 'Compra de produtos';
+
+    const isInstallment = !!saleItem.installment;
+    const current = isInstallment ? saleItem.installment.current : 1;
+    const total = isInstallment ? saleItem.installment.total : 1;
+    const groupId = isInstallment ? saleItem.installment.groupId : saleItem.id;
+
+    let dueDateFormatted = '-';
+    if (saleItem.dueDate) {
+      const parts = saleItem.dueDate.split('-');
+      if (parts.length === 3) {
+        dueDateFormatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
+      } else {
+        dueDateFormatted = saleItem.dueDate;
+      }
+    }
+
+    return {
+      clientId: client.id,
+      clientName: client.name,
+      saleId: groupId,
+      installmentId: saleItem.id,
+      isInstallment,
+      current,
+      total,
+      originalAmount,
+      paidAmount,
+      remainingAmount,
+      dueDate: saleItem.dueDate,
+      dueDateFormatted,
+      status,
+      statusText,
+      baseDescription,
+      fullDescription: saleItem.description
+    };
   }
 
   // --- CONFIGURAÇÕES DO LOJISTA ---
@@ -1053,11 +1228,17 @@ window.AppState = (function() {
   }
 
   async function exportBackup() {
-    const dataStr = getBackupJsonString();
+    const data = getBackupData();
+    const dataStr = JSON.stringify(data, null, 2);
     const filename = `backup-cadernofiado-${new Date().toISOString().split('T')[0]}.json`;
     const blob = new Blob([dataStr], { type: 'application/json' });
 
-    // 1. Web Share API para Android/iOS se suportado (compartilha direto no WhatsApp/Drive/Arquivos)
+    let salesCount = 0;
+    (data.clients || []).forEach(c => {
+      salesCount += (c.transactions || []).filter(t => t.type === 'sale').length;
+    });
+
+    // 1. Web Share API para Android/iOS se suportado (permite salvar no Drive, WhatsApp ou pasta do celular)
     if (typeof File !== 'undefined' && navigator.canShare) {
       try {
         const file = new File([blob], filename, { type: 'application/json' });
@@ -1067,15 +1248,17 @@ window.AppState = (function() {
             title: 'Backup CadernoFiado',
             text: 'Backup completo dos clientes e fiados do CadernoFiado.'
           });
-          return { success: true, method: 'share', filename };
+          return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount };
         }
       } catch (err) {
-        if (err.name === 'AbortError') return { success: true, method: 'cancelled', filename };
+        if (err.name === 'AbortError') {
+          return { success: true, method: 'cancelled', filename, clientCount: data.clients.length, salesCount };
+        }
         console.warn('Share API falhou no backup, tentando download direto:', err);
       }
     }
 
-    // 2. Download direto com atraso no revoke para não abortar no Chrome Mobile
+    // 2. Download direto com atraso seguro de revoke para não ser abortado no Chrome Mobile/Android
     try {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1085,29 +1268,110 @@ window.AppState = (function() {
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-      return { success: true, method: 'download', filename };
+      return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  /**
+   * Valida rigorosamente a estrutura de um arquivo JSON de backup antes de qualquer alteração no sistema.
+   * Retorna um resumo detalhado (quantidade de clientes, vendas e pagamentos) para confirmação do usuário.
+   */
+  function validateBackup(jsonText) {
+    if (!jsonText || typeof jsonText !== 'string' || !jsonText.trim()) {
+      return { valid: false, error: 'O conteúdo fornecido para backup está vazio.' };
+    }
+    try {
+      const data = JSON.parse(jsonText.trim());
+      if (!data || typeof data !== 'object') {
+        return { valid: false, error: 'Formato inválido: o conteúdo não é um objeto JSON válido.' };
+      }
+      if (!Array.isArray(data.clients)) {
+        return { valid: false, error: 'Backup inválido: a lista de clientes não foi encontrada no arquivo.' };
+      }
+
+      let salesCount = 0;
+      let installmentsCount = 0;
+      let paymentsCount = 0;
+
+      // Validação item a item dos clientes e integridade das transações
+      for (let i = 0; i < data.clients.length; i++) {
+        const c = data.clients[i];
+        if (!c || typeof c !== 'object' || !c.id || !c.name) {
+          return {
+            valid: false,
+            error: `O cliente na posição #${i + 1} possui dados corrompidos (sem identificador ou nome).`
+          };
+        }
+        if (Array.isArray(c.transactions)) {
+          c.transactions.forEach(t => {
+            if (t.type === 'sale') {
+              salesCount++;
+              if (t.installment) installmentsCount++;
+            } else if (t.type === 'payment') {
+              paymentsCount++;
+            }
+          });
+        }
+      }
+
+      let totalDebtCents = 0;
+      data.clients.forEach(c => {
+        if (Array.isArray(c.transactions)) {
+          let sSum = 0;
+          let pSum = 0;
+          c.transactions.forEach(t => {
+            if (t.type === 'sale') sSum += Math.round((parseFloat(t.amount) || 0) * 100);
+            if (t.type === 'payment') pSum += Math.round((parseFloat(t.amount) || 0) * 100);
+          });
+          if (sSum > pSum) totalDebtCents += (sSum - pSum);
+        }
+      });
+
+      return {
+        valid: true,
+        summary: {
+          clientCount: data.clients.length,
+          clientsCount: data.clients.length,
+          salesCount,
+          installmentsCount,
+          paymentsCount,
+          totalDebtCents,
+          totalDebt: Math.round(totalDebtCents) / 100,
+          hasShopSettings: !!data.shopSettings
+        },
+        data
+      };
+    } catch (err) {
+      return { valid: false, error: 'Erro ao interpretar JSON: ' + err.message };
+    }
+  }
+
+  /**
+   * Aplica a restauração com dados já validados.
+   */
+  function restoreBackupData(validatedData) {
+    if (!validatedData || !Array.isArray(validatedData.clients)) {
+      return { success: false, error: 'Estrutura de dados de backup inválida.' };
+    }
+    try {
+      saveClients(validatedData.clients);
+      if (validatedData.shopSettings) {
+        saveSettings(validatedData.shopSettings);
+      }
+      return { success: true, count: validatedData.clients.length };
     } catch (e) {
       return { success: false, error: e.message };
     }
   }
 
   function importBackup(jsonText) {
-    try {
-      if (!jsonText || typeof jsonText !== 'string') {
-        throw new Error('Texto de backup vazio ou inválido.');
-      }
-      const data = JSON.parse(jsonText.trim());
-      if (!data.clients || !Array.isArray(data.clients)) {
-        throw new Error('Arquivo de backup inválido: lista de clientes ausente.');
-      }
-      saveClients(data.clients);
-      if (data.shopSettings) {
-        saveSettings(data.shopSettings);
-      }
-      return { success: true, count: data.clients.length };
-    } catch(e) {
-      return { success: false, error: e.message };
+    const valResult = validateBackup(jsonText);
+    if (!valResult.valid) {
+      return { success: false, error: valResult.error };
     }
+    return restoreBackupData(valResult.data);
   }
 
   function resetAll() {
@@ -1124,6 +1388,7 @@ window.AppState = (function() {
     getClient,
     computeBalance,
     getClientStatus,
+    getInstallmentDetails,
     addClient,
     updateClient,
     deleteClient,
@@ -1141,6 +1406,8 @@ window.AppState = (function() {
     getBackupData,
     getBackupJsonString,
     exportBackup,
+    validateBackup,
+    restoreBackupData,
     importBackup,
     resetAll
   };
@@ -1941,65 +2208,123 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
 // ==========================================
 /**
  * Modal de Cobrança Inteligente no WhatsApp
- * 4 tons de cobrança estratégicos (Amigável, Vence Hoje, Cobrança Firme e Acordo com Desconto).
- * Suporte a tema Claro/Escuro, micro-interações táteis e envio direto.
+ * Suporta cobrança específica por parcela de boca, venda avulsa ou débito total.
+ * Envio direto com identificação clara e chave PIX proporcional.
  */
 
-window.WhatsAppModal = function WhatsAppModal({ isOpen, onClose, client, shopSettings, pixPayload }) {
+window.WhatsAppModal = function WhatsAppModal({
+  isOpen,
+  onClose,
+  client,
+  shopSettings,
+  pixPayload,
+  targetInstallment
+}) {
   const [tone, setTone] = React.useState('amigavel');
-  const [copied, setCopied] = React.useState(false);
   const [includePix, setIncludePix] = React.useState(true);
   const [isEditing, setIsEditing] = React.useState(false);
   const [customMessage, setCustomMessage] = React.useState('');
 
-  const { X, MessageCircle, Copy, Check, QrCode, ShieldCheck, Sparkles, Phone } = window.Icons;
+  const { X, MessageCircle, Check, QrCode } = window.Icons || {};
 
   if (!isOpen || !client) return null;
 
-  const debt = window.AppState ? window.AppState.computeBalance(client) : 0;
-  const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
-  const discountDebt = (debt * 0.95).toFixed(2).replace('.', ',');
+  // Se houver uma parcela ou venda específica selecionada, utiliza suas métricas exatas
+  const hasTarget = !!targetInstallment;
+  const chargeAmount = hasTarget
+    ? (parseFloat(targetInstallment.remainingAmount) || 0)
+    : (window.AppState ? window.AppState.computeBalance(client) : 0);
 
-  // Busca itens em aberto
-  const openSales = (client.transactions || []).filter(t => t.type === 'sale');
-  const itemsDescription = openSales.length > 0 
-    ? openSales.map(s => s.description).filter(Boolean).slice(0, 3).join(', ')
-    : 'compras no fiado';
+  const totalClientDebt = window.AppState ? window.AppState.computeBalance(client) : 0;
+  const formattedTotalDebt = `R$ ${totalClientDebt.toFixed(2).replace('.', ',')}`;
+  const formattedCharge = `R$ ${chargeAmount.toFixed(2).replace('.', ',')}`;
+  const discountCharge = (chargeAmount * 0.95).toFixed(2).replace('.', ',');
+  const shopName = shopSettings?.shopName || 'CadernoFiado Zap';
 
-  const nearestDueDate = openSales.length > 0 && openSales[0].dueDate 
-    ? openSales[0].dueDate.split('-').reverse().join('/') 
-    : 'data combinada';
-
-  // Montagem do texto base conforme o tom
+  // Montagem da mensagem base conforme a parcela e a estratégia selecionada
   let defaultMessage = '';
-  if (tone === 'amigavel') {
-    defaultMessage = `Oi, ${client.name}! Tudo bem com você? 😊\n\nPassando aqui de forma bem tranquila só para lembrar do nosso fechamento referente a: *${itemsDescription}* no valor de *${formattedDebt}*.\n\nSe puder me dar um retorno sobre o acerto para deixarmos tudo certinho, te agradeço muito! 🙏`;
-  } else if (tone === 'hoje') {
-    defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nHoje é o dia que combinamos o acerto de *${formattedDebt}* (referente a *${itemsDescription}*).\n\nPosso te mandar a chave PIX ou prefere passar aqui para acertar? Um abraço! ✨`;
-  } else if (tone === 'acordo') {
-    defaultMessage = `Oi, ${client.name}! Tudo bem? 🏷️\n\nQuero te ajudar a quitar sua conta hoje: se você puder pagar hoje via PIX, consigo te dar 5% de desconto especial!\n\nDe *${formattedDebt}* fica apenas *R$ ${discountDebt}*.\n\nPodemos fechar assim? Me avisa aqui! 🤝`;
+
+  if (hasTarget && targetInstallment.isInstallment) {
+    // Cobrança de Parcela de Boca Específica (Seção 2.B)
+    const current = targetInstallment.current;
+    const total = targetInstallment.total;
+    const desc = targetInstallment.baseDescription || 'Compra de produtos';
+    const due = targetInstallment.dueDateFormatted || '-';
+    const statusTxt = targetInstallment.statusText || 'Em aberto';
+    const partialNotice = (targetInstallment.paidAmount > 0)
+      ? ` (Saldo restante de R$ ${targetInstallment.originalAmount.toFixed(2).replace('.', ',')})`
+      : '';
+
+    if (tone === 'amigavel') {
+      defaultMessage = `Olá, ${client.name}! Tudo bem? 👋\n\nPassando para lembrar da sua parcela referente à compra no *${shopName}*:\n\n🧾 *Venda:* ${desc}\n📌 *Parcela:* ${current}/${total}\n💰 *Valor desta parcela:* ${formattedCharge}${partialNotice}\n📅 *Vencimento:* ${due}\n⏳ *Status:* ${statusTxt}\n💼 *Saldo total da sua conta:* ${formattedTotalDebt}\n\nQualquer dúvida ou comprovante, fico à disposição por aqui! Obrigado pela preferência. 🤝`;
+    } else if (tone === 'hoje') {
+      defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nHoje é o dia de vencimento da sua parcela no *${shopName}*:\n\n🧾 *Venda:* ${desc}\n📌 *Parcela:* ${current}/${total}\n💰 *Valor:* ${formattedCharge}${partialNotice}\n📅 *Vencimento:* Hoje (${due})\n⏳ *Status:* Vence hoje\n💼 *Saldo total da sua conta:* ${formattedTotalDebt}\n\nPosso te enviar a chave PIX para acertarmos? Obrigado! ✨`;
+    } else if (tone === 'acordo') {
+      defaultMessage = `Oi, ${client.name}! Tudo bem? 🏷️\n\nOportunidade especial para adiantar sua parcela no *${shopName}* com desconto:\n\n🧾 *Venda:* ${desc}\n📌 *Parcela:* ${current}/${total}\n💰 De *${formattedCharge}* por apenas *R$ ${discountCharge}* no PIX hoje!\n📅 *Vencimento:* ${due}\n⏳ *Status:* Acordo com 5% de desconto\n💼 *Saldo total da sua conta:* ${formattedTotalDebt}\n\nPodemos fechar assim? Me avisa aqui! 🤝`;
+    } else {
+      defaultMessage = `Olá, ${client.name}. Espero que esteja bem.\n\nConsta em nosso sistema uma pendência referente à sua parcela no *${shopName}*:\n\n🧾 *Venda:* ${desc}\n📌 *Parcela:* ${current}/${total}\n💰 *Valor desta parcela:* ${formattedCharge}${partialNotice}\n📅 *Vencimento:* ${due}\n⏳ *Status:* ${statusTxt}\n💼 *Saldo total da sua conta:* ${formattedTotalDebt}\n\nPedimos a gentileza de regularizar essa parcela para mantermos seu cadastro e limite sempre ativos. Obrigado pela compreensão! 🤝`;
+    }
+
+  } else if (hasTarget && !targetInstallment.isInstallment) {
+    // Cobrança de Venda Avulsa Específica
+    const desc = targetInstallment.baseDescription || 'Compra no fiado';
+    const due = targetInstallment.dueDateFormatted || '-';
+    const statusTxt = targetInstallment.statusText || 'Em aberto';
+    const partialNotice = (targetInstallment.paidAmount > 0)
+      ? ` (Saldo restante de R$ ${targetInstallment.originalAmount.toFixed(2).replace('.', ',')})`
+      : '';
+
+    if (tone === 'amigavel') {
+      defaultMessage = `Olá, ${client.name}! Tudo bem? 👋\n\nPassando para lembrar da sua compra anotada no *${shopName}*:\n\n🧾 *Venda:* ${desc}\n💰 *Valor desta compra:* ${formattedCharge}${partialNotice}\n📅 *Vencimento:* ${due}\n⏳ *Status:* ${statusTxt}\n💼 *Saldo total da sua conta:* ${formattedTotalDebt}\n\nSe puder nos dar um retorno, agradeço muito! Um abraço. 🤝`;
+    } else if (tone === 'hoje') {
+      defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nHoje vence sua compra de *${desc}* no valor de *${formattedCharge}* no *${shopName}*.\n\nPosso te enviar a chave PIX ou prefere acertar pessoalmente? Obrigado! ✨`;
+    } else if (tone === 'acordo') {
+      defaultMessage = `Oi, ${client.name}! 🏷️\n\nSe você puder quitar sua compra de *${desc}* hoje via PIX no *${shopName}*, consigo um desconto de 5%:\n\nDe *${formattedCharge}* fica apenas *R$ ${discountCharge}*!\n\nPodemos fechar assim? Me avisa aqui! 🤝`;
+    } else {
+      defaultMessage = `Olá, ${client.name}.\n\nConsta aqui um saldo em aberto de *${formattedCharge}* referente a *${desc}* (vencimento: *${due}*) no *${shopName}*.\n\nPeço a gentileza de regularizarmos essa pendência hoje. Obrigado pela compreensão! 🤝`;
+    }
+
   } else {
-    defaultMessage = `Olá, ${client.name}. Espero que esteja bem.\n\nConsta aqui no meu sistema um saldo em aberto de *${formattedDebt}* referente a *${itemsDescription}* (vencido em *${nearestDueDate}*).\n\nComo trabalho com capital de giro próprio e preciso honrar com meus fornecedores, peço a gentileza de regularizarmos essa pendência ainda hoje. Obrigado pela compreensão! 🤝`;
+    // Cobrança Geral do Débito Total do Cliente
+    const openSales = (client.transactions || []).filter(t => t.type === 'sale');
+    const itemsDescription = openSales.length > 0 
+      ? openSales.map(s => s.description).filter(Boolean).slice(0, 3).join(', ')
+      : 'compras no fiado';
+    const nearestDueDate = openSales.length > 0 && openSales[0].dueDate 
+      ? openSales[0].dueDate.split('-').reverse().join('/') 
+      : 'data combinada';
+
+    if (tone === 'amigavel') {
+      defaultMessage = `Oi, ${client.name}! Tudo bem com você? 😊\n\nPassando aqui pelo *${shopName}* de forma bem tranquila para lembrar do seu saldo em aberto referente a: *${itemsDescription}*.\n\n💰 *Valor Total Pendente:* ${formattedCharge}\n\nSe puder me dar um retorno sobre o acerto para deixarmos tudo certinho, te agradeço muito! 🙏`;
+    } else if (tone === 'hoje') {
+      defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nHoje é o dia que combinamos o acerto de *${formattedCharge}* (referente a *${itemsDescription}*) no *${shopName}*.\n\nPosso te mandar a chave PIX ou prefere passar aqui para acertar? Um abraço! ✨`;
+    } else if (tone === 'acordo') {
+      defaultMessage = `Oi, ${client.name}! Tudo bem? 🏷️\n\nQuero te ajudar a quitar sua conta no *${shopName}* hoje: com acerto via PIX, consigo te dar 5% de desconto especial!\n\nDe *${formattedCharge}* fica apenas *R$ ${discountCharge}*.\n\nPodemos fechar assim? Me avisa aqui! 🤝`;
+    } else {
+      defaultMessage = `Olá, ${client.name}. Espero que esteja bem.\n\nConsta aqui no *${shopName}* um saldo em aberto de *${formattedCharge}* referente a *${itemsDescription}* (vencido em *${nearestDueDate}*).\n\nComo trabalho com capital de giro próprio e preciso honrar com meus fornecedores, peço a gentileza de regularizarmos essa pendência ainda hoje. Obrigado pela compreensão! 🤝`;
+    }
   }
 
-  // Gera ou anexa o PIX caso habilitado
+  // Gera ou anexa a Chave PIX e o Copia e Cola proporcional ao valor da parcela/cobrança
   let finalPixPayload = pixPayload;
-  if (!finalPixPayload && includePix && shopSettings?.pixKey) {
+  const pixTargetAmount = tone === 'acordo' ? (chargeAmount * 0.95) : chargeAmount;
+
+  if (!finalPixPayload && includePix && shopSettings?.pixKey && pixTargetAmount > 0) {
     try {
       finalPixPayload = window.PixService.generatePayload({
         pixKey: shopSettings.pixKey,
         merchantName: shopSettings.shopName || 'MEU COMERCIO',
         merchantCity: shopSettings.city || 'BRASIL',
-        amount: tone === 'acordo' ? (debt * 0.95) : debt,
-        txid: `F${client.id ? client.id.replace(/\D/g, '').slice(-6) || '000001' : '000001'}`
+        amount: pixTargetAmount,
+        txid: `CF${client.id ? client.id.replace(/\D/g, '').slice(-4) || '0001' : '0001'}`
       });
     } catch(e) {
       finalPixPayload = '';
     }
   }
 
-  if (includePix && shopSettings?.pixKey) {
-    defaultMessage += `\n\n🔑 *Chave PIX:* ${shopSettings.pixKey} (${shopSettings.pixType || 'Chave'})\n*Favorecido:* ${shopSettings.shopName || 'Estabelecimento'}`;
+  if (includePix && shopSettings?.pixKey && pixTargetAmount > 0) {
+    defaultMessage += `\n\n🔑 *Chave PIX:* ${shopSettings.pixKey} (${shopSettings.pixKeyType || 'Chave'})\n*Favorecido:* ${shopSettings.shopName || 'Estabelecimento'}`;
     if (finalPixPayload) {
       defaultMessage += `\n\n📲 *Código PIX Copia e Cola:*\n\`${finalPixPayload}\``;
     }
@@ -2010,12 +2335,6 @@ window.WhatsAppModal = function WhatsAppModal({ isOpen, onClose, client, shopSet
   const handleToneChange = (newTone) => {
     setTone(newTone);
     setIsEditing(false);
-  };
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(activeMessage);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
   };
 
   const handleSendWhatsApp = () => {
@@ -2035,25 +2354,30 @@ window.WhatsAppModal = function WhatsAppModal({ isOpen, onClose, client, shopSet
         
         {/* Topo Elegante do Modal */}
         <div className="px-4 py-3.5 bg-emerald-50 dark:bg-gradient-to-r dark:from-emerald-950/80 dark:via-slate-900 dark:to-emerald-950/50 border-b border-emerald-200 dark:border-emerald-800/40 flex items-center justify-between transition-colors">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-sm flex items-center justify-center">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-sm flex items-center justify-center flex-shrink-0">
               <div className="w-full h-full bg-white dark:bg-slate-950 rounded-[14px] flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                 <MessageCircle size={20} />
               </div>
             </div>
-            <div>
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
-                Cobrança WhatsApp <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-500/30">Turbo Zap</span>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
+                Cobrança WhatsApp
+                {hasTarget && targetInstallment.isInstallment && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-500/30">
+                    Parcela {targetInstallment.current}/{targetInstallment.total}
+                  </span>
+                )}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-300">
-                {client.name} • <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{formattedDebt}</span>
+              <p className="text-xs text-slate-500 dark:text-slate-300 truncate">
+                {client.name} • <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formattedCharge}</span>
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors btn-smooth"
+            className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors btn-smooth ml-2 flex-shrink-0"
           >
             <X size={18} />
           </button>
@@ -2066,7 +2390,7 @@ window.WhatsAppModal = function WhatsAppModal({ isOpen, onClose, client, shopSet
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Estratégia da Mensagem:
+                Tom da Mensagem:
               </label>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
                 {tone === 'amigavel' && '🌸 Mantém a boa relação'}
@@ -2125,7 +2449,7 @@ window.WhatsAppModal = function WhatsAppModal({ isOpen, onClose, client, shopSet
           </div>
 
           {/* Toggle Chave PIX */}
-          {shopSettings?.pixKey && (
+          {shopSettings?.pixKey && chargeAmount > 0 && (
             <label className="flex items-center space-x-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer bg-slate-50 dark:bg-slate-950/70 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-colors">
               <input
                 type="checkbox"
@@ -2136,11 +2460,15 @@ window.WhatsAppModal = function WhatsAppModal({ isOpen, onClose, client, shopSet
                 }}
                 className="rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-emerald-500 w-4 h-4 bg-white dark:bg-slate-900 cursor-pointer"
               />
-              <div className="flex-1">
-                <span className="font-semibold text-slate-900 dark:text-white block">Anexar Chave PIX e Copia e Cola</span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">Facilita o cliente pagar sem sair do WhatsApp</span>
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-slate-900 dark:text-white block truncate">
+                  Anexar PIX ({formattedCharge})
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
+                  Código Copia e Cola gerado para o valor exato
+                </span>
               </div>
-              <QrCode size={18} className="text-emerald-600 dark:text-emerald-400" />
+              <QrCode size={18} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
             </label>
           )}
 
@@ -2150,7 +2478,7 @@ window.WhatsAppModal = function WhatsAppModal({ isOpen, onClose, client, shopSet
             <div className="bg-[#1f2c34] px-3 py-2 flex items-center justify-between border-b border-[#2a3942]">
               <div className="flex items-center space-x-2">
                 <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold">
-                  {client.name.slice(0, 2).toUpperCase()}
+                  {(client.name || 'C').slice(0, 2).toUpperCase()}
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-white leading-tight">{client.name}</p>
@@ -2172,12 +2500,12 @@ window.WhatsAppModal = function WhatsAppModal({ isOpen, onClose, client, shopSet
             </div>
 
             {/* Fundo da Conversa com Padrão WhatsApp */}
-            <div className="wa-chat-container p-3.5 max-h-48 overflow-y-auto">
+            <div className="wa-chat-container p-3.5 max-h-52 overflow-y-auto">
               {isEditing ? (
                 <textarea
                   value={customMessage}
                   onChange={(e) => setCustomMessage(e.target.value)}
-                  className="w-full bg-[#005c4b] text-white p-3 rounded-2xl rounded-tr-none text-xs leading-relaxed border border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400 resize-none h-36"
+                  className="w-full bg-[#005c4b] text-white p-3 rounded-2xl rounded-tr-none text-xs leading-relaxed border border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400 resize-none h-40"
                   placeholder="Personalize sua mensagem aqui..."
                 />
               ) : (
@@ -2192,31 +2520,14 @@ window.WhatsAppModal = function WhatsAppModal({ isOpen, onClose, client, shopSet
             </div>
           </div>
 
-          {/* Botões de Ação */}
-          <div className="grid grid-cols-2 gap-2.5 pt-1">
-            <button
-              onClick={handleCopy}
-              className="py-3 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-white font-semibold text-xs border border-slate-300 dark:border-slate-700 flex items-center justify-center space-x-2 transition-all btn-smooth shadow-sm"
-            >
-              {copied ? (
-                <>
-                  <Check size={16} className="text-emerald-600 dark:text-emerald-400" />
-                  <span className="text-emerald-600 dark:text-emerald-400">Texto Copiado!</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={16} />
-                  <span>Copiar Mensagem</span>
-                </>
-              )}
-            </button>
-
+          {/* Botão de Envio Direto ao WhatsApp (Opção de copiar removida conforme solicitado) */}
+          <div className="pt-1">
             <button
               onClick={handleSendWhatsApp}
-              className="py-3 px-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-md flex items-center justify-center space-x-2 transition-all btn-smooth"
+              className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm shadow-md flex items-center justify-center space-x-2 transition-all active:scale-[0.98] btn-smooth"
             >
-              <MessageCircle size={17} />
-              <span>Enviar no WhatsApp</span>
+              <MessageCircle size={19} />
+              <span>Cobrar Zap • Abrir WhatsApp</span>
             </button>
           </div>
 
@@ -2424,6 +2735,8 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   const fileInputRef = React.useRef(null);
   const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck, Store, Phone, QrCode, Copy, FileText } = window.Icons || {};
 
+  const [confirmRestoreData, setConfirmRestoreData] = React.useState(null);
+
   React.useEffect(() => {
     if (isOpen) {
       setFormData({ ...shopSettings });
@@ -2448,13 +2761,38 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   };
 
   const handleExportBackup = async () => {
-    const res = await window.AppState.exportBackup();
-    if (res && res.method === 'share') {
+    try {
+      const res = await window.AppState.exportBackup();
+      if (!res || !res.success) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Aviso de Exportação',
+          message: 'Não foi possível gerar o arquivo de backup. Tente a opção "Copiar Código".',
+          variant: 'warning'
+        });
+        return;
+      }
+      if (res.method === 'share') {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Backup Compartilhado',
+          message: `Arquivo "${res.filename}" gerado com ${res.clientCount} cliente(s) e ${res.salesCount} venda(s). O menu de compartilhamento do seu aparelho foi aberto para você salvar no WhatsApp, Drive ou Gerenciador de Arquivos.`,
+          variant: 'success'
+        });
+      } else {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Backup Salvo',
+          message: `Download do arquivo de backup iniciado com sucesso!\nArquivo: ${res.filename}\nContém: ${res.clientCount} cliente(s) e ${res.salesCount} venda(s)/parcela(s).`,
+          variant: 'success'
+        });
+      }
+    } catch (err) {
       setFeedbackDialog({
         isOpen: true,
-        title: 'Backup Compartilhado',
-        message: 'O menu de compartilhamento do seu aparelho foi aberto para você salvar no WhatsApp, Drive ou Arquivos.',
-        variant: 'success'
+        title: 'Erro ao Exportar',
+        message: 'Ocorreu um erro durante a exportação: ' + err.message,
+        variant: 'danger'
       });
     }
   };
@@ -2466,7 +2804,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
       setFeedbackDialog({
         isOpen: true,
         title: 'Código Copiado!',
-        message: 'O código completo do seu backup foi copiado! Você pode colar nas suas anotações ou enviar para você mesmo no WhatsApp.',
+        message: 'O código completo do seu backup foi copiado para a área de transferência! Você pode colar nas suas anotações ou enviar para você mesmo no WhatsApp.',
         variant: 'success'
       });
     } catch(err) {
@@ -2485,22 +2823,19 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const result = window.AppState.importBackup(event.target.result);
-      if (result.success) {
+      const validation = window.AppState.validateBackup(event.target.result);
+      if (!validation.valid) {
         setFeedbackDialog({
           isOpen: true,
-          title: 'Backup Restaurado',
-          message: `Backup restaurado com sucesso! Foram importados ${result.count} clientes com seus respectivos históricos.`,
-          variant: 'success'
-        });
-      } else {
-        setFeedbackDialog({
-          isOpen: true,
-          title: 'Falha no Backup',
-          message: `Não foi possível importar o arquivo: ${result.error}`,
+          title: 'Arquivo Inválido',
+          message: `O arquivo selecionado não é um backup válido do CadernoFiado:\n${validation.error}`,
           variant: 'danger'
         });
+        return;
       }
+
+      // Abre confirmação com resumo dos dados antes de sobrescrever
+      setConfirmRestoreData(validation);
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -2517,21 +2852,41 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
       return;
     }
 
-    const result = window.AppState.importBackup(pastedJson);
-    if (result.success) {
-      setPasteBackupOpen(false);
-      setPastedJson('');
+    const validation = window.AppState.validateBackup(pastedJson);
+    if (!validation.valid) {
       setFeedbackDialog({
         isOpen: true,
-        title: 'Backup Restaurado',
-        message: `Backup restaurado com sucesso! Foram recuperados ${result.count} clientes e suas transações.`,
+        title: 'Código de Backup Inválido',
+        message: `Não foi possível ler o código colado:\n${validation.error}`,
+        variant: 'danger'
+      });
+      return;
+    }
+
+    setPasteBackupOpen(false);
+    // Abre confirmação com resumo dos dados antes de sobrescrever
+    setConfirmRestoreData(validation);
+  };
+
+  const handleConfirmRestore = () => {
+    if (!confirmRestoreData || !confirmRestoreData.data) return;
+    const ok = window.AppState.restoreBackupData(confirmRestoreData.data);
+    const summary = confirmRestoreData.summary;
+    setConfirmRestoreData(null);
+    setPastedJson('');
+
+    if (ok) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Backup Restaurado com Sucesso!',
+        message: `Seus dados foram recuperados com sucesso!\n• Clientes: ${summary.clientsCount}\n• Vendas e Parcelas: ${summary.salesCount}\n• Pagamentos: ${summary.paymentsCount}\n• Saldo Devedor: R$ ${(summary.totalDebtCents / 100).toFixed(2)}`,
         variant: 'success'
       });
     } else {
       setFeedbackDialog({
         isOpen: true,
-        title: 'Erro na Restauração',
-        message: 'Código de backup inválido ou corrompido: ' + result.error,
+        title: 'Falha na Restauração',
+        message: 'Ocorreu um erro ao gravar os dados restaurados no navegador.',
         variant: 'danger'
       });
     }
@@ -2791,6 +3146,25 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
           </div>
         )}
 
+        {/* Modal de Confirmação para Restauração com Resumo dos Dados */}
+        <window.ConfirmModal
+          isOpen={!!confirmRestoreData}
+          title="Substituir Dados pelo Backup?"
+          message={confirmRestoreData ? (
+            `Atenção: A restauração substituirá os dados atuais deste aparelho pelos dados contidos no backup:\n\n` +
+            `• Clientes cadastrados: ${confirmRestoreData.summary.clientsCount}\n` +
+            `• Vendas e parcelas: ${confirmRestoreData.summary.salesCount}\n` +
+            `• Pagamentos registrados: ${confirmRestoreData.summary.paymentsCount}\n` +
+            `• Dívida total pendente: R$ ${(confirmRestoreData.summary.totalDebtCents / 100).toFixed(2)}\n\n` +
+            `Deseja realmente prosseguir e carregar este backup agora?`
+          ) : ''}
+          confirmText="Sim, Restaurar Dados"
+          cancelText="Cancelar"
+          variant="warning"
+          onConfirm={handleConfirmRestore}
+          onCancel={() => setConfirmRestoreData(null)}
+        />
+
         {/* Modal de Confirmação para Limpeza de Dados */}
         <window.ConfirmModal
           isOpen={confirmResetOpen}
@@ -2844,6 +3218,7 @@ window.ClientDetailModal = function ClientDetailModal({
   const [payAmount, setPayAmount] = React.useState('');
   const [payMethod, setPayMethod] = React.useState('Dinheiro');
   const [payNotes, setPayNotes] = React.useState('');
+  const [targetSaleId, setTargetSaleId] = React.useState(null);
   const [showPhotoModal, setShowPhotoModal] = React.useState(null);
   
   // Estados para diálogos integrados (sem alert/confirm nativos)
@@ -2883,11 +3258,13 @@ window.ClientDetailModal = function ClientDetailModal({
       window.AppState.addPayment(client.id, {
         amount: val,
         paymentMethod: payMethod,
-        notes: payNotes
+        notes: payNotes,
+        targetSaleId: targetSaleId
       });
 
       setPayAmount('');
       setPayNotes('');
+      setTargetSaleId(null);
       setActiveSubTab('extrato');
 
       if (val >= debt && typeof confetti === 'function') {
@@ -2907,6 +3284,8 @@ window.ClientDetailModal = function ClientDetailModal({
   const handleFullPayoff = () => {
     if (debt <= 0) return;
     setPayAmount(debt.toFixed(2));
+    setPayNotes('Quitação integral de fiado');
+    setTargetSaleId(null);
     setActiveSubTab('abater');
   };
 
@@ -3062,7 +3441,28 @@ window.ClientDetailModal = function ClientDetailModal({
           
           {/* Cobrar Zap */}
           <button
-            onClick={() => onOpenWhatsApp(client)}
+            onClick={() => {
+              if (debt <= 0) {
+                setFeedbackModal({
+                  isOpen: true,
+                  title: 'Conta Quitada',
+                  message: 'Este cliente não possui débitos pendentes no momento para cobrança.',
+                  variant: 'info'
+                });
+                return;
+              }
+              // Encontra a primeira parcela ou venda não quitada para priorizar
+              const openSales = (client.transactions || []).filter(t => t.type === 'sale');
+              let priorityTarget = null;
+              for (const s of openSales) {
+                const details = window.AppState.getInstallmentDetails(client, s);
+                if (details && details.status !== 'quitada') {
+                  priorityTarget = details;
+                  break;
+                }
+              }
+              onOpenWhatsApp(client, null, priorityTarget);
+            }}
             className="flex flex-col items-center justify-center p-2 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-750 text-slate-700 dark:text-slate-200 transition-all active:scale-95 shadow-sm btn-smooth"
           >
             <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1">
@@ -3236,54 +3636,129 @@ window.ClientDetailModal = function ClientDetailModal({
                     const isSale = tx.type === 'sale';
                     const txDate = tx.date ? new Date(tx.date).toLocaleDateString('pt-BR') : '-';
                     const txDue = tx.dueDate ? tx.dueDate.split('-').reverse().join('/') : null;
+                    const instDetails = isSale && window.AppState && window.AppState.getInstallmentDetails
+                      ? window.AppState.getInstallmentDetails(client, tx)
+                      : null;
 
                     return (
                       <div
                         key={tx.id}
-                        className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs transition-colors"
+                        className={`p-3 rounded-2xl border transition-colors ${
+                          isSale
+                            ? (instDetails && instDetails.status === 'quitada'
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40'
+                                : instDetails && instDetails.status === 'atrasada'
+                                ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40'
+                                : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800/80')
+                            : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800/80'
+                        }`}
                       >
-                        <div className="flex items-start space-x-2.5 min-w-0">
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                            isSale ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                          }`}>
-                            {isSale ? '🛍️' : '💵'}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold text-slate-900 dark:text-white truncate">
-                                {isSale ? tx.description || 'Compra no Fiado' : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
-                              </span>
-                              {tx.installment && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30">
-                                  Parcela {tx.installment.current}/{tx.installment.total}
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-start space-x-2.5 min-w-0 flex-1">
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                              isSale ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            }`}>
+                              {isSale ? '🛍️' : '💵'}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                  {isSale
+                                    ? (instDetails ? instDetails.baseDescription : tx.description || 'Compra no Fiado')
+                                    : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
                                 </span>
+                                {instDetails && instDetails.isInstallment && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30">
+                                    Parcela {instDetails.current}/{instDetails.total}
+                                  </span>
+                                )}
+                                {instDetails && (
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                    instDetails.status === 'quitada'
+                                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                                      : instDetails.status === 'parcial'
+                                      ? 'bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30'
+                                      : instDetails.status === 'atrasada'
+                                      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                                      : 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                                  }`}>
+                                    {instDetails.statusText}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                <span>{txDate}</span>
+                                {isSale && txDue && (
+                                  <span className={instDetails && instDetails.status === 'atrasada' ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-600 dark:text-slate-300 font-medium'}>
+                                    Venc: {txDue}
+                                  </span>
+                                )}
+                                {!isSale && tx.notes && (
+                                  <span className="text-slate-400 truncate max-w-[130px]">{tx.notes}</span>
+                                )}
+                              </div>
+
+                              {tx.photoUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPhotoModal(tx.photoUrl)}
+                                  className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline mt-0.5 block font-medium"
+                                >
+                                  Ver Comprovante/Foto 📎
+                                </button>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                              <span>{txDate}</span>
-                              {isSale && txDue && (
-                                <span className="text-amber-600 dark:text-amber-400 font-medium">Venc: {txDue}</span>
-                              )}
-                              {!isSale && tx.notes && (
-                                <span className="text-slate-400 truncate max-w-[120px]">{tx.notes}</span>
-                              )}
-                            </div>
-                            {tx.photoUrl && (
-                              <button
-                                onClick={() => setShowPhotoModal(tx.photoUrl)}
-                                className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline mt-0.5 block font-medium"
-                              >
-                                Ver Comprovante/Foto 📎
-                              </button>
+                          </div>
+
+                          <div className="text-right flex-shrink-0 font-mono">
+                            <span className={`font-bold text-xs block ${isSale ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                              {isSale ? `+ R$ ${parseFloat(tx.amount).toFixed(2).replace('.', ',')}` : `- R$ ${parseFloat(tx.amount).toFixed(2).replace('.', ',')}`}
+                            </span>
+                            {instDetails && instDetails.status === 'parcial' && (
+                              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold block">
+                                Resta R$ {instDetails.remainingAmount.toFixed(2).replace('.', ',')}
+                              </span>
                             )}
                           </div>
                         </div>
 
-                        <div className="text-right flex-shrink-0 font-mono font-bold">
-                          <span className={isSale ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}>
-                            {isSale ? `+ R$ ${parseFloat(tx.amount).toFixed(2).replace('.', ',')}` : `- R$ ${parseFloat(tx.amount).toFixed(2).replace('.', ',')}`}
-                          </span>
-                        </div>
+                        {/* Ações Diretas por Parcela / Venda */}
+                        {isSale && instDetails && (
+                          <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                            {instDetails.status !== 'quitada' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPayAmount(instDetails.remainingAmount.toFixed(2));
+                                    setPayNotes(`Abatimento ${instDetails.isInstallment ? `Parcela ${instDetails.current}/${instDetails.total}` : 'Venda'}`);
+                                    setTargetSaleId(tx.id);
+                                    setActiveSubTab('abater');
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition-colors btn-smooth"
+                                >
+                                  <DollarSign size={13} className="text-emerald-600 dark:text-emerald-400" />
+                                  <span>Abater</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenWhatsApp(client, null, instDetails)}
+                                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 btn-smooth"
+                                >
+                                  <MessageCircle size={13} />
+                                  <span>Cobrar Zap</span>
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 py-1">
+                                <CheckCircle2 size={13} /> Parcela Quitada
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -3330,7 +3805,7 @@ window.ClientDetailModal = function ClientDetailModal({
           onCancel={() => setShowDeleteConfirm(false)}
         />
 
-        {/* Modal de Entrega do Recibo de Fiado (WhatsApp / Download / Cópia) */}
+        {/* Modal de Entrega do Recibo de Fiado com Download Real de PDF, Visualização e WhatsApp */}
         {pdfModalData && (
           <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in">
@@ -3338,39 +3813,92 @@ window.ClientDetailModal = function ClientDetailModal({
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
                   <FileText size={20} />
                 </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Recibo de Fiado Gerado!</h3>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Recibo PDF Gerado!</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-300 mt-1 leading-relaxed">
-                    O comprovante com o histórico de compras e saldo devedor de {client.name} está pronto para envio.
+                    Comprovante de <strong>{client.name}</strong> pronto. Escolha como prefere salvar ou enviar:
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-2 pt-2">
+              <div className="space-y-2 pt-1">
+                {/* 1. Baixar Arquivo PDF */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.PdfService && pdfModalData.blob) {
+                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      setFeedbackModal({
+                        isOpen: true,
+                        title: 'PDF Baixado',
+                        message: `O arquivo "${pdfModalData.filename}" foi baixado para o seu aparelho!`,
+                        variant: 'success'
+                      });
+                    }
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 font-bold text-xs flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
+                >
+                  <FileText size={15} className="text-rose-500" />
+                  <span>📥 Baixar Arquivo PDF</span>
+                </button>
+
+                {/* 2. Compartilhar Arquivo PDF */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.PdfService && pdfModalData.blob) {
+                      const res = await window.PdfService.sharePdfFile(
+                        pdfModalData.blob,
+                        pdfModalData.filename,
+                        `Recibo Fiado - ${client.name}`,
+                        `Recibo de fiado de ${client.name}`
+                      );
+                      if (res && res.reason === 'unsupported') {
+                        // Fallback automático para download caso Web Share não suporte arquivos no navegador atual
+                        window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      }
+                    }
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 font-bold text-xs flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
+                >
+                  <MessageCircle size={15} className="text-emerald-500" />
+                  <span>📤 Compartilhar PDF no Zap / Drive</span>
+                </button>
+
+                {/* 3. Visualizar PDF */}
+                {pdfModalData.blobUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.PdfService) {
+                        window.PdfService.openPdfPreview(pdfModalData.blobUrl);
+                      }
+                    }}
+                    className="w-full py-2 px-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors btn-smooth"
+                  >
+                    <span>👁️ Abrir / Visualizar Documento</span>
+                  </button>
+                )}
+
+                {/* 4. Enviar Extrato em Texto no WhatsApp */}
                 <button
                   type="button"
                   onClick={handleSendTextReceiptViaWhatsApp}
-                  className="w-full py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md btn-smooth"
+                  className="w-full py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-2 transition-colors shadow-md btn-smooth"
                 >
                   <MessageCircle size={16} />
-                  <span>📲 Enviar Recibo no WhatsApp</span>
+                  <span>📲 Enviar Extrato no WhatsApp</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleCopyTextReceipt}
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-semibold text-xs transition-colors btn-smooth"
-                >
-                  📋 Copiar Texto do Extrato
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPdfModalData(null)}
-                  className="w-full py-1.5 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-white text-center transition-colors btn-smooth"
-                >
-                  Concluído / Fechar
-                </button>
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setPdfModalData(null)}
+                    className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors font-medium"
+                  >
+                    Fechar
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -5083,7 +5611,7 @@ function App() {
 
   // Modais
   const [selectedClientId, setSelectedClientId] = React.useState(null);
-  const [whatsAppModalData, setWhatsAppModalData] = React.useState({ open: false, client: null, pixPayload: null });
+  const [whatsAppModalData, setWhatsAppModalData] = React.useState({ open: false, client: null, pixPayload: null, targetInstallment: null });
   const [pixModalData, setPixModalData] = React.useState({ open: false, client: null });
   const [settingsModalOpen, setSettingsModalOpen] = React.useState(false);
   const [rewardedModalOpen, setRewardedModalOpen] = React.useState(false);
@@ -5244,7 +5772,7 @@ function App() {
           isOpen={!!selectedClientId}
           onClose={() => setSelectedClientId(null)}
           clientId={selectedClientId}
-          onOpenWhatsApp={(client, payload) => setWhatsAppModalData({ open: true, client, pixPayload: payload })}
+          onOpenWhatsApp={(client, payload, targetInstallment) => setWhatsAppModalData({ open: true, client, pixPayload: payload, targetInstallment: targetInstallment || null })}
           onOpenPix={(client) => setPixModalData({ open: true, client })}
           isVip={vipInfo.isVip}
           onTriggerPaywall={handleTriggerPaywall}
@@ -5254,10 +5782,11 @@ function App() {
         {/* Modal de Cobrança no WhatsApp */}
         <window.WhatsAppModal
           isOpen={whatsAppModalData.open}
-          onClose={() => setWhatsAppModalData({ open: false, client: null, pixPayload: null })}
+          onClose={() => setWhatsAppModalData({ open: false, client: null, pixPayload: null, targetInstallment: null })}
           client={whatsAppModalData.client}
           shopSettings={shopSettings}
           pixPayload={whatsAppModalData.pixPayload}
+          targetInstallment={whatsAppModalData.targetInstallment}
         />
 
         {/* Modal de PIX Automático VIP */}
@@ -5267,7 +5796,7 @@ function App() {
           client={pixModalData.client}
           shopSettings={shopSettings}
           onOpenWhatsApp={(client, payload) => {
-            setWhatsAppModalData({ open: true, client, pixPayload: payload });
+            setWhatsAppModalData({ open: true, client, pixPayload: payload, targetInstallment: null });
           }}
         />
 

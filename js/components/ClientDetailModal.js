@@ -19,6 +19,7 @@ window.ClientDetailModal = function ClientDetailModal({
   const [payAmount, setPayAmount] = React.useState('');
   const [payMethod, setPayMethod] = React.useState('Dinheiro');
   const [payNotes, setPayNotes] = React.useState('');
+  const [targetSaleId, setTargetSaleId] = React.useState(null);
   const [showPhotoModal, setShowPhotoModal] = React.useState(null);
   
   // Estados para diálogos integrados (sem alert/confirm nativos)
@@ -58,11 +59,13 @@ window.ClientDetailModal = function ClientDetailModal({
       window.AppState.addPayment(client.id, {
         amount: val,
         paymentMethod: payMethod,
-        notes: payNotes
+        notes: payNotes,
+        targetSaleId: targetSaleId
       });
 
       setPayAmount('');
       setPayNotes('');
+      setTargetSaleId(null);
       setActiveSubTab('extrato');
 
       if (val >= debt && typeof confetti === 'function') {
@@ -82,6 +85,8 @@ window.ClientDetailModal = function ClientDetailModal({
   const handleFullPayoff = () => {
     if (debt <= 0) return;
     setPayAmount(debt.toFixed(2));
+    setPayNotes('Quitação integral de fiado');
+    setTargetSaleId(null);
     setActiveSubTab('abater');
   };
 
@@ -237,7 +242,28 @@ window.ClientDetailModal = function ClientDetailModal({
           
           {/* Cobrar Zap */}
           <button
-            onClick={() => onOpenWhatsApp(client)}
+            onClick={() => {
+              if (debt <= 0) {
+                setFeedbackModal({
+                  isOpen: true,
+                  title: 'Conta Quitada',
+                  message: 'Este cliente não possui débitos pendentes no momento para cobrança.',
+                  variant: 'info'
+                });
+                return;
+              }
+              // Encontra a primeira parcela ou venda não quitada para priorizar
+              const openSales = (client.transactions || []).filter(t => t.type === 'sale');
+              let priorityTarget = null;
+              for (const s of openSales) {
+                const details = window.AppState.getInstallmentDetails(client, s);
+                if (details && details.status !== 'quitada') {
+                  priorityTarget = details;
+                  break;
+                }
+              }
+              onOpenWhatsApp(client, null, priorityTarget);
+            }}
             className="flex flex-col items-center justify-center p-2 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-750 text-slate-700 dark:text-slate-200 transition-all active:scale-95 shadow-sm btn-smooth"
           >
             <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1">
@@ -411,54 +437,129 @@ window.ClientDetailModal = function ClientDetailModal({
                     const isSale = tx.type === 'sale';
                     const txDate = tx.date ? new Date(tx.date).toLocaleDateString('pt-BR') : '-';
                     const txDue = tx.dueDate ? tx.dueDate.split('-').reverse().join('/') : null;
+                    const instDetails = isSale && window.AppState && window.AppState.getInstallmentDetails
+                      ? window.AppState.getInstallmentDetails(client, tx)
+                      : null;
 
                     return (
                       <div
                         key={tx.id}
-                        className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs transition-colors"
+                        className={`p-3 rounded-2xl border transition-colors ${
+                          isSale
+                            ? (instDetails && instDetails.status === 'quitada'
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40'
+                                : instDetails && instDetails.status === 'atrasada'
+                                ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40'
+                                : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800/80')
+                            : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800/80'
+                        }`}
                       >
-                        <div className="flex items-start space-x-2.5 min-w-0">
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                            isSale ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                          }`}>
-                            {isSale ? '🛍️' : '💵'}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold text-slate-900 dark:text-white truncate">
-                                {isSale ? tx.description || 'Compra no Fiado' : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
-                              </span>
-                              {tx.installment && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30">
-                                  Parcela {tx.installment.current}/{tx.installment.total}
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-start space-x-2.5 min-w-0 flex-1">
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                              isSale ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            }`}>
+                              {isSale ? '🛍️' : '💵'}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                  {isSale
+                                    ? (instDetails ? instDetails.baseDescription : tx.description || 'Compra no Fiado')
+                                    : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
                                 </span>
+                                {instDetails && instDetails.isInstallment && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30">
+                                    Parcela {instDetails.current}/{instDetails.total}
+                                  </span>
+                                )}
+                                {instDetails && (
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                    instDetails.status === 'quitada'
+                                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                                      : instDetails.status === 'parcial'
+                                      ? 'bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30'
+                                      : instDetails.status === 'atrasada'
+                                      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                                      : 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                                  }`}>
+                                    {instDetails.statusText}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                <span>{txDate}</span>
+                                {isSale && txDue && (
+                                  <span className={instDetails && instDetails.status === 'atrasada' ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-600 dark:text-slate-300 font-medium'}>
+                                    Venc: {txDue}
+                                  </span>
+                                )}
+                                {!isSale && tx.notes && (
+                                  <span className="text-slate-400 truncate max-w-[130px]">{tx.notes}</span>
+                                )}
+                              </div>
+
+                              {tx.photoUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPhotoModal(tx.photoUrl)}
+                                  className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline mt-0.5 block font-medium"
+                                >
+                                  Ver Comprovante/Foto 📎
+                                </button>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                              <span>{txDate}</span>
-                              {isSale && txDue && (
-                                <span className="text-amber-600 dark:text-amber-400 font-medium">Venc: {txDue}</span>
-                              )}
-                              {!isSale && tx.notes && (
-                                <span className="text-slate-400 truncate max-w-[120px]">{tx.notes}</span>
-                              )}
-                            </div>
-                            {tx.photoUrl && (
-                              <button
-                                onClick={() => setShowPhotoModal(tx.photoUrl)}
-                                className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline mt-0.5 block font-medium"
-                              >
-                                Ver Comprovante/Foto 📎
-                              </button>
+                          </div>
+
+                          <div className="text-right flex-shrink-0 font-mono">
+                            <span className={`font-bold text-xs block ${isSale ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                              {isSale ? `+ R$ ${parseFloat(tx.amount).toFixed(2).replace('.', ',')}` : `- R$ ${parseFloat(tx.amount).toFixed(2).replace('.', ',')}`}
+                            </span>
+                            {instDetails && instDetails.status === 'parcial' && (
+                              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold block">
+                                Resta R$ {instDetails.remainingAmount.toFixed(2).replace('.', ',')}
+                              </span>
                             )}
                           </div>
                         </div>
 
-                        <div className="text-right flex-shrink-0 font-mono font-bold">
-                          <span className={isSale ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}>
-                            {isSale ? `+ R$ ${parseFloat(tx.amount).toFixed(2).replace('.', ',')}` : `- R$ ${parseFloat(tx.amount).toFixed(2).replace('.', ',')}`}
-                          </span>
-                        </div>
+                        {/* Ações Diretas por Parcela / Venda */}
+                        {isSale && instDetails && (
+                          <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                            {instDetails.status !== 'quitada' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPayAmount(instDetails.remainingAmount.toFixed(2));
+                                    setPayNotes(`Abatimento ${instDetails.isInstallment ? `Parcela ${instDetails.current}/${instDetails.total}` : 'Venda'}`);
+                                    setTargetSaleId(tx.id);
+                                    setActiveSubTab('abater');
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition-colors btn-smooth"
+                                >
+                                  <DollarSign size={13} className="text-emerald-600 dark:text-emerald-400" />
+                                  <span>Abater</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenWhatsApp(client, null, instDetails)}
+                                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 btn-smooth"
+                                >
+                                  <MessageCircle size={13} />
+                                  <span>Cobrar Zap</span>
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 py-1">
+                                <CheckCircle2 size={13} /> Parcela Quitada
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -505,7 +606,7 @@ window.ClientDetailModal = function ClientDetailModal({
           onCancel={() => setShowDeleteConfirm(false)}
         />
 
-        {/* Modal de Entrega do Recibo de Fiado (WhatsApp / Download / Cópia) */}
+        {/* Modal de Entrega do Recibo de Fiado com Download Real de PDF, Visualização e WhatsApp */}
         {pdfModalData && (
           <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in">
@@ -513,39 +614,92 @@ window.ClientDetailModal = function ClientDetailModal({
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
                   <FileText size={20} />
                 </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Recibo de Fiado Gerado!</h3>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Recibo PDF Gerado!</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-300 mt-1 leading-relaxed">
-                    O comprovante com o histórico de compras e saldo devedor de {client.name} está pronto para envio.
+                    Comprovante de <strong>{client.name}</strong> pronto. Escolha como prefere salvar ou enviar:
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-2 pt-2">
+              <div className="space-y-2 pt-1">
+                {/* 1. Baixar Arquivo PDF */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.PdfService && pdfModalData.blob) {
+                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      setFeedbackModal({
+                        isOpen: true,
+                        title: 'PDF Baixado',
+                        message: `O arquivo "${pdfModalData.filename}" foi baixado para o seu aparelho!`,
+                        variant: 'success'
+                      });
+                    }
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 font-bold text-xs flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
+                >
+                  <FileText size={15} className="text-rose-500" />
+                  <span>📥 Baixar Arquivo PDF</span>
+                </button>
+
+                {/* 2. Compartilhar Arquivo PDF */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.PdfService && pdfModalData.blob) {
+                      const res = await window.PdfService.sharePdfFile(
+                        pdfModalData.blob,
+                        pdfModalData.filename,
+                        `Recibo Fiado - ${client.name}`,
+                        `Recibo de fiado de ${client.name}`
+                      );
+                      if (res && res.reason === 'unsupported') {
+                        // Fallback automático para download caso Web Share não suporte arquivos no navegador atual
+                        window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      }
+                    }
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 font-bold text-xs flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
+                >
+                  <MessageCircle size={15} className="text-emerald-500" />
+                  <span>📤 Compartilhar PDF no Zap / Drive</span>
+                </button>
+
+                {/* 3. Visualizar PDF */}
+                {pdfModalData.blobUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.PdfService) {
+                        window.PdfService.openPdfPreview(pdfModalData.blobUrl);
+                      }
+                    }}
+                    className="w-full py-2 px-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors btn-smooth"
+                  >
+                    <span>👁️ Abrir / Visualizar Documento</span>
+                  </button>
+                )}
+
+                {/* 4. Enviar Extrato em Texto no WhatsApp */}
                 <button
                   type="button"
                   onClick={handleSendTextReceiptViaWhatsApp}
-                  className="w-full py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md btn-smooth"
+                  className="w-full py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-2 transition-colors shadow-md btn-smooth"
                 >
                   <MessageCircle size={16} />
-                  <span>📲 Enviar Recibo no WhatsApp</span>
+                  <span>📲 Enviar Extrato no WhatsApp</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleCopyTextReceipt}
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-semibold text-xs transition-colors btn-smooth"
-                >
-                  📋 Copiar Texto do Extrato
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPdfModalData(null)}
-                  className="w-full py-1.5 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-white text-center transition-colors btn-smooth"
-                >
-                  Concluído / Fechar
-                </button>
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setPdfModalData(null)}
+                    className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors font-medium"
+                  >
+                    Fechar
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -110,7 +110,7 @@ window.AppState = (function() {
   function addClient({ name, phone, address, creditLimit }) {
     const clients = getClients();
     const newClient = {
-      id: 'c_' + Date.now(),
+      id: 'c_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       name: name.trim(),
       phone: (phone || '').replace(/\D/g, ''),
       address: (address || '').trim(),
@@ -143,10 +143,10 @@ window.AppState = (function() {
     if (!client) throw new Error('Cliente não encontrado');
 
     const newSale = {
-      id: 'sale_' + Date.now(),
+      id: 'sale_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       type: 'sale',
       amount: parseFloat(amount) || 0,
-      description: description.trim() || 'Venda no fiado',
+      description: (description || 'Venda no fiado').trim(),
       date: new Date().toISOString(),
       dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
       photoUrl: photoUrl || null
@@ -158,15 +158,27 @@ window.AppState = (function() {
     return newSale;
   }
 
-  function addInstallmentSale(clientId, { totalAmount, description, startDate, installmentCount = 2, intervalDays = 30, photoUrl }) {
+  function addInstallmentSale(clientId, { totalAmount, amount, description, startDate, installmentCount, installments, intervalDays = 30, photoUrl }) {
     const clients = getClients();
     const client = clients.find(c => c.id === clientId);
     if (!client) throw new Error('Cliente não encontrado');
 
-    const total = parseFloat(totalAmount) || 0;
-    const count = Math.max(2, parseInt(installmentCount, 10) || 2);
+    const total = parseFloat(totalAmount !== undefined ? totalAmount : amount) || 0;
+    const rawCount = parseInt(installmentCount !== undefined ? installmentCount : installments, 10);
+    const count = isNaN(rawCount) || rawCount < 1 ? 1 : rawCount;
+
+    if (count <= 1) {
+      const singleSale = addSale(clientId, {
+        amount: total,
+        description: description || 'Venda no fiado',
+        dueDate: startDate,
+        photoUrl: photoUrl
+      });
+      return [singleSale];
+    }
+
     const daysInterval = parseInt(intervalDays, 10) || 30;
-    const installmentValue = Math.round((total / count) * 100) / 100;
+    const installmentValue = Math.floor((total / count) * 100) / 100;
     const remainder = Math.round((total - (installmentValue * count)) * 100) / 100;
 
     const groupId = 'inst_' + Date.now();
@@ -176,12 +188,25 @@ window.AppState = (function() {
     if (!Array.isArray(client.transactions)) client.transactions = [];
 
     for (let i = 1; i <= count; i++) {
-      const currentDueDate = new Date(start);
-      currentDueDate.setDate(start.getDate() + (i - 1) * daysInterval);
-      const dueDateStr = currentDueDate.toISOString().split('T')[0];
+      let dueDateStr = '';
+      if (daysInterval === 30) {
+        // Para parcelamento mensal: avança mês a mês preservando o dia original combinado
+        const currentDueDate = new Date(start);
+        const originalDay = start.getDate();
+        currentDueDate.setDate(1); // Evita pular mês se o mês seguinte tiver menos dias
+        currentDueDate.setMonth(start.getMonth() + (i - 1));
+        const maxDaysInMonth = new Date(currentDueDate.getFullYear(), currentDueDate.getMonth() + 1, 0).getDate();
+        currentDueDate.setDate(Math.min(originalDay, maxDaysInMonth));
+        dueDateStr = currentDueDate.toISOString().split('T')[0];
+      } else {
+        // Para quinzenal (15 dias) ou semanal (7 dias)
+        const currentDueDate = new Date(start);
+        currentDueDate.setDate(start.getDate() + (i - 1) * daysInterval);
+        dueDateStr = currentDueDate.toISOString().split('T')[0];
+      }
 
-      // Ajusta dízima/centavos na 1ª parcela para bater a soma exata
-      const currentAmount = i === 1 ? Math.round((installmentValue + remainder) * 100) / 100 : installmentValue;
+      // Ajusta centavos restantes na última parcela para totalizar a soma exata
+      const currentAmount = i === count ? Math.round((installmentValue + remainder) * 100) / 100 : installmentValue;
 
       const saleItem = {
         id: `sale_${Date.now()}_${i}`,
@@ -200,24 +225,27 @@ window.AppState = (function() {
       };
 
       createdSales.push(saleItem);
-      client.transactions.unshift(saleItem);
     }
+
+    // Insere o lote de parcelas mantendo a ordem sequencial [p1, p2, p3] no topo do extrato
+    client.transactions = [...createdSales, ...client.transactions];
 
     saveClients(clients);
     return createdSales;
   }
 
-  function addPayment(clientId, { amount, paymentMethod, notes }) {
+  function addPayment(clientId, { amount, paymentMethod, notes, targetSaleId }) {
     const clients = getClients();
     const client = clients.find(c => c.id === clientId);
     if (!client) throw new Error('Cliente não encontrado');
 
     const newPayment = {
-      id: 'pay_' + Date.now(),
+      id: 'pay_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       type: 'payment',
       amount: parseFloat(amount) || 0,
       paymentMethod: paymentMethod || 'Dinheiro',
       notes: notes ? notes.trim() : 'Abatimento efetuado',
+      targetSaleId: targetSaleId || null,
       date: new Date().toISOString()
     };
 
@@ -227,6 +255,127 @@ window.AppState = (function() {
 
     const newDebt = computeBalance(client);
     return { payment: newPayment, remainingDebt: newDebt };
+  }
+
+  /**
+   * Calcula detalhes exatos de uma parcela ou venda individual em centavos.
+   * Aloca pagamentos direcionados (targetSaleId) e pagamentos gerais por ordem cronológica (FIFO).
+   */
+  function getInstallmentDetails(client, saleItem) {
+    if (!client || !saleItem || saleItem.type !== 'sale') return null;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const transactions = Array.isArray(client.transactions) ? client.transactions : [];
+
+    // Clona e ordena todas as vendas cronologicamente (FIFO) para abatimento de pagamentos genéricos
+    const allSales = transactions
+      .filter(t => t.type === 'sale')
+      .slice()
+      .sort((a, b) => {
+        const dateA = a.dueDate || a.date || '';
+        const dateB = b.dueDate || b.date || '';
+        return dateA.localeCompare(dateB) || a.id.localeCompare(b.id);
+      });
+
+    const allPayments = transactions.filter(t => t.type === 'payment');
+
+    // Mapeamento de quanto cada venda já recebeu em centavos (garantindo precisão inteira)
+    const allocatedCentsBySaleId = {};
+    allSales.forEach(s => {
+      allocatedCentsBySaleId[s.id] = 0;
+    });
+
+    // 1. Aplica primeiro pagamentos direcionados especificamente para uma venda/parcela
+    let generalPaymentsCents = 0;
+    allPayments.forEach(p => {
+      const pCents = Math.round((parseFloat(p.amount) || 0) * 100);
+      if (p.targetSaleId && allocatedCentsBySaleId[p.targetSaleId] !== undefined) {
+        allocatedCentsBySaleId[p.targetSaleId] += pCents;
+      } else {
+        generalPaymentsCents += pCents;
+      }
+    });
+
+    // 2. Aloca pagamentos gerais para as vendas em ordem cronológica (FIFO)
+    for (const sale of allSales) {
+      if (generalPaymentsCents <= 0) break;
+      const saleTotalCents = Math.round((parseFloat(sale.amount) || 0) * 100);
+      const alreadyAllocated = allocatedCentsBySaleId[sale.id] || 0;
+      const neededCents = Math.max(0, saleTotalCents - alreadyAllocated);
+
+      if (neededCents > 0) {
+        const toAllocate = Math.min(neededCents, generalPaymentsCents);
+        allocatedCentsBySaleId[sale.id] = alreadyAllocated + toAllocate;
+        generalPaymentsCents -= toAllocate;
+      }
+    }
+
+    // Métricas da venda solicitada
+    const originalCents = Math.round((parseFloat(saleItem.amount) || 0) * 100);
+    const paidCents = allocatedCentsBySaleId[saleItem.id] || 0;
+    const remainingCents = Math.max(0, originalCents - paidCents);
+
+    const originalAmount = originalCents / 100;
+    const paidAmount = Math.min(originalAmount, paidCents / 100);
+    const remainingAmount = remainingCents / 100;
+
+    const isPaidOff = remainingCents === 0;
+    const isPartial = paidCents > 0 && !isPaidOff;
+    const isOverdue = !isPaidOff && saleItem.dueDate && saleItem.dueDate < todayStr;
+
+    let status = 'em_aberto';
+    let statusText = 'Em aberto';
+    if (isPaidOff) {
+      status = 'quitada';
+      statusText = 'Quitada';
+    } else if (isOverdue) {
+      status = 'atrasada';
+      statusText = 'Vencida';
+    } else if (isPartial) {
+      status = 'parcial';
+      statusText = 'Parcialmente paga';
+    }
+
+    // Extrai descrição base limpa removendo prefixos automáticos como [1/3]
+    let baseDescription = (saleItem.description || 'Compra no fiado').trim();
+    if (baseDescription.startsWith('[') && baseDescription.indexOf(']') !== -1) {
+      baseDescription = baseDescription.replace(/^\[\d+\/\d+\]\s*/, '').trim();
+    }
+    if (!baseDescription) baseDescription = 'Compra de produtos';
+
+    const isInstallment = !!saleItem.installment;
+    const current = isInstallment ? saleItem.installment.current : 1;
+    const total = isInstallment ? saleItem.installment.total : 1;
+    const groupId = isInstallment ? saleItem.installment.groupId : saleItem.id;
+
+    let dueDateFormatted = '-';
+    if (saleItem.dueDate) {
+      const parts = saleItem.dueDate.split('-');
+      if (parts.length === 3) {
+        dueDateFormatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
+      } else {
+        dueDateFormatted = saleItem.dueDate;
+      }
+    }
+
+    return {
+      clientId: client.id,
+      clientName: client.name,
+      saleId: groupId,
+      installmentId: saleItem.id,
+      isInstallment,
+      current,
+      total,
+      originalAmount,
+      paidAmount,
+      remainingAmount,
+      dueDate: saleItem.dueDate,
+      dueDateFormatted,
+      status,
+      statusText,
+      baseDescription,
+      fullDescription: saleItem.description
+    };
   }
 
   // --- CONFIGURAÇÕES DO LOJISTA ---
@@ -518,11 +667,17 @@ window.AppState = (function() {
   }
 
   async function exportBackup() {
-    const dataStr = getBackupJsonString();
+    const data = getBackupData();
+    const dataStr = JSON.stringify(data, null, 2);
     const filename = `backup-cadernofiado-${new Date().toISOString().split('T')[0]}.json`;
     const blob = new Blob([dataStr], { type: 'application/json' });
 
-    // 1. Web Share API para Android/iOS se suportado (compartilha direto no WhatsApp/Drive/Arquivos)
+    let salesCount = 0;
+    (data.clients || []).forEach(c => {
+      salesCount += (c.transactions || []).filter(t => t.type === 'sale').length;
+    });
+
+    // 1. Web Share API para Android/iOS se suportado (permite salvar no Drive, WhatsApp ou pasta do celular)
     if (typeof File !== 'undefined' && navigator.canShare) {
       try {
         const file = new File([blob], filename, { type: 'application/json' });
@@ -532,15 +687,17 @@ window.AppState = (function() {
             title: 'Backup CadernoFiado',
             text: 'Backup completo dos clientes e fiados do CadernoFiado.'
           });
-          return { success: true, method: 'share', filename };
+          return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount };
         }
       } catch (err) {
-        if (err.name === 'AbortError') return { success: true, method: 'cancelled', filename };
+        if (err.name === 'AbortError') {
+          return { success: true, method: 'cancelled', filename, clientCount: data.clients.length, salesCount };
+        }
         console.warn('Share API falhou no backup, tentando download direto:', err);
       }
     }
 
-    // 2. Download direto com atraso no revoke para não abortar no Chrome Mobile
+    // 2. Download direto com atraso seguro de revoke para não ser abortado no Chrome Mobile/Android
     try {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -550,29 +707,110 @@ window.AppState = (function() {
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-      return { success: true, method: 'download', filename };
+      return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  /**
+   * Valida rigorosamente a estrutura de um arquivo JSON de backup antes de qualquer alteração no sistema.
+   * Retorna um resumo detalhado (quantidade de clientes, vendas e pagamentos) para confirmação do usuário.
+   */
+  function validateBackup(jsonText) {
+    if (!jsonText || typeof jsonText !== 'string' || !jsonText.trim()) {
+      return { valid: false, error: 'O conteúdo fornecido para backup está vazio.' };
+    }
+    try {
+      const data = JSON.parse(jsonText.trim());
+      if (!data || typeof data !== 'object') {
+        return { valid: false, error: 'Formato inválido: o conteúdo não é um objeto JSON válido.' };
+      }
+      if (!Array.isArray(data.clients)) {
+        return { valid: false, error: 'Backup inválido: a lista de clientes não foi encontrada no arquivo.' };
+      }
+
+      let salesCount = 0;
+      let installmentsCount = 0;
+      let paymentsCount = 0;
+
+      // Validação item a item dos clientes e integridade das transações
+      for (let i = 0; i < data.clients.length; i++) {
+        const c = data.clients[i];
+        if (!c || typeof c !== 'object' || !c.id || !c.name) {
+          return {
+            valid: false,
+            error: `O cliente na posição #${i + 1} possui dados corrompidos (sem identificador ou nome).`
+          };
+        }
+        if (Array.isArray(c.transactions)) {
+          c.transactions.forEach(t => {
+            if (t.type === 'sale') {
+              salesCount++;
+              if (t.installment) installmentsCount++;
+            } else if (t.type === 'payment') {
+              paymentsCount++;
+            }
+          });
+        }
+      }
+
+      let totalDebtCents = 0;
+      data.clients.forEach(c => {
+        if (Array.isArray(c.transactions)) {
+          let sSum = 0;
+          let pSum = 0;
+          c.transactions.forEach(t => {
+            if (t.type === 'sale') sSum += Math.round((parseFloat(t.amount) || 0) * 100);
+            if (t.type === 'payment') pSum += Math.round((parseFloat(t.amount) || 0) * 100);
+          });
+          if (sSum > pSum) totalDebtCents += (sSum - pSum);
+        }
+      });
+
+      return {
+        valid: true,
+        summary: {
+          clientCount: data.clients.length,
+          clientsCount: data.clients.length,
+          salesCount,
+          installmentsCount,
+          paymentsCount,
+          totalDebtCents,
+          totalDebt: Math.round(totalDebtCents) / 100,
+          hasShopSettings: !!data.shopSettings
+        },
+        data
+      };
+    } catch (err) {
+      return { valid: false, error: 'Erro ao interpretar JSON: ' + err.message };
+    }
+  }
+
+  /**
+   * Aplica a restauração com dados já validados.
+   */
+  function restoreBackupData(validatedData) {
+    if (!validatedData || !Array.isArray(validatedData.clients)) {
+      return { success: false, error: 'Estrutura de dados de backup inválida.' };
+    }
+    try {
+      saveClients(validatedData.clients);
+      if (validatedData.shopSettings) {
+        saveSettings(validatedData.shopSettings);
+      }
+      return { success: true, count: validatedData.clients.length };
     } catch (e) {
       return { success: false, error: e.message };
     }
   }
 
   function importBackup(jsonText) {
-    try {
-      if (!jsonText || typeof jsonText !== 'string') {
-        throw new Error('Texto de backup vazio ou inválido.');
-      }
-      const data = JSON.parse(jsonText.trim());
-      if (!data.clients || !Array.isArray(data.clients)) {
-        throw new Error('Arquivo de backup inválido: lista de clientes ausente.');
-      }
-      saveClients(data.clients);
-      if (data.shopSettings) {
-        saveSettings(data.shopSettings);
-      }
-      return { success: true, count: data.clients.length };
-    } catch(e) {
-      return { success: false, error: e.message };
+    const valResult = validateBackup(jsonText);
+    if (!valResult.valid) {
+      return { success: false, error: valResult.error };
     }
+    return restoreBackupData(valResult.data);
   }
 
   function resetAll() {
@@ -589,6 +827,7 @@ window.AppState = (function() {
     getClient,
     computeBalance,
     getClientStatus,
+    getInstallmentDetails,
     addClient,
     updateClient,
     deleteClient,
@@ -606,6 +845,8 @@ window.AppState = (function() {
     getBackupData,
     getBackupJsonString,
     exportBackup,
+    validateBackup,
+    restoreBackupData,
     importBackup,
     resetAll
   };
