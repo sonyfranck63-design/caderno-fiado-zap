@@ -18,7 +18,6 @@ function App() {
   const [settingsModalOpen, setSettingsModalOpen] = React.useState(false);
   const [rewardedModalOpen, setRewardedModalOpen] = React.useState(false);
   const [installModalOpen, setInstallModalOpen] = React.useState(false);
-  const [adminModalOpen, setAdminModalOpen] = React.useState(false);
   const [paywallReason, setPaywallReason] = React.useState(null);
 
   // Sincronização reativa com o AppState
@@ -127,7 +126,6 @@ function App() {
               onWatchRewarded={() => setRewardedModalOpen(true)}
               triggerReason={paywallReason}
               shopSettings={shopSettings}
-              onOpenAdmin={() => setAdminModalOpen(true)}
             />
           )}
         </main>
@@ -203,19 +201,12 @@ function App() {
           onClose={() => setSettingsModalOpen(false)}
           shopSettings={shopSettings}
           onSaveSettings={(newSettings) => window.AppState.saveSettings(newSettings)}
-          onOpenAdmin={() => setAdminModalOpen(true)}
         />
 
         {/* Modal de Instalação do Aplicativo (PWA) */}
         <window.InstallPwaModal
           isOpen={installModalOpen}
           onClose={() => setInstallModalOpen(false)}
-        />
-
-        {/* Modal do Painel do Administrador (Gerador de Chaves) */}
-        <window.AdminLicenseModal
-          isOpen={adminModalOpen}
-          onClose={() => setAdminModalOpen(false)}
         />
 
       </div>

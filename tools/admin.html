@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel do Administrador — Gerador de Licenças CadernoFiado</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="../vendor/tailwindcss.js"></script>
+  <script>
+    if (!window.tailwind) {
+      document.write('<script src="https://cdn.tailwindcss.com"><\/script>');
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #0b0f19;
+      color: #f1f5f9;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8 flex items-center justify-center">
+
+  <div class="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+    
+    <!-- Cabeçalho -->
+    <div class="border-b border-slate-800 pb-5 flex items-start justify-between gap-4">
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold mb-2">
+          <span>🛡️ Painel Privado do Dono</span>
+        </div>
+        <h1 class="text-xl sm:text-2xl font-black text-white">Gerador Oficial de Licenças</h1>
+        <p class="text-xs text-slate-400 mt-1">Gere chaves assinadas criptograficamente (ECDSA P-256) impossíveis de forjar.</p>
+      </div>
+      <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-xl flex-shrink-0">
+        👑
+      </div>
+    </div>
+
+    <!-- Formulário -->
+    <form id="licenseForm" class="space-y-4">
+      
+      <!-- ID do Aparelho do Cliente -->
+      <div>
+        <label class="block text-xs font-bold text-slate-300 mb-1.5 uppercase tracking-wider">
+          ID do Aparelho do Cliente (enviado no WhatsApp):
+        </label>
+        <input
+          type="text"
+          id="deviceId"
+          required
+          placeholder="Ex: CF-7482"
+          class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono text-sm uppercase focus:outline-none focus:border-emerald-500 transition-colors"
+        />
+        <p class="text-[11px] text-slate-500 mt-1">O cliente visualiza esse ID na aba "Plano VIP" ou "Configurações" do app dele.</p>
+      </div>
+
+      <!-- Tipo de Plano -->
+      <div>
+        <label class="block text-xs font-bold text-slate-300 mb-1.5 uppercase tracking-wider">
+          Tempo de Acesso / Plano Pago:
+        </label>
+        <div class="grid grid-cols-3 gap-2.5">
+          <label class="cursor-pointer">
+            <input type="radio" name="planType" value="30D" class="peer sr-only" checked>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 peer-checked:border-emerald-500 peer-checked:bg-emerald-500/10 text-center transition-all">
+              <span class="block text-xs font-bold text-white">Mensal</span>
+              <span class="block text-[11px] text-slate-400 mt-0.5">30 Dias</span>
+            </div>
+          </label>
+
+          <label class="cursor-pointer">
+            <input type="radio" name="planType" value="365D" class="peer sr-only">
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 peer-checked:border-emerald-500 peer-checked:bg-emerald-500/10 text-center transition-all">
+              <span class="block text-xs font-bold text-white">Anual</span>
+              <span class="block text-[11px] text-slate-400 mt-0.5">1 Ano</span>
+            </div>
+          </label>
+
+          <label class="cursor-pointer">
+            <input type="radio" name="planType" value="LIFETIME" class="peer sr-only">
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 peer-checked:border-amber-500 peer-checked:bg-amber-500/10 text-center transition-all">
+              <span class="block text-xs font-bold text-amber-300">Vitalício</span>
+              <span class="block text-[11px] text-slate-400 mt-0.5">Sem Expiração</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Botão Gerar -->
+      <button
+        type="submit"
+        class="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg"
+      >
+        <span>⚡ Gerar Código de Ativação Assinado</span>
+      </button>
+
+    </form>
+
+    <!-- Resultado Gerado -->
+    <div id="resultSection" class="hidden space-y-4 pt-4 border-t border-slate-800">
+      
+      <div class="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+            <span>✅</span> Código Gerado com Sucesso
+          </span>
+          <span id="planBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300"></span>
+        </div>
+
+        <div>
+          <label class="text-[11px] text-slate-400 block mb-1">Código de Ativação do Cliente:</label>
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              id="generatedKey"
+              readonly
+              class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white font-mono select-all focus:outline-none"
+            />
+            <button
+              id="btnCopyKey"
+              type="button"
+              class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition-colors flex-shrink-0"
+            >
+              Copiar
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-[11px] text-slate-400 block mb-1">Mensagem Formatada para o WhatsApp:</label>
+          <textarea
+            id="whatsappMessage"
+            rows="5"
+            readonly
+            class="w-full p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300 font-sans focus:outline-none resize-none select-all"
+          ></textarea>
+        </div>
+
+        <button
+          id="btnCopyMessage"
+          type="button"
+          class="w-full py-2.5 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+        >
+          <span>📲 Copiar Mensagem Completa para o WhatsApp</span>
+        </button>
+
+      </div>
+
+    </div>
+
+    <!-- Chaves e Configurações de Segurança -->
+    <div class="text-[11px] text-slate-500 pt-2 border-t border-slate-800 flex items-center justify-between">
+      <span>Algoritmo: ECDSA NIST P-256 + SHA-256</span>
+      <span class="text-emerald-500">Chave Privada Ativa</span>
+    </div>
+
+  </div>
+
+  <script>
+    // Chave Privada do Dono para assinatura de licenças
+    const PRIVATE_KEY_JWK = {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "sju7sWqTYzdwcft-dTY5W7roV1qv2yx3nIH-FyIt28M",
+      "y": "rR6FBrA0W-I9CUhyd7ORtJTltMTUiwIWuoQUWKg86bY",
+      "d": "GcbYAlZocw8LnFQChw5D0rOi74XSQSkdNgAwc3jGIro"
+    };
+
+    function toBase64Url(uint8Array) {
+      let binary = '';
+      for (let i = 0; i < uint8Array.length; i++) {
+        binary += String.fromCharCode(uint8Array[i]);
+      }
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function stringToBase64Url(str) {
+      return toBase64Url(new TextEncoder().encode(str));
+    }
+
+    async function generateSignedLicense(deviceId, planType) {
+      const cleanId = (deviceId || '').trim().toUpperCase();
+      const now = Date.now();
+      let expiresAt = null;
+      let planName = 'Plano VIP Mensal (30 Dias)';
+
+      if (planType === '30D') {
+        expiresAt = now + 30 * 24 * 60 * 60 * 1000;
+        planName = 'Plano VIP Mensal (30 Dias)';
+      } else if (planType === '365D') {
+        expiresAt = now + 365 * 24 * 60 * 60 * 1000;
+        planName = 'Plano VIP Anual (1 Ano)';
+      } else if (planType === 'LIFETIME') {
+        expiresAt = 0;
+        planName = 'Plano VIP Vitalício';
+      }
+
+      const payload = {
+        d: cleanId,
+        p: planType,
+        e: expiresAt,
+        t: now
+      };
+
+      const payloadStr = JSON.stringify(payload);
+      const payloadB64 = stringToBase64Url(payloadStr);
+
+      // Importa a chave privada ECDSA
+      const privateKey = await window.crypto.subtle.importKey(
+        "jwk",
+        PRIVATE_KEY_JWK,
+        { name: "ECDSA", namedCurve: "P-256" },
+        false,
+        ["sign"]
+      );
+
+      // Assina digitalmente o payload
+      const signatureBuffer = await window.crypto.subtle.sign(
+        { name: "ECDSA", hash: { name: "SHA-256" } },
+        privateKey,
+        new TextEncoder().encode(payloadB64)
+      );
+
+      const sigB64 = toBase64Url(new Uint8Array(signatureBuffer));
+      const fullCode = `CFVIP.${payloadB64}.${sigB64}`;
+
+      return {
+        code: fullCode,
+        planName,
+        expiresAt,
+        deviceId: cleanId
+      };
+    }
+
+    // Manipulação do Formulário
+    const form = document.getElementById('licenseForm');
+    const resultSection = document.getElementById('resultSection');
+    const deviceIdInput = document.getElementById('deviceId');
+    const generatedKeyInput = document.getElementById('generatedKey');
+    const whatsappMessage = document.getElementById('whatsappMessage');
+    const planBadge = document.getElementById('planBadge');
+    const btnCopyKey = document.getElementById('btnCopyKey');
+    const btnCopyMessage = document.getElementById('btnCopyMessage');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const deviceId = deviceIdInput.value;
+      const planType = document.querySelector('input[name="planType"]:checked').value;
+
+      try {
+        const license = await generateSignedLicense(deviceId, planType);
+        generatedKeyInput.value = license.code;
+        planBadge.innerText = license.planName;
+
+        const msg = `Olá! Seu acesso ao *${license.planName}* do CadernoFiado foi liberado com sucesso! 🎉\n\n🔑 *Seu Código de Ativação Exclusivo:*\n${license.code}\n\n📲 *Como ativar no seu aparelho:*\n1. Abra o CadernoFiado no seu celular\n2. Toque na aba inferior *"Plano VIP"*\n3. Cole o código acima no campo *"Código de Ativação"* e toque em Ativar!\n\nSeus recursos de cobrança com PIX e Recibos em PDF já estão disponíveis. Obrigado pela confiança! 🤝`;
+        
+        whatsappMessage.value = msg;
+        resultSection.classList.remove('hidden');
+        resultSection.scrollIntoView({ behavior: 'smooth' });
+      } catch (err) {
+        alert('Erro ao gerar licença: ' + err.message);
+      }
+    });
+
+    btnCopyKey.addEventListener('click', () => {
+      navigator.clipboard.writeText(generatedKeyInput.value);
+      btnCopyKey.innerText = 'Copiado!';
+      setTimeout(() => btnCopyKey.innerText = 'Copiar', 2000);
+    });
+
+    btnCopyMessage.addEventListener('click', () => {
+      navigator.clipboard.writeText(whatsappMessage.value);
+      btnCopyMessage.innerHTML = '<span>✅ Mensagem Copiada!</span>';
+      setTimeout(() => {
+        btnCopyMessage.innerHTML = '<span>📲 Copiar Mensagem Completa para o WhatsApp</span>';
+      }, 2000);
+    });
+  </script>
+
+</body>
+</html>

@@ -1,15 +1,15 @@
 /**
  * Aba de Relatórios de Caixa & Saúde Financeira
- * Gráficos de inadimplência, projeção de recebimentos futuros e ranking de bons pagadores.
+ * Indicadores claros, projeção de recebimentos e ranking de clientes pontuais.
  */
 
 window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSelectClient }) {
   const {
     BarChart3, DollarSign, AlertTriangle, CheckCircle2, Clock,
     Crown, Sparkles, TrendingUp, Users, ChevronRight, ShieldCheck
-  } = window.Icons;
+  } = window.Icons || {};
 
-  // 1. Cálculos de métricas gerais
+  // Métricas gerais
   let totalReceivables = 0;
   let totalOverdue = 0;
   let totalOnTime = 0;
@@ -26,7 +26,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
   const upcomingClients = [];
 
   clients.forEach(c => {
-    const debt = window.AppState.computeBalance(c);
+    const debt = window.AppState ? window.AppState.computeBalance(c) : 0;
     totalReceivables += debt;
 
     const sales = (c.transactions || []).filter(t => t.type === 'sale');
@@ -37,7 +37,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
       totalSalesEver += (parseFloat(s.amount) || 0);
       if (debt > 0 && s.dueDate) {
         if (s.dueDate < todayStr) {
-          // Atrasado
+          // Em atraso
         } else if (s.dueDate <= next7DaysStr) {
           forecast7Days += Math.min(debt, parseFloat(s.amount) || 0);
           upcomingClients.push({ client: c, amount: parseFloat(s.amount) || 0, dueDate: s.dueDate });
@@ -51,7 +51,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
       totalPaidEver += (parseFloat(p.amount) || 0);
     });
 
-    const status = window.AppState.getClientStatus(c);
+    const status = window.AppState ? window.AppState.getClientStatus(c) : 'em_dia';
     if (status === 'atrasado') {
       totalOverdue += debt;
     } else if (status === 'em_dia') {
@@ -59,7 +59,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
     }
   });
 
-  // Taxa de Inadimplência
+  // Inadimplência
   const defaultRate = totalReceivables > 0 
     ? Math.round((totalOverdue / totalReceivables) * 100) 
     : 0;
@@ -67,13 +67,13 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
   // Ticket Médio
   const avgTicket = totalSalesCount > 0 ? (totalSalesEver / totalSalesCount) : 0;
 
-  // Ranking de Melhores Pagadores (clientes com maior volume pago e sem atraso atual)
+  // Ranking de Bons Pagadores
   const bestPayers = [...clients]
     .map(c => {
       const paid = (c.transactions || [])
         .filter(t => t.type === 'payment')
         .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-      const status = window.AppState.getClientStatus(c);
+      const status = window.AppState ? window.AppState.getClientStatus(c) : 'em_dia';
       return { client: c, totalPaid: paid, status };
     })
     .filter(item => item.totalPaid > 0)
@@ -83,11 +83,11 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
   return (
     <div className="space-y-4 pb-24 animate-fadeIn">
       
-      {/* Top Banner de Resumo da Saúde do Negócio */}
-      <div className="p-4 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 shadow-sm space-y-3">
+      {/* Top Banner de Resumo de Caixa */}
+      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-xl bg-brand-500/20 text-brand-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
               <BarChart3 size={18} />
             </div>
             <h3 className="font-bold text-sm text-white">Relatório de Caixa & Fiados</h3>
@@ -100,31 +100,31 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
 
         {/* Grade 2x2 de Indicadores */}
         <div className="grid grid-cols-2 gap-2.5 pt-1">
-          <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/90">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/90">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Total a Receber
             </span>
-            <span className="text-base font-extrabold text-brand-400 font-mono block mt-0.5">
+            <span className="text-base font-black text-emerald-400 font-mono block mt-0.5">
               R$ {totalReceivables.toFixed(2).replace('.', ',')}
             </span>
-            <span className="text-[9px] text-slate-400">Capital na rua</span>
+            <span className="text-[9px] text-slate-500">Capital na rua</span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/90">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/90">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Total Já Recebido
             </span>
-            <span className="text-base font-extrabold text-emerald-400 font-mono block mt-0.5">
+            <span className="text-base font-black text-emerald-400 font-mono block mt-0.5">
               R$ {totalPaidEver.toFixed(2).replace('.', ',')}
             </span>
-            <span className="text-[9px] text-emerald-400/80">Recuperado com sucesso</span>
+            <span className="text-[9px] text-slate-500">Recuperado com sucesso</span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/90">
-            <span className="text-[10px] font-semibold text-rose-300 uppercase tracking-wider block">
-              Taxa Inadimplência
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/90">
+            <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block">
+              Inadimplência
             </span>
-            <span className="text-base font-extrabold text-rose-400 font-mono block mt-0.5">
+            <span className="text-base font-black text-rose-400 font-mono block mt-0.5">
               {defaultRate}%
             </span>
             <span className="text-[9px] text-rose-300/80">
@@ -132,35 +132,35 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
             </span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/90">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/90">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Ticket Médio Fiado
             </span>
-            <span className="text-base font-extrabold text-slate-200 font-mono block mt-0.5">
+            <span className="text-base font-black text-slate-200 font-mono block mt-0.5">
               R$ {avgTicket.toFixed(2).replace('.', ',')}
             </span>
-            <span className="text-[9px] text-slate-400">Por venda anotada</span>
+            <span className="text-[9px] text-slate-500">Por venda anotada</span>
           </div>
         </div>
       </div>
 
       {/* Gráfico Visual de Distribuição da Inadimplência */}
-      <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
+      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-            <TrendingUp size={14} className="text-brand-400" />
+            <TrendingUp size={14} className="text-emerald-400" />
             Distribuição dos Valores a Receber
           </h4>
           <span className="text-[10px] text-slate-400">Total: 100%</span>
         </div>
 
-        {/* Barra Proporcional Multi-segmentada */}
-        <div className="w-full h-4 bg-slate-950 rounded-full overflow-hidden flex border border-slate-800 p-0.5">
+        {/* Barra Proporcional */}
+        <div className="w-full h-3.5 bg-slate-950 rounded-full overflow-hidden flex border border-slate-800 p-0.5">
           {totalReceivables > 0 ? (
             <>
               <div
                 title={`Em Dia: R$ ${totalOnTime.toFixed(2)}`}
-                className="bg-brand-500 h-full rounded-l-full transition-all duration-500"
+                className="bg-emerald-500 h-full rounded-l-full transition-all duration-500"
                 style={{ width: `${(totalOnTime / totalReceivables) * 100}%` }}
               />
               <div
@@ -177,7 +177,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         {/* Legenda Explicativa */}
         <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
           <div className="flex items-center space-x-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800">
-            <div className="w-3 h-3 rounded-full bg-brand-500 flex-shrink-0" />
+            <div className="w-3 h-3 rounded-full bg-emerald-500 flex-shrink-0" />
             <div className="min-w-0">
               <span className="text-[10px] text-slate-400 block truncate">No Prazo / Em Dia</span>
               <span className="font-bold text-white font-mono text-xs">
@@ -198,8 +198,8 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         </div>
       </div>
 
-      {/* Previsão de Recebimentos (Fluxo Projetado 7 e 30 dias) */}
-      <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
+      {/* Previsão de Entradas Acordadas */}
+      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
             <Clock size={14} className="text-amber-400" />
@@ -208,8 +208,8 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20">
-            <span className="text-[10px] font-semibold text-amber-300 uppercase block">
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <span className="text-[10px] font-bold text-amber-300 uppercase block">
               Próximos 7 Dias
             </span>
             <span className="text-sm font-extrabold text-amber-400 font-mono block mt-1">
@@ -218,8 +218,8 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
             <span className="text-[9px] text-slate-400 mt-0.5 block">Entradas previstas</span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase block">
+          <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">
               Próximos 30 Dias
             </span>
             <span className="text-sm font-extrabold text-slate-200 font-mono block mt-1">
@@ -230,20 +230,24 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         </div>
       </div>
 
-      {/* Ranking dos Clientes Mais Pontuais ("Top Bons Pagadores ⭐") */}
-      <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
+      {/* Ranking dos Melhores Pagadores */}
+      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-            <Sparkles size={14} className="text-gold-400" />
-            Ranking: Clientes Mais Pontuais ⭐
+            <span>⭐</span>
+            Ranking: Clientes Mais Pontuais
           </h4>
-          <span className="text-[10px] text-slate-400">Maior fidelidade</span>
+          <span className="text-[10px] text-slate-400">Honraram compromissos</span>
         </div>
 
         {bestPayers.length === 0 ? (
-          <p className="text-xs text-slate-400 py-3 text-center">
-            Nenhum histórico de pagamentos registrado ainda.
-          </p>
+          <div className="text-center py-6 px-4 rounded-xl bg-slate-950/40 border border-slate-800/80">
+            <span className="text-2xl block mb-1">🤝</span>
+            <p className="text-xs font-semibold text-slate-300">Nenhum pagamento registrado ainda</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Conforme os clientes forem abatendo suas dívidas, o ranking de pontualidade aparecerá aqui.
+            </p>
+          </div>
         ) : (
           <div className="space-y-2">
             {bestPayers.map((item, idx) => {
@@ -270,7 +274,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
                     <span className="text-xs font-bold text-emerald-400 font-mono block">
                       R$ {item.totalPaid.toFixed(2).replace('.', ',')}
                     </span>
-                    <span className="text-[9px] text-slate-400">total honrado</span>
+                    <span className="text-[9px] text-slate-500">total honrado</span>
                   </div>
                 </div>
               );

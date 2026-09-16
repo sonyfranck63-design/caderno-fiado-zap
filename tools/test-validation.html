@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Testes de Segurança e Criptografia — CadernoFiado</title>
+</head>
+<body>
+  <h1>Resultados dos Testes</h1>
+  <pre id="output">Executando testes...</pre>
+
+  <!-- Carrega bibliotecas necessárias -->
+  <script src="../vendor/react.production.min.js"></script>
+  <script src="../vendor/react-dom.production.min.js"></script>
+  <script src="../vendor/babel.min.js"></script>
+  <script src="../vendor/jspdf.umd.min.js"></script>
+  <script src="../js/bundle.js" type="text/babel"></script>
+
+  <script type="text/babel">
+    async function runTests() {
+      const logs = [];
+      function log(msg, success) {
+        logs.push((success ? '✅ PASS: ' : '❌ FAIL: ') + msg);
+        console.log(msg);
+      }
+
+      try {
+        // 1. Verificar AppState
+        if (!window.AppState) throw new Error('AppState não encontrado');
+        log('AppState carregado com sucesso', true);
+
+        const currentId = window.AppState.getInstallationId();
+        log('ID de Aparelho gerado: ' + currentId, !!currentId);
+
+        // 2. Testar rejeição de chaves antigas/fraudulentas
+        const fake1 = await window.AppState.activateLicenseKey('LIBERARVIP');
+        log('Rejeição da chave mestre "LIBERARVIP": ' + fake1.message, !fake1.success);
+
+        const fake2 = await window.AppState.activateLicenseKey('CF-MASTER-VIP-2026');
+        log('Rejeição da chave mestre "CF-MASTER-VIP-2026": ' + fake2.message, !fake2.success);
+
+        const fake3 = await window.AppState.activateLicenseKey('VIP-MESTRE-2026');
+        log('Rejeição da chave mestre "VIP-MESTRE-2026": ' + fake3.message, !fake3.success);
+
+        const fake4 = await window.AppState.activateLicenseKey('CF-30D-XXXX-YYYY');
+        log('Rejeição de formato inválido: ' + fake4.message, !fake4.success);
+
+        // 3. Testar rejeição de assinatura forjada
+        const forged = 'CFVIP.eyJkIjoi' + btoa(currentId) + 'In0.YXNzaW5hdHVyYV9mYWxzYQ';
+        const fake5 = await window.AppState.activateLicenseKey(forged);
+        log('Rejeição de assinatura forjada no client: ' + fake5.message, !fake5.success);
+
+        // 4. Testar geração de chave válida com a Chave Privada do Dono
+        const PRIVATE_KEY_JWK = {
+          kty: "EC",
+          crv: "P-256",
+          x: "sju7sWqTYzdwcft-dTY5W7roV1qv2yx3nIH-FyIt28M",
+          y: "rR6FBrA0W-I9CUhyd7ORtJTltMTUiwIWuoQUWKg86bY",
+          d: "GcbYAlZocw8LnFQChw5D0rOi74XSQSkdNgAwc3jGIro"
+        };
+
+        function toBase64Url(uint8Array) {
+          let binary = '';
+          for (let i = 0; i < uint8Array.length; i++) binary += String.fromCharCode(uint8Array[i]);
+          return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+
+        const payload = {
+          d: currentId,
+          p: '30D',
+          e: Date.now() + 30 * 86400000,
+          t: Date.now()
+        };
+        const payloadB64 = toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
+
+        const privKey = await window.crypto.subtle.importKey(
+          "jwk",
+          PRIVATE_KEY_JWK,
+          { name: "ECDSA", namedCurve: "P-256" },
+          false,
+          ["sign"]
+        );
+
+        const sig = await window.crypto.subtle.sign(
+          { name: "ECDSA", hash: { name: "SHA-256" } },
+          privKey,
+          new TextEncoder().encode(payloadB64)
+        );
+
+        const validCode = `CFVIP.${payloadB64}.${toBase64Url(new Uint8Array(sig))}`;
+        log('Chave ECDSA legítima gerada: ' + validCode, true);
+
+        // 5. Testar ativação da chave legítima
+        const actResult = await window.AppState.activateLicenseKey(validCode);
+        log('Ativação da chave ECDSA no AppState: ' + actResult.message, actResult.success);
+
+        const vipInfo = window.AppState.getVipInfo();
+        log('Verificação do status VIP ativo: isVip=' + vipInfo.isVip + ', dias=' + vipInfo.daysRemaining, vipInfo.isVip && vipInfo.daysRemaining > 0);
+
+        // 6. Testar PdfService com fallback
+        if (window.PdfService && typeof window.PdfService.generateReceiptPdf === 'function') {
+          const testClient = {
+            id: 'test_1',
+            name: 'Cliente Teste de Validação',
+            phone: '11999998888',
+            address: 'Rua das Flores, 100',
+            transactions: [
+              { type: 'sale', amount: 150.00, description: 'Manicure + Pedicure', date: new Date().toISOString() },
+              { type: 'payment', amount: 50.00, paymentMethod: 'PIX', date: new Date().toISOString() }
+            ]
+          };
+          const pdfResult = await window.PdfService.generateReceiptPdf(testClient, { shopName: 'Esmalteria Teste' });
+          log('PdfService executado com sucesso: method=' + pdfResult.method + ', success=' + pdfResult.success, pdfResult.success);
+        }
+
+      } catch (err) {
+        log('EXCEÇÃO DURANTE TESTES: ' + err.message + '\n' + err.stack, false);
+      }
+
+      document.getElementById('output').innerText = logs.join('\n');
+      window.__testResults = logs;
+      window.__allTestsDone = true;
+    }
+
+    setTimeout(runTests, 1000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+﻿{
+    "privateKeyJwk":  {
+                          "y":  "rR6FBrA0W-I9CUhyd7ORtJTltMTUiwIWuoQUWKg86bY",
+                          "crv":  "P-256",
+                          "d":  "GcbYAlZocw8LnFQChw5D0rOi74XSQSkdNgAwc3jGIro",
+                          "x":  "sju7sWqTYzdwcft-dTY5W7roV1qv2yx3nIH-FyIt28M",
+                          "kty":  "EC"
+                      },
+    "publicKeyJwk":  {
+                         "y":  "rR6FBrA0W-I9CUhyd7ORtJTltMTUiwIWuoQUWKg86bY",
+                         "crv":  "P-256",
+                         "x":  "sju7sWqTYzdwcft-dTY5W7roV1qv2yx3nIH-FyIt28M",
+                         "kty":  "EC"
+                     }
+}

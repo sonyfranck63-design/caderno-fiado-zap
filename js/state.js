@@ -8,9 +8,18 @@ window.AppState = (function() {
   const STORAGE_KEY_SETTINGS = 'cadernofiado_settings_v1';
   const STORAGE_KEY_VIP = 'cadernofiado_vip_v1';
   const STORAGE_KEY_REWARDED = 'cadernofiado_rewarded_pass_v1';
+  const STORAGE_KEY_LICENSE = 'cadernofiado_license_v2';
+  const STORAGE_KEY_DEVICE_ID = 'cadernofiado_device_id_v1';
 
-  // Estado inicial padrão sem clientes simulados (pronto para uso real em produção)
-  const INITIAL_CLIENTS = [];
+  // Chave Pública Criptográfica ECDSA P-256 Oficial do CadernoFiado
+  // Utilizada exclusivamente para validar assinaturas digitais de licenças de forma 100% offline e segura.
+  // A Chave Privada permanece isolada com o dono no gerador privado (tools/admin.html) e não no bundle público.
+  const PUBLIC_KEY_JWK = {
+    kty: "EC",
+    crv: "P-256",
+    x: "sju7sWqTYzdwcft-dTY5W7roV1qv2yx3nIH-FyIt28M",
+    y: "rR6FBrA0W-I9CUhyd7ORtJTltMTUiwIWuoQUWKg86bY"
+  };
 
   const DEFAULT_SETTINGS = {
     shopName: 'Meu Caderno',
@@ -43,12 +52,10 @@ window.AppState = (function() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY_CLIENTS);
       if (!raw) {
-        // Inicializa com lista vazia para uso real
-        localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(INITIAL_CLIENTS));
+        localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify([]));
         return [];
       }
       const parsed = JSON.parse(raw);
-      // Higienização automática: se contiver apenas os clientes demonstrativos antigos (c1, c2, c3), limpa para produção
       if (Array.isArray(parsed) && parsed.length > 0) {
         const isLegacyMock = parsed.some(c => c.id === 'c1' || c.id === 'c2' || c.id === 'c3') &&
                              parsed.some(c => (c.name && c.name.includes('Maria das Dores')) || (c.name && c.name.includes('Seu Jorge')));
@@ -78,7 +85,6 @@ window.AppState = (function() {
     return clients.find(c => c.id === id) || null;
   }
 
-  // Calcula o saldo devedor atual de um cliente
   function computeBalance(client) {
     if (!client || !Array.isArray(client.transactions)) return 0;
     const totalSales = client.transactions
@@ -90,7 +96,6 @@ window.AppState = (function() {
     return Math.max(0, Math.round((totalSales - totalPaid) * 100) / 100);
   }
 
-  // Retorna o status de débito do cliente ('quitado', 'atrasado', 'em_dia')
   function getClientStatus(client) {
     const debt = computeBalance(client);
     if (debt <= 0.01) return 'quitado';
@@ -132,7 +137,6 @@ window.AppState = (function() {
     saveClients(clients);
   }
 
-  // Registra nova compra no fiado
   function addSale(clientId, { amount, description, dueDate, photoUrl }) {
     const clients = getClients();
     const client = clients.find(c => c.id === clientId);
@@ -154,7 +158,6 @@ window.AppState = (function() {
     return newSale;
   }
 
-  // Registra pagamento / abatimento parcial ou total
   function addPayment(clientId, { amount, paymentMethod, notes }) {
     const clients = getClients();
     const client = clients.find(c => c.id === clientId);
@@ -183,7 +186,6 @@ window.AppState = (function() {
       const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
       if (!raw) return { ...DEFAULT_SETTINGS };
       const parsed = JSON.parse(raw);
-      // Se for a loja de exemplo antiga ("Cristina Alves" / "Espaço & Cantinho da Cris"), reseta para padrão limpo
       if (parsed.ownerName === 'Cristina Alves' || parsed.shopName === 'Espaço & Cantinho da Cris') {
         const cleaned = {
           ...DEFAULT_SETTINGS,
@@ -209,15 +211,10 @@ window.AppState = (function() {
     } catch(e) {}
   }
 
-  // --- MONETIZAÇÃO, LICENÇAS & GESTÃO DE EXPIRAÇÃO VIP ---
-  const STORAGE_KEY_LICENSE = 'cadernofiado_license_v2';
-  const STORAGE_KEY_DEVICE_ID = 'cadernofiado_device_id_v1';
-  const SECRET_SALT = 'CF_ZAP_PRO_2026';
-
+  // --- MONETIZAÇÃO, LICENÇAS & GESTÃO CRIPTOGRÁFICA VIP ---
   function getInstallationId() {
     let id = localStorage.getItem(STORAGE_KEY_DEVICE_ID);
     if (!id) {
-      // Gera ID curto e legível (ex: CF-7482)
       const num = Math.floor(1000 + Math.random() * 9000);
       id = `CF-${num}`;
       localStorage.setItem(STORAGE_KEY_DEVICE_ID, id);
@@ -237,105 +234,129 @@ window.AppState = (function() {
   function saveLicense(licenseObj) {
     try {
       localStorage.setItem(STORAGE_KEY_LICENSE, JSON.stringify(licenseObj));
-      // Mantém compatibilidade com a chave legada
       localStorage.setItem(STORAGE_KEY_VIP, licenseObj ? 'true' : 'false');
       notify();
     } catch(e) {}
   }
 
-  // Gera o checksum determinístico de 4 caracteres
-  function computeChecksum(deviceId, planType) {
-    const raw = `${deviceId.trim().toUpperCase()}_${planType.trim().toUpperCase()}_${SECRET_SALT}`;
-    let hash = 0;
-    for (let i = 0; i < raw.length; i++) {
-      hash = ((hash << 5) - hash) + raw.charCodeAt(i);
-      hash |= 0;
+  // Utilitários de codificação Base64Url
+  function base64UrlToBytes(b64url) {
+    let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4 !== 0) b64 += '=';
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
     }
-    const hex = Math.abs(hash).toString(16).toUpperCase().padStart(4, '0');
-    return hex.slice(0, 4);
+    return bytes;
   }
 
-  // Função utilizada pelo Dono no Painel Admin para gerar chaves de ativação
-  function generateLicenseKey(targetDeviceId, planType) {
-    const cleanId = (targetDeviceId || '').trim().toUpperCase();
-    const cleanPlan = (planType || '30D').trim().toUpperCase();
-    const checksum = computeChecksum(cleanId, cleanPlan);
-    return `CF-${cleanPlan}-${cleanId.replace('CF-', '')}-${checksum}`;
+  function fromBase64Url(b64url) {
+    let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4 !== 0) b64 += '=';
+    return decodeURIComponent(escape(atob(b64)));
   }
 
-  // Ativação da chave pelo cliente
-  function activateLicenseKey(keyInput) {
-    if (!keyInput) return { success: false, message: 'Por favor, digite o código de ativação recebido.' };
-    const raw = keyInput.trim().toUpperCase().replace(/\s+/g, '');
-
-    // Chaves Mestres de Teste/Emergência
-    if (raw === 'CF-MASTER-VIP-2026' || raw === 'VIP-MESTRE-2026' || raw === 'LIBERARVIP') {
-      const expiresAt = Date.now() + 365 * 24 * 60 * 60 * 1000;
-      saveLicense({
-        type: '365D',
-        planName: 'VIP Pro Anual (Mestre)',
-        activatedAt: new Date().toISOString(),
-        expiresAt: expiresAt,
-        licenseKey: raw
-      });
-      return { success: true, message: 'Acesso VIP Mestre ativado por 1 ano com sucesso!', planName: 'VIP Pro Anual' };
+  /**
+   * Ativação de licença via Assinatura Digital ECDSA P-256
+   * Valida matematicamente no dispositivo do usuário com a chave pública embutida.
+   * Não depende de segredo compartilhado no client nem expõe chaves mestres.
+   */
+  async function activateLicenseKey(keyInput) {
+    if (!keyInput) {
+      return { success: false, message: 'Por favor, digite o código de ativação fornecido no WhatsApp.' };
     }
+    const raw = keyInput.trim().replace(/\s+/g, '');
 
-    const currentDeviceId = getInstallationId();
-    const cleanCurrentNum = currentDeviceId.replace('CF-', '');
-
-    const parts = raw.split('-');
-    if (parts.length !== 4 || parts[0] !== 'CF') {
-      return { success: false, message: 'Formato do código inválido. Exemplo correto: CF-30D-XXXX-YYYY' };
-    }
-
-    const planType = parts[1];
-    const deviceNum = parts[2];
-    const checksum = parts[3];
-
-    // Valida se a chave foi gerada para este celular específico
-    if (deviceNum !== cleanCurrentNum) {
+    // Formato de chave assimétrica: CFVIP.<payloadB64>.<sigB64>
+    if (!raw.startsWith('CFVIP.')) {
       return { 
         success: false, 
-        message: `Esta chave pertence ao aparelho CF-${deviceNum}. Seu aparelho é ${currentDeviceId}. Solicite uma chave para o seu ID.` 
+        message: 'Código de ativação inválido. O formato oficial deve iniciar com "CFVIP." fornecido pelo suporte.' 
       };
     }
 
-    // Valida integridade e autenticidade da chave
-    const expectedChecksum = computeChecksum(currentDeviceId, planType);
-    if (checksum !== expectedChecksum) {
-      return { success: false, message: 'Código de ativação incorreto ou expirado. Verifique os caracteres.' };
+    const parts = raw.split('.');
+    if (parts.length !== 3) {
+      return { success: false, message: 'Código de ativação incompleto ou corrompido.' };
     }
 
-    let expiresAt = null;
-    let planName = 'VIP Pro';
-    if (planType === '30D') {
-      expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
-      planName = 'VIP Pro Mensal (30 Dias)';
-    } else if (planType === '365D') {
-      expiresAt = Date.now() + 365 * 24 * 60 * 60 * 1000;
-      planName = 'VIP Pro Anual (1 Ano)';
-    } else if (planType === 'LIFETIME' || planType === 'VIT') {
-      expiresAt = null; // Vitalício
-      planName = 'VIP Pro Vitalício';
-    } else {
-      return { success: false, message: 'Tipo de plano não reconhecido.' };
+    try {
+      const payloadB64 = parts[1];
+      const sigB64 = parts[2];
+
+      const payloadJson = fromBase64Url(payloadB64);
+      const payload = JSON.parse(payloadJson);
+
+      const currentDeviceId = getInstallationId();
+      if (payload.d && payload.d.toUpperCase() !== currentDeviceId.toUpperCase()) {
+        return {
+          success: false,
+          message: `Esta chave pertence ao aparelho ${payload.d}. O identificador deste aparelho é ${currentDeviceId}. Solicite uma chave para o seu ID.`
+        };
+      }
+
+      // Validação da assinatura digital com a chave pública
+      const publicKey = await window.crypto.subtle.importKey(
+        "jwk",
+        PUBLIC_KEY_JWK,
+        { name: "ECDSA", namedCurve: "P-256" },
+        false,
+        ["verify"]
+      );
+
+      const sigBytes = base64UrlToBytes(sigB64);
+      const dataBytes = new TextEncoder().encode(payloadB64);
+
+      const isValid = await window.crypto.subtle.verify(
+        { name: "ECDSA", hash: { name: "SHA-256" } },
+        publicKey,
+        sigBytes,
+        dataBytes
+      );
+
+      if (!isValid) {
+        return { success: false, message: 'Código de ativação inválido ou chave adulterada.' };
+      }
+
+      // Checa se a chave já expirou
+      const now = Date.now();
+      if (payload.e && payload.e > 0 && payload.e < now) {
+        return { success: false, message: 'Este código de licença já se encontra expirado.' };
+      }
+
+      let planName = 'VIP Pro';
+      let expiresAt = null;
+      if (payload.p === '30D') {
+        planName = 'VIP Pro Mensal (30 Dias)';
+        expiresAt = payload.e || (now + 30 * 24 * 60 * 60 * 1000);
+      } else if (payload.p === '365D') {
+        planName = 'VIP Pro Anual (1 Ano)';
+        expiresAt = payload.e || (now + 365 * 24 * 60 * 60 * 1000);
+      } else if (payload.p === 'LIFETIME') {
+        planName = 'VIP Pro Vitalício';
+        expiresAt = null;
+      }
+
+      saveLicense({
+        type: payload.p,
+        planName,
+        activatedAt: new Date().toISOString(),
+        expiresAt,
+        licenseKey: raw
+      });
+
+      return {
+        success: true,
+        message: `${planName} ativado com sucesso! Aproveite todos os recursos.`,
+        planName,
+        expiresAt
+      };
+
+    } catch (e) {
+      console.error('Erro na validação da chave:', e);
+      return { success: false, message: 'Falha ao processar código de ativação: ' + e.message };
     }
-
-    saveLicense({
-      type: planType,
-      planName,
-      activatedAt: new Date().toISOString(),
-      expiresAt,
-      licenseKey: raw
-    });
-
-    return { 
-      success: true, 
-      message: `${planName} ativado com sucesso! Aproveite todos os recursos.`,
-      planName,
-      expiresAt
-    };
   }
 
   function getVipInfo() {
@@ -352,7 +373,6 @@ window.AppState = (function() {
 
     if (license && license.type) {
       if (license.expiresAt === null) {
-        // Vitalício
         isVip = true;
         isLifetime = true;
         planName = license.planName || 'VIP Pro Vitalício';
@@ -409,7 +429,6 @@ window.AppState = (function() {
     }
   }
 
-  // Ativa passe temporário de 24 horas (Vídeo Premiado)
   function activate24hPass() {
     const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
     localStorage.setItem(STORAGE_KEY_REWARDED, expiresAt.toString());
@@ -490,7 +509,6 @@ window.AppState = (function() {
     activate24hPass,
     getPassRemainingTimeFormatted,
     getInstallationId,
-    generateLicenseKey,
     activateLicenseKey,
     exportBackup,
     importBackup,

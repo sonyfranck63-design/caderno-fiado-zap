@@ -135,6 +135,7 @@ window.PixService = (function() {
 // ==========================================
 /**
  * Gerador de Recibo & Extrato Timbrado em PDF Profissional usando jsPDF
+ * Suporte multi-camada: Web Share API nativa, ponte Android WebView e download tradicional.
  */
 
 window.PdfService = (function() {
@@ -158,266 +159,373 @@ window.PdfService = (function() {
   }
 
   /**
-   * Gera o PDF completo do cliente com extrato de fiados e pagamentos
-   * @param {Object} client - Dados do cliente e transações
-   * @param {Object} shopInfo - Dados do estabelecimento (nome, telefone, pix)
+   * Gera o extrato em formato de texto pronto para enviar no WhatsApp
+   * Utilizado como contingência quando o dispositivo tem bloqueios de download.
    */
-  function generateReceiptPdf(client, shopInfo = {}) {
-    if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
-      alert('Erro: Módulo jsPDF não carregado.');
-      return;
-    }
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    });
-
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 15;
-    let y = 18;
-
-    // --- CABEÇALHO TIMBRADO ELEGANTE ---
-    // Faixa decorativa superior
-    doc.setFillColor(16, 185, 129); // Emerald 500
-    doc.rect(margin, y, pageWidth - (margin * 2), 2.5, 'F');
-    y += 8;
-
-    // Nome da Empresa / Profissional
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.setTextColor(15, 23, 42); // Slate 900
-    doc.text(shopInfo.shopName || 'MEU ESTABELECIMENTO', margin, y);
-
-    // Subtítulo / Slogan
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139); // Slate 500
-    doc.text(`Comprovante de Extrato de Conta & Registro de Fiado • CadernoFiado Pro`, margin, y + 5);
-
-    // Contato / Chave do lojista no topo direito
-    doc.setFontSize(8.5);
-    doc.setTextColor(71, 85, 105);
-    const rightInfo = [
-      `Contato: ${shopInfo.phone || 'Não informado'}`,
-      `Chave PIX: ${shopInfo.pixKey || 'Não cadastrada'}`,
-      `Emissão: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-    ];
-    rightInfo.forEach((line, idx) => {
-      doc.text(line, pageWidth - margin, y + (idx * 4.5), { align: 'right' });
-    });
-
-    y += 18;
-
-    // Linha divisória
-    doc.setDrawColor(226, 232, 240); // Slate 200
-    doc.setLineWidth(0.4);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 7;
-
-    // --- BOX DO CLIENTE ---
-    doc.setFillColor(248, 250, 252); // Slate 50
-    doc.roundedRect(margin, y, pageWidth - (margin * 2), 22, 2, 2, 'F');
-    doc.setDrawColor(203, 213, 225);
-    doc.roundedRect(margin, y, pageWidth - (margin * 2), 22, 2, 2, 'S');
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text(`CLIENTE: ${client.name.toUpperCase()}`, margin + 5, y + 7);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(71, 85, 105);
-    doc.text(`WhatsApp: ${client.phone || 'Não informado'}`, margin + 5, y + 14);
-    doc.text(`Endereço/Ref: ${client.address || 'Não cadastrado'}`, margin + 65, y + 14);
-    
-    // Status no box
-    const isPaidOff = (client.currentDebt || 0) <= 0.01;
-    if (isPaidOff) {
-      doc.setFillColor(220, 252, 231);
-      doc.setTextColor(22, 101, 52);
-      doc.roundedRect(pageWidth - margin - 35, y + 4, 30, 8, 1.5, 1.5, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.text('QUITADO', pageWidth - margin - 20, y + 9.5, { align: 'center' });
-    } else {
-      doc.setFillColor(254, 242, 242);
-      doc.setTextColor(185, 28, 28);
-      doc.roundedRect(pageWidth - margin - 35, y + 4, 30, 8, 1.5, 1.5, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.text('EM ABERTO', pageWidth - margin - 20, y + 9.5, { align: 'center' });
-    }
-
-    y += 28;
-
-    // --- TABELA DE ITENS COMPRADOS NO FIADO ---
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text('1. Discriminação das Compras / Serviços Realizados no Fiado', margin, y);
-    y += 5;
-
-    // Cabeçalho da Tabela
-    doc.setFillColor(241, 245, 249);
-    doc.rect(margin, y, pageWidth - (margin * 2), 7, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text('DATA', margin + 3, y + 4.8);
-    doc.text('DESCRIÇÃO DO PRODUTO / SERVIÇO', margin + 30, y + 4.8);
-    doc.text('VENCIMENTO', margin + 120, y + 4.8);
-    doc.text('VALOR', pageWidth - margin - 3, y + 4.8, { align: 'right' });
-    y += 7;
-
-    // Linhas de Compras
+  function generateReceiptText(client, shopInfo = {}) {
     const sales = (client.transactions || []).filter(t => t.type === 'sale');
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(30, 41, 59);
-
-    if (sales.length === 0) {
-      doc.text('Nenhum registro de compra encontrado.', margin + 3, y + 5);
-      y += 8;
-    } else {
-      sales.forEach((sale) => {
-        doc.text(formatDate(sale.date), margin + 3, y + 4.5);
-        const desc = doc.splitTextToSize(sale.description || 'Venda a prazo', 85);
-        doc.text(desc, margin + 30, y + 4.5);
-        doc.text(formatDate(sale.dueDate), margin + 120, y + 4.5);
-        doc.text(formatMoney(sale.amount), pageWidth - margin - 3, y + 4.5, { align: 'right' });
-
-        const rowHeight = Math.max(7, desc.length * 4.5 + 2);
-        y += rowHeight;
-
-        // Linha divisória fina
-        doc.setDrawColor(241, 245, 249);
-        doc.setLineWidth(0.2);
-        doc.line(margin, y, pageWidth - margin, y);
-      });
-    }
-
-    y += 6;
-
-    // --- TABELA DE PAGAMENTOS / ABATIMENTOS ---
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text('2. Histórico de Pagamentos & Abatimentos Efetuados', margin, y);
-    y += 5;
-
-    // Cabeçalho de Pagamentos
-    doc.setFillColor(241, 245, 249);
-    doc.rect(margin, y, pageWidth - (margin * 2), 7, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text('DATA DO PAGAMENTO', margin + 3, y + 4.8);
-    doc.text('MODALIDADE', margin + 55, y + 4.8);
-    doc.text('OBSERVAÇÃO', margin + 95, y + 4.8);
-    doc.text('VALOR PAGO', pageWidth - margin - 3, y + 4.8, { align: 'right' });
-    y += 7;
-
     const payments = (client.transactions || []).filter(t => t.type === 'payment');
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(30, 41, 59);
-
-    if (payments.length === 0) {
-      doc.text('Nenhum pagamento registrado até o momento.', margin + 3, y + 5);
-      y += 8;
-    } else {
-      payments.forEach((p) => {
-        doc.text(formatDate(p.date), margin + 3, y + 4.5);
-        doc.text(p.paymentMethod || 'Dinheiro / PIX', margin + 55, y + 4.5);
-        doc.text(p.notes || 'Abatimento de dívida', margin + 95, y + 4.5);
-        doc.setTextColor(22, 101, 52);
-        doc.text(`- ${formatMoney(p.amount)}`, pageWidth - margin - 3, y + 4.5, { align: 'right' });
-        doc.setTextColor(30, 41, 59);
-
-        y += 6.5;
-        doc.setDrawColor(241, 245, 249);
-        doc.setLineWidth(0.2);
-        doc.line(margin, y, pageWidth - margin, y);
-      });
-    }
-
-    y += 6;
-
-    // --- RESUMO FINANCEIRO FINAL ---
     const totalSales = sales.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
     const totalPaid = payments.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
     const balance = Math.max(0, totalSales - totalPaid);
 
-    doc.setFillColor(248, 250, 252);
-    doc.roundedRect(pageWidth - margin - 85, y, 85, 26, 2, 2, 'F');
-    doc.setDrawColor(203, 213, 225);
-    doc.roundedRect(pageWidth - margin - 85, y, 85, 26, 2, 2, 'S');
+    let text = `🧾 *COMPROVANTE DE EXTRATO DE FIADO*\n`;
+    text += `🏬 *${shopInfo.shopName || 'Meu Estabelecimento'}*\n`;
+    if (shopInfo.phone) text += `📞 Contato: ${shopInfo.phone}\n`;
+    if (shopInfo.pixKey) text += `🔑 Chave PIX: ${shopInfo.pixKey}\n`;
+    text += `--------------------------------\n`;
+    text += `👤 *Cliente:* ${client.name}\n`;
+    text += `📅 *Emissão:* ${new Date().toLocaleDateString('pt-BR')}\n`;
+    text += `--------------------------------\n`;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text('Total Compras:', pageWidth - margin - 80, y + 6);
-    doc.text(formatMoney(totalSales), pageWidth - margin - 5, y + 6, { align: 'right' });
-
-    doc.text('Total Abatido:', pageWidth - margin - 80, y + 12);
-    doc.setTextColor(22, 101, 52);
-    doc.text(`- ${formatMoney(totalPaid)}`, pageWidth - margin - 5, y + 12, { align: 'right' });
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(isPaidOff ? 22 : 185, isPaidOff ? 101 : 28, isPaidOff ? 52 : 28);
-    doc.text('SALDO DEVEDOR:', pageWidth - margin - 80, y + 20);
-    doc.text(formatMoney(balance), pageWidth - margin - 5, y + 20, { align: 'right' });
-
-    y += 38;
-
-    // --- TERMO DE RECONHECIMENTO & ASSINATURAS ---
-    if (y < 240) {
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(7.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text(
-        'Declaro para os devidos fins que os valores e itens acima discriminados conferem fielmente com o histórico de transações acordado entre as partes.',
-        margin,
-        y,
-        { maxWidth: pageWidth - (margin * 2) }
-      );
-
-      y += 20;
-
-      // Linhas de Assinatura
-      doc.setDrawColor(148, 163, 184);
-      doc.setLineWidth(0.3);
-      
-      // Assinatura Estabelecimento
-      doc.line(margin + 5, y, margin + 70, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(71, 85, 105);
-      doc.text(shopInfo.shopName || 'Assinatura do Responsável', margin + 37, y + 4, { align: 'center' });
-
-      // Assinatura Cliente
-      doc.line(pageWidth - margin - 70, y, pageWidth - margin - 5, y);
-      doc.text(client.name, pageWidth - margin - 37, y + 4, { align: 'center' });
+    if (sales.length > 0) {
+      text += `*COMPRAS / SERVIÇOS:*\n`;
+      sales.slice(0, 8).forEach(s => {
+        text += `• ${formatDate(s.date)} - ${s.description}: ${formatMoney(s.amount)}\n`;
+      });
+      if (sales.length > 8) text += `• ... e mais ${sales.length - 8} itens\n`;
     }
 
-    // --- RODAPÉ ---
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(148, 163, 184);
-    doc.text('Documento gerado eletronicamente pelo CadernoFiado & Cobrança Zap Pro • Autenticidade Garantida', pageWidth / 2, 287, { align: 'center' });
+    if (payments.length > 0) {
+      text += `\n*ABATIMENTOS EFETUADOS:*\n`;
+      payments.slice(0, 5).forEach(p => {
+        text += `• ${formatDate(p.date)} - Pago: ${formatMoney(p.amount)}\n`;
+      });
+    }
 
-    // Salva ou abre o PDF
-    const filename = `Recibo_Fiado_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-    doc.save(filename);
+    text += `--------------------------------\n`;
+    text += `💰 *Total Compras:* ${formatMoney(totalSales)}\n`;
+    text += `✅ *Total Pago:* ${formatMoney(totalPaid)}\n`;
+    text += `📌 *SALDO DEVEDOR:* ${formatMoney(balance)}\n`;
+    text += `--------------------------------\n`;
+    text += `_Emitido via CadernoFiado & Cobrança Zap_`;
+
+    return text;
+  }
+
+  /**
+   * Gera o PDF completo do cliente com extrato de fiados e pagamentos
+   * @param {Object} client - Dados do cliente e transações
+   * @param {Object} shopInfo - Dados do estabelecimento (nome, telefone, pix)
+   * @returns {Promise<Object>} Resultado da operação com status e método utilizado
+   */
+  async function generateReceiptPdf(client, shopInfo = {}) {
+    if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+      return {
+        success: false,
+        error: 'Módulo jsPDF não carregado no aplicativo.',
+        receiptText: generateReceiptText(client, shopInfo)
+      };
+    }
+
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 15;
+      let y = 18;
+
+      // --- CABEÇALHO TIMBRADO PROFISSIONAL ---
+      // Faixa verde comercial superior
+      doc.setFillColor(22, 163, 74); // Green 600
+      doc.rect(margin, y, pageWidth - (margin * 2), 2.5, 'F');
+      y += 8;
+
+      // Nome do Estabelecimento
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.setTextColor(15, 23, 42); // Slate 900
+      doc.text(shopInfo.shopName || 'MEU ESTABELECIMENTO', margin, y);
+
+      // Subtítulo
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139); // Slate 500
+      doc.text('Comprovante de Extrato de Conta & Registro de Fiado • CadernoFiado Pro', margin, y + 5);
+
+      // Contato e PIX do lojista no topo direito
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      const rightInfo = [
+        `Contato: ${shopInfo.phone || 'Não informado'}`,
+        `Chave PIX: ${shopInfo.pixKey || 'Não cadastrada'}`,
+        `Emissão: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      ];
+      rightInfo.forEach((line, idx) => {
+        doc.text(line, pageWidth - margin, y + (idx * 4.5), { align: 'right' });
+      });
+
+      y += 18;
+
+      // Linha divisória
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.4);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 7;
+
+      // --- BOX DO CLIENTE ---
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin, y, pageWidth - (margin * 2), 22, 2, 2, 'F');
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(margin, y, pageWidth - (margin * 2), 22, 2, 2, 'S');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`CLIENTE: ${client.name.toUpperCase()}`, margin + 5, y + 7);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`WhatsApp: ${client.phone || 'Não informado'}`, margin + 5, y + 14);
+      doc.text(`Endereço/Ref: ${client.address || 'Não cadastrado'}`, margin + 65, y + 14);
+      
+      // Status no box
+      const balanceValue = window.AppState ? window.AppState.computeBalance(client) : 0;
+      const isPaidOff = balanceValue <= 0.01;
+
+      if (isPaidOff) {
+        doc.setFillColor(220, 252, 231);
+        doc.setTextColor(22, 101, 52);
+        doc.roundedRect(pageWidth - margin - 35, y + 4, 30, 8, 1.5, 1.5, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('QUITADO', pageWidth - margin - 20, y + 9.5, { align: 'center' });
+      } else {
+        doc.setFillColor(254, 242, 242);
+        doc.setTextColor(185, 28, 28);
+        doc.roundedRect(pageWidth - margin - 35, y + 4, 30, 8, 1.5, 1.5, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('EM ABERTO', pageWidth - margin - 20, y + 9.5, { align: 'center' });
+      }
+
+      y += 28;
+
+      // --- TABELA DE ITENS COMPRADOS NO FIADO ---
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text('1. Discriminação das Compras / Serviços Realizados no Fiado', margin, y);
+      y += 5;
+
+      // Cabeçalho da Tabela
+      doc.setFillColor(241, 245, 249);
+      doc.rect(margin, y, pageWidth - (margin * 2), 7, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('DATA', margin + 3, y + 4.8);
+      doc.text('DESCRIÇÃO DO PRODUTO / SERVIÇO', margin + 30, y + 4.8);
+      doc.text('VENCIMENTO', margin + 120, y + 4.8);
+      doc.text('VALOR', pageWidth - margin - 3, y + 4.8, { align: 'right' });
+      y += 7;
+
+      // Linhas de Compras
+      const sales = (client.transactions || []).filter(t => t.type === 'sale');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 41, 59);
+
+      if (sales.length === 0) {
+        doc.text('Nenhum registro de compra encontrado.', margin + 3, y + 5);
+        y += 8;
+      } else {
+        sales.forEach((sale) => {
+          doc.text(formatDate(sale.date), margin + 3, y + 4.5);
+          const desc = doc.splitTextToSize(sale.description || 'Venda a prazo', 85);
+          doc.text(desc, margin + 30, y + 4.5);
+          doc.text(formatDate(sale.dueDate), margin + 120, y + 4.5);
+          doc.text(formatMoney(sale.amount), pageWidth - margin - 3, y + 4.5, { align: 'right' });
+
+          const rowHeight = Math.max(7, desc.length * 4.5 + 2);
+          y += rowHeight;
+
+          doc.setDrawColor(241, 245, 249);
+          doc.setLineWidth(0.2);
+          doc.line(margin, y, pageWidth - margin, y);
+        });
+      }
+
+      y += 6;
+
+      // --- TABELA DE PAGAMENTOS / ABATIMENTOS ---
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text('2. Histórico de Pagamentos & Abatimentos Efetuados', margin, y);
+      y += 5;
+
+      // Cabeçalho de Pagamentos
+      doc.setFillColor(241, 245, 249);
+      doc.rect(margin, y, pageWidth - (margin * 2), 7, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('DATA DO PAGAMENTO', margin + 3, y + 4.8);
+      doc.text('MODALIDADE', margin + 55, y + 4.8);
+      doc.text('OBSERVAÇÃO', margin + 95, y + 4.8);
+      doc.text('VALOR PAGO', pageWidth - margin - 3, y + 4.8, { align: 'right' });
+      y += 7;
+
+      const payments = (client.transactions || []).filter(t => t.type === 'payment');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 41, 59);
+
+      if (payments.length === 0) {
+        doc.text('Nenhum pagamento registrado até o momento.', margin + 3, y + 5);
+        y += 8;
+      } else {
+        payments.forEach((p) => {
+          doc.text(formatDate(p.date), margin + 3, y + 4.5);
+          doc.text(p.paymentMethod || 'Dinheiro / PIX', margin + 55, y + 4.5);
+          doc.text(p.notes || 'Abatimento de dívida', margin + 95, y + 4.5);
+          doc.setTextColor(22, 101, 52);
+          doc.text(`- ${formatMoney(p.amount)}`, pageWidth - margin - 3, y + 4.5, { align: 'right' });
+          doc.setTextColor(30, 41, 59);
+
+          y += 6.5;
+          doc.setDrawColor(241, 245, 249);
+          doc.setLineWidth(0.2);
+          doc.line(margin, y, pageWidth - margin, y);
+        });
+      }
+
+      y += 6;
+
+      // --- RESUMO FINANCEIRO FINAL ---
+      const totalSales = sales.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
+      const totalPaid = payments.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
+      const balance = Math.max(0, totalSales - totalPaid);
+
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(pageWidth - margin - 85, y, 85, 26, 2, 2, 'F');
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(pageWidth - margin - 85, y, 85, 26, 2, 2, 'S');
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Total Compras:', pageWidth - margin - 80, y + 6);
+      doc.text(formatMoney(totalSales), pageWidth - margin - 5, y + 6, { align: 'right' });
+
+      doc.text('Total Abatido:', pageWidth - margin - 80, y + 12);
+      doc.setTextColor(22, 101, 52);
+      doc.text(`- ${formatMoney(totalPaid)}`, pageWidth - margin - 5, y + 12, { align: 'right' });
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(isPaidOff ? 22 : 185, isPaidOff ? 101 : 28, isPaidOff ? 52 : 28);
+      doc.text('SALDO DEVEDOR:', pageWidth - margin - 80, y + 20);
+      doc.text(formatMoney(balance), pageWidth - margin - 5, y + 20, { align: 'right' });
+
+      y += 38;
+
+      // --- TERMO DE RECONHECIMENTO & ASSINATURAS ---
+      if (y < 240) {
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+          'Declaro para os devidos fins que os valores e itens acima discriminados conferem fielmente com o histórico de transações acordado entre as partes.',
+          margin,
+          y,
+          { maxWidth: pageWidth - (margin * 2) }
+        );
+
+        y += 20;
+
+        // Linhas de Assinatura
+        doc.setDrawColor(148, 163, 184);
+        doc.setLineWidth(0.3);
+        
+        doc.line(margin + 5, y, margin + 70, y);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(71, 85, 105);
+        doc.text(shopInfo.shopName || 'Assinatura do Responsável', margin + 37, y + 4, { align: 'center' });
+
+        doc.line(pageWidth - margin - 70, y, pageWidth - margin - 5, y);
+        doc.text(client.name, pageWidth - margin - 37, y + 4, { align: 'center' });
+      }
+
+      // Rodapé
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text('Documento gerado eletronicamente pelo CadernoFiado & Cobrança Zap Pro • Autenticidade Garantida', pageWidth / 2, 287, { align: 'center' });
+
+      const cleanClientName = client.name.replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `Recibo_Fiado_${cleanClientName}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+      // =========================================================================
+      // ESTRATÉGIA DE SALVAMENTO MULTI-CAMADA (Robusto para Mobile, WebView e Web)
+      // =========================================================================
+
+      // 1. Ponte Nativa Android (se disponível via AppJavaScriptProxy)
+      if (window.androidAppProxy && typeof window.androidAppProxy.saveBase64File === 'function') {
+        const base64Data = doc.output('datauristring').split(',')[1];
+        window.androidAppProxy.saveBase64File(base64Data, filename, 'application/pdf');
+        return { success: true, method: 'android_proxy', filename };
+      }
+
+      // 2. Web Share API com File (Suporte Nativo a Android/iOS para envio direto ao Zap/Drive)
+      const pdfBlob = doc.output('blob');
+      if (typeof File !== 'undefined' && navigator.canShare) {
+        try {
+          const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+          if (navigator.canShare({ files: [pdfFile] })) {
+            await navigator.share({
+              files: [pdfFile],
+              title: `Recibo Fiado - ${client.name}`,
+              text: `Recibo de fiado de ${client.name} emitido por ${shopInfo.shopName || 'CadernoFiado'}.`
+            });
+            return { success: true, method: 'web_share', filename };
+          }
+        } catch (shareErr) {
+          // Se o usuário apenas cancelou o menu nativo de compartilhamento
+          if (shareErr.name === 'AbortError') {
+            return { success: true, method: 'web_share_cancelled', filename };
+          }
+          console.warn('Web Share API não concluiu, tentando fallback tradicional:', shareErr);
+        }
+      }
+
+      // 3. Fallback Tradicional via Blob Download
+      try {
+        doc.save(filename);
+        return { success: true, method: 'blob_download', filename };
+      } catch (blobErr) {
+        console.warn('doc.save falhou, tentando link de dados:', blobErr);
+        const dataUri = doc.output('datauristring');
+        const link = document.createElement('a');
+        link.href = dataUri;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return { success: true, method: 'data_uri_download', filename };
+      }
+
+    } catch (error) {
+      console.error('Erro na geração/download do PDF:', error);
+      return {
+        success: false,
+        error: error.message || 'Falha ao processar o arquivo PDF.',
+        receiptText: generateReceiptText(client, shopInfo)
+      };
+    }
   }
 
   return {
-    generateReceiptPdf
+    generateReceiptPdf,
+    generateReceiptText
   };
 })();
 
@@ -435,9 +543,18 @@ window.AppState = (function() {
   const STORAGE_KEY_SETTINGS = 'cadernofiado_settings_v1';
   const STORAGE_KEY_VIP = 'cadernofiado_vip_v1';
   const STORAGE_KEY_REWARDED = 'cadernofiado_rewarded_pass_v1';
+  const STORAGE_KEY_LICENSE = 'cadernofiado_license_v2';
+  const STORAGE_KEY_DEVICE_ID = 'cadernofiado_device_id_v1';
 
-  // Estado inicial padrão sem clientes simulados (pronto para uso real em produção)
-  const INITIAL_CLIENTS = [];
+  // Chave Pública Criptográfica ECDSA P-256 Oficial do CadernoFiado
+  // Utilizada exclusivamente para validar assinaturas digitais de licenças de forma 100% offline e segura.
+  // A Chave Privada permanece isolada com o dono no gerador privado (tools/admin.html) e não no bundle público.
+  const PUBLIC_KEY_JWK = {
+    kty: "EC",
+    crv: "P-256",
+    x: "sju7sWqTYzdwcft-dTY5W7roV1qv2yx3nIH-FyIt28M",
+    y: "rR6FBrA0W-I9CUhyd7ORtJTltMTUiwIWuoQUWKg86bY"
+  };
 
   const DEFAULT_SETTINGS = {
     shopName: 'Meu Caderno',
@@ -470,12 +587,10 @@ window.AppState = (function() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY_CLIENTS);
       if (!raw) {
-        // Inicializa com lista vazia para uso real
-        localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(INITIAL_CLIENTS));
+        localStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify([]));
         return [];
       }
       const parsed = JSON.parse(raw);
-      // Higienização automática: se contiver apenas os clientes demonstrativos antigos (c1, c2, c3), limpa para produção
       if (Array.isArray(parsed) && parsed.length > 0) {
         const isLegacyMock = parsed.some(c => c.id === 'c1' || c.id === 'c2' || c.id === 'c3') &&
                              parsed.some(c => (c.name && c.name.includes('Maria das Dores')) || (c.name && c.name.includes('Seu Jorge')));
@@ -505,7 +620,6 @@ window.AppState = (function() {
     return clients.find(c => c.id === id) || null;
   }
 
-  // Calcula o saldo devedor atual de um cliente
   function computeBalance(client) {
     if (!client || !Array.isArray(client.transactions)) return 0;
     const totalSales = client.transactions
@@ -517,7 +631,6 @@ window.AppState = (function() {
     return Math.max(0, Math.round((totalSales - totalPaid) * 100) / 100);
   }
 
-  // Retorna o status de débito do cliente ('quitado', 'atrasado', 'em_dia')
   function getClientStatus(client) {
     const debt = computeBalance(client);
     if (debt <= 0.01) return 'quitado';
@@ -559,7 +672,6 @@ window.AppState = (function() {
     saveClients(clients);
   }
 
-  // Registra nova compra no fiado
   function addSale(clientId, { amount, description, dueDate, photoUrl }) {
     const clients = getClients();
     const client = clients.find(c => c.id === clientId);
@@ -581,7 +693,6 @@ window.AppState = (function() {
     return newSale;
   }
 
-  // Registra pagamento / abatimento parcial ou total
   function addPayment(clientId, { amount, paymentMethod, notes }) {
     const clients = getClients();
     const client = clients.find(c => c.id === clientId);
@@ -610,7 +721,6 @@ window.AppState = (function() {
       const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
       if (!raw) return { ...DEFAULT_SETTINGS };
       const parsed = JSON.parse(raw);
-      // Se for a loja de exemplo antiga ("Cristina Alves" / "Espaço & Cantinho da Cris"), reseta para padrão limpo
       if (parsed.ownerName === 'Cristina Alves' || parsed.shopName === 'Espaço & Cantinho da Cris') {
         const cleaned = {
           ...DEFAULT_SETTINGS,
@@ -636,15 +746,10 @@ window.AppState = (function() {
     } catch(e) {}
   }
 
-  // --- MONETIZAÇÃO, LICENÇAS & GESTÃO DE EXPIRAÇÃO VIP ---
-  const STORAGE_KEY_LICENSE = 'cadernofiado_license_v2';
-  const STORAGE_KEY_DEVICE_ID = 'cadernofiado_device_id_v1';
-  const SECRET_SALT = 'CF_ZAP_PRO_2026';
-
+  // --- MONETIZAÇÃO, LICENÇAS & GESTÃO CRIPTOGRÁFICA VIP ---
   function getInstallationId() {
     let id = localStorage.getItem(STORAGE_KEY_DEVICE_ID);
     if (!id) {
-      // Gera ID curto e legível (ex: CF-7482)
       const num = Math.floor(1000 + Math.random() * 9000);
       id = `CF-${num}`;
       localStorage.setItem(STORAGE_KEY_DEVICE_ID, id);
@@ -664,105 +769,129 @@ window.AppState = (function() {
   function saveLicense(licenseObj) {
     try {
       localStorage.setItem(STORAGE_KEY_LICENSE, JSON.stringify(licenseObj));
-      // Mantém compatibilidade com a chave legada
       localStorage.setItem(STORAGE_KEY_VIP, licenseObj ? 'true' : 'false');
       notify();
     } catch(e) {}
   }
 
-  // Gera o checksum determinístico de 4 caracteres
-  function computeChecksum(deviceId, planType) {
-    const raw = `${deviceId.trim().toUpperCase()}_${planType.trim().toUpperCase()}_${SECRET_SALT}`;
-    let hash = 0;
-    for (let i = 0; i < raw.length; i++) {
-      hash = ((hash << 5) - hash) + raw.charCodeAt(i);
-      hash |= 0;
+  // Utilitários de codificação Base64Url
+  function base64UrlToBytes(b64url) {
+    let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4 !== 0) b64 += '=';
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
     }
-    const hex = Math.abs(hash).toString(16).toUpperCase().padStart(4, '0');
-    return hex.slice(0, 4);
+    return bytes;
   }
 
-  // Função utilizada pelo Dono no Painel Admin para gerar chaves de ativação
-  function generateLicenseKey(targetDeviceId, planType) {
-    const cleanId = (targetDeviceId || '').trim().toUpperCase();
-    const cleanPlan = (planType || '30D').trim().toUpperCase();
-    const checksum = computeChecksum(cleanId, cleanPlan);
-    return `CF-${cleanPlan}-${cleanId.replace('CF-', '')}-${checksum}`;
+  function fromBase64Url(b64url) {
+    let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4 !== 0) b64 += '=';
+    return decodeURIComponent(escape(atob(b64)));
   }
 
-  // Ativação da chave pelo cliente
-  function activateLicenseKey(keyInput) {
-    if (!keyInput) return { success: false, message: 'Por favor, digite o código de ativação recebido.' };
-    const raw = keyInput.trim().toUpperCase().replace(/\s+/g, '');
-
-    // Chaves Mestres de Teste/Emergência
-    if (raw === 'CF-MASTER-VIP-2026' || raw === 'VIP-MESTRE-2026' || raw === 'LIBERARVIP') {
-      const expiresAt = Date.now() + 365 * 24 * 60 * 60 * 1000;
-      saveLicense({
-        type: '365D',
-        planName: 'VIP Pro Anual (Mestre)',
-        activatedAt: new Date().toISOString(),
-        expiresAt: expiresAt,
-        licenseKey: raw
-      });
-      return { success: true, message: 'Acesso VIP Mestre ativado por 1 ano com sucesso!', planName: 'VIP Pro Anual' };
+  /**
+   * Ativação de licença via Assinatura Digital ECDSA P-256
+   * Valida matematicamente no dispositivo do usuário com a chave pública embutida.
+   * Não depende de segredo compartilhado no client nem expõe chaves mestres.
+   */
+  async function activateLicenseKey(keyInput) {
+    if (!keyInput) {
+      return { success: false, message: 'Por favor, digite o código de ativação fornecido no WhatsApp.' };
     }
+    const raw = keyInput.trim().replace(/\s+/g, '');
 
-    const currentDeviceId = getInstallationId();
-    const cleanCurrentNum = currentDeviceId.replace('CF-', '');
-
-    const parts = raw.split('-');
-    if (parts.length !== 4 || parts[0] !== 'CF') {
-      return { success: false, message: 'Formato do código inválido. Exemplo correto: CF-30D-XXXX-YYYY' };
-    }
-
-    const planType = parts[1];
-    const deviceNum = parts[2];
-    const checksum = parts[3];
-
-    // Valida se a chave foi gerada para este celular específico
-    if (deviceNum !== cleanCurrentNum) {
+    // Formato de chave assimétrica: CFVIP.<payloadB64>.<sigB64>
+    if (!raw.startsWith('CFVIP.')) {
       return { 
         success: false, 
-        message: `Esta chave pertence ao aparelho CF-${deviceNum}. Seu aparelho é ${currentDeviceId}. Solicite uma chave para o seu ID.` 
+        message: 'Código de ativação inválido. O formato oficial deve iniciar com "CFVIP." fornecido pelo suporte.' 
       };
     }
 
-    // Valida integridade e autenticidade da chave
-    const expectedChecksum = computeChecksum(currentDeviceId, planType);
-    if (checksum !== expectedChecksum) {
-      return { success: false, message: 'Código de ativação incorreto ou expirado. Verifique os caracteres.' };
+    const parts = raw.split('.');
+    if (parts.length !== 3) {
+      return { success: false, message: 'Código de ativação incompleto ou corrompido.' };
     }
 
-    let expiresAt = null;
-    let planName = 'VIP Pro';
-    if (planType === '30D') {
-      expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
-      planName = 'VIP Pro Mensal (30 Dias)';
-    } else if (planType === '365D') {
-      expiresAt = Date.now() + 365 * 24 * 60 * 60 * 1000;
-      planName = 'VIP Pro Anual (1 Ano)';
-    } else if (planType === 'LIFETIME' || planType === 'VIT') {
-      expiresAt = null; // Vitalício
-      planName = 'VIP Pro Vitalício';
-    } else {
-      return { success: false, message: 'Tipo de plano não reconhecido.' };
+    try {
+      const payloadB64 = parts[1];
+      const sigB64 = parts[2];
+
+      const payloadJson = fromBase64Url(payloadB64);
+      const payload = JSON.parse(payloadJson);
+
+      const currentDeviceId = getInstallationId();
+      if (payload.d && payload.d.toUpperCase() !== currentDeviceId.toUpperCase()) {
+        return {
+          success: false,
+          message: `Esta chave pertence ao aparelho ${payload.d}. O identificador deste aparelho é ${currentDeviceId}. Solicite uma chave para o seu ID.`
+        };
+      }
+
+      // Validação da assinatura digital com a chave pública
+      const publicKey = await window.crypto.subtle.importKey(
+        "jwk",
+        PUBLIC_KEY_JWK,
+        { name: "ECDSA", namedCurve: "P-256" },
+        false,
+        ["verify"]
+      );
+
+      const sigBytes = base64UrlToBytes(sigB64);
+      const dataBytes = new TextEncoder().encode(payloadB64);
+
+      const isValid = await window.crypto.subtle.verify(
+        { name: "ECDSA", hash: { name: "SHA-256" } },
+        publicKey,
+        sigBytes,
+        dataBytes
+      );
+
+      if (!isValid) {
+        return { success: false, message: 'Código de ativação inválido ou chave adulterada.' };
+      }
+
+      // Checa se a chave já expirou
+      const now = Date.now();
+      if (payload.e && payload.e > 0 && payload.e < now) {
+        return { success: false, message: 'Este código de licença já se encontra expirado.' };
+      }
+
+      let planName = 'VIP Pro';
+      let expiresAt = null;
+      if (payload.p === '30D') {
+        planName = 'VIP Pro Mensal (30 Dias)';
+        expiresAt = payload.e || (now + 30 * 24 * 60 * 60 * 1000);
+      } else if (payload.p === '365D') {
+        planName = 'VIP Pro Anual (1 Ano)';
+        expiresAt = payload.e || (now + 365 * 24 * 60 * 60 * 1000);
+      } else if (payload.p === 'LIFETIME') {
+        planName = 'VIP Pro Vitalício';
+        expiresAt = null;
+      }
+
+      saveLicense({
+        type: payload.p,
+        planName,
+        activatedAt: new Date().toISOString(),
+        expiresAt,
+        licenseKey: raw
+      });
+
+      return {
+        success: true,
+        message: `${planName} ativado com sucesso! Aproveite todos os recursos.`,
+        planName,
+        expiresAt
+      };
+
+    } catch (e) {
+      console.error('Erro na validação da chave:', e);
+      return { success: false, message: 'Falha ao processar código de ativação: ' + e.message };
     }
-
-    saveLicense({
-      type: planType,
-      planName,
-      activatedAt: new Date().toISOString(),
-      expiresAt,
-      licenseKey: raw
-    });
-
-    return { 
-      success: true, 
-      message: `${planName} ativado com sucesso! Aproveite todos os recursos.`,
-      planName,
-      expiresAt
-    };
   }
 
   function getVipInfo() {
@@ -779,7 +908,6 @@ window.AppState = (function() {
 
     if (license && license.type) {
       if (license.expiresAt === null) {
-        // Vitalício
         isVip = true;
         isLifetime = true;
         planName = license.planName || 'VIP Pro Vitalício';
@@ -836,7 +964,6 @@ window.AppState = (function() {
     }
   }
 
-  // Ativa passe temporário de 24 horas (Vídeo Premiado)
   function activate24hPass() {
     const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
     localStorage.setItem(STORAGE_KEY_REWARDED, expiresAt.toString());
@@ -917,7 +1044,6 @@ window.AppState = (function() {
     activate24hPass,
     getPassRemainingTimeFormatted,
     getInstallationId,
-    generateLicenseKey,
     activateLicenseKey,
     exportBackup,
     importBackup,
@@ -1117,6 +1243,95 @@ window.Icons = {
   });
 })();
 
+
+
+// ==========================================
+// Arquivo: js\components\ConfirmModal.js
+// ==========================================
+/**
+ * Modal Unificado de Confirmação e Notificação (Design System CadernoFiado)
+ * Substitui alert() e confirm() nativos por diálogos consistentes e modernos.
+ */
+
+window.ConfirmModal = function ConfirmModal({
+  isOpen,
+  title,
+  message,
+  confirmText = 'Confirmar',
+  cancelText = 'Cancelar',
+  variant = 'danger', // 'danger' | 'warning' | 'success' | 'info'
+  onConfirm,
+  onCancel,
+  showCancel = true
+}) {
+  if (!isOpen) return null;
+
+  const { AlertTriangle, Trash2, CheckCircle2, Info, X } = window.Icons || {};
+
+  const icons = {
+    danger: Trash2 ? <Trash2 size={24} /> : <span>🗑️</span>,
+    warning: AlertTriangle ? <AlertTriangle size={24} /> : <span>⚠️</span>,
+    success: CheckCircle2 ? <CheckCircle2 size={24} /> : <span>✅</span>,
+    info: Info ? <Info size={24} /> : <span>ℹ️</span>
+  };
+
+  const badgeClasses = {
+    danger: 'bg-rose-500/15 text-rose-400 border border-rose-500/30',
+    warning: 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
+    success: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
+    info: 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+  };
+
+  const confirmBtnClasses = {
+    danger: 'bg-rose-600 hover:bg-rose-500 text-white',
+    warning: 'bg-amber-500 hover:bg-amber-400 text-slate-950',
+    success: 'bg-emerald-600 hover:bg-emerald-500 text-white',
+    info: 'bg-slate-700 hover:bg-slate-600 text-white'
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+      <div className="relative w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden p-5 space-y-4">
+        
+        <div className="flex items-start gap-3.5">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${badgeClasses[variant] || badgeClasses.info}`}>
+            {icons[variant] || icons.info}
+          </div>
+
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h3 className="font-bold text-base text-white leading-tight">
+              {title || 'Confirmação'}
+            </h3>
+            <p className="text-xs text-slate-300 mt-1.5 leading-relaxed whitespace-pre-line">
+              {message}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800/80">
+          {showCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 font-medium text-xs transition-colors"
+            >
+              {cancelText}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-transform active:scale-95 ${confirmBtnClasses[variant] || confirmBtnClasses.danger}`}
+          >
+            {confirmText}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+};
 
 
 // ==========================================
@@ -2084,13 +2299,17 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
 // ==========================================
 /**
  * Modal de Configurações do Estabelecimento, Chave PIX e Backup de Dados
+ * Identidade visual comercial refinada e modais integrados sem alerts/confirms nativos.
  */
 
-window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, onSaveSettings, onOpenAdmin }) {
+window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, onSaveSettings }) {
   const [formData, setFormData] = React.useState({ ...shopSettings });
   const [saveSuccess, setSaveSuccess] = React.useState(false);
+  const [confirmResetOpen, setConfirmResetOpen] = React.useState(false);
+  const [feedbackDialog, setFeedbackDialog] = React.useState({ isOpen: false, title: '', message: '', variant: 'info' });
+  
   const fileInputRef = React.useRef(null);
-  const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck } = window.Icons;
+  const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck, Store, Phone, QrCode } = window.Icons || {};
 
   React.useEffect(() => {
     if (isOpen) {
@@ -2112,7 +2331,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
     setTimeout(() => {
       setSaveSuccess(false);
       onClose();
-    }, 900);
+    }, 800);
   };
 
   const handleExportBackup = () => {
@@ -2127,31 +2346,43 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
     reader.onload = (event) => {
       const result = window.AppState.importBackup(event.target.result);
       if (result.success) {
-        alert(`Backup restaurado com sucesso! ${result.count} clientes importados.`);
-        onClose();
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Backup Restaurado',
+          message: `Backup restaurado com sucesso! Foram importados ${result.count} clientes com seus respectivos históricos.`,
+          variant: 'success'
+        });
       } else {
-        alert(`Falha ao importar backup: ${result.error}`);
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Falha no Backup',
+          message: `Não foi possível importar o arquivo: ${result.error}`,
+          variant: 'danger'
+        });
       }
     };
     reader.readAsText(file);
   };
 
-  const handleResetData = () => {
-    if (confirm('Tem certeza que deseja restaurar os dados de demonstração originais? Isso resetará alterações locais.')) {
-      window.AppState.resetAll();
-      alert('Dados restaurados com os exemplos iniciais.');
-      onClose();
-    }
+  const handlePerformReset = () => {
+    window.AppState.resetAll();
+    setConfirmResetOpen(false);
+    setFeedbackDialog({
+      isOpen: true,
+      title: 'Dados Limpos',
+      message: 'Os dados foram restaurados para o padrão inicial limpo.',
+      variant: 'info'
+    });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
         
         {/* Cabeçalho */}
-        <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+        <div className="p-4 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-xl bg-slate-800 text-brand-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-slate-800 text-emerald-400 flex items-center justify-center">
               <Settings size={18} />
             </div>
             <div>
@@ -2170,8 +2401,9 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
 
         {/* Formulário com Scroll */}
         <div className="p-4 space-y-4 overflow-y-auto flex-1">
-          <form id="settings-form" onSubmit={handleSave} className="space-y-3">
+          <form id="settings-form" onSubmit={handleSave} className="space-y-3.5">
             
+            {/* Nome da Loja */}
             <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">
                 Nome do Estabelecimento / Fantasia:
@@ -2180,164 +2412,134 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
                 type="text"
                 value={formData.shopName || ''}
                 onChange={e => handleChange('shopName', e.target.value)}
-                placeholder="Ex: Espaço Beleza da Cris"
+                placeholder="Ex: Mercadinho do Bairro / Espaço Beleza"
                 required
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-brand-500"
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
               />
-              <span className="text-[10px] text-slate-400">Aparece no topo do app e nos recibos em PDF.</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  Seu Nome:
-                </label>
-                <input
-                  type="text"
-                  value={formData.ownerName || ''}
-                  onChange={e => handleChange('ownerName', e.target.value)}
-                  placeholder="Ex: Cristina Silva"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-brand-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  WhatsApp Contato:
-                </label>
-                <input
-                  type="text"
-                  value={formData.phone || ''}
-                  onChange={e => handleChange('phone', e.target.value)}
-                  placeholder="Ex: 11987650000"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-brand-500"
-                />
-              </div>
-            </div>
-
-            {/* Configuração do PIX */}
-            <div className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2.5">
-              <span className="text-xs font-bold text-brand-400 uppercase tracking-wider block">
-                Dados do PIX (Para Cobrança e QR Code)
+              <span className="text-[10px] text-slate-500 mt-0.5 block">
+                Aparecerá nos recibos em PDF e mensagens de cobrança.
               </span>
+            </div>
 
-              <div className="grid grid-cols-3 gap-2">
+            {/* Nome do Responsável */}
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">
+                Seu Nome (Responsável):
+              </label>
+              <input
+                type="text"
+                value={formData.ownerName || ''}
+                onChange={e => handleChange('ownerName', e.target.value)}
+                placeholder="Ex: Maria da Silva"
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {/* Telefone/WhatsApp do Comércio */}
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">
+                Seu WhatsApp de Contato:
+              </label>
+              <input
+                type="tel"
+                value={formData.phone || ''}
+                onChange={e => handleChange('phone', e.target.value)}
+                placeholder="Ex: (11) 99999-8888"
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {/* Dados do PIX para Recebimentos */}
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2.5">
+              <h4 className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                <span>💰</span> Chave PIX para Cobranças
+              </h4>
+
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[11px] text-slate-400 block mb-1">Tipo da Chave</label>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">Tipo de Chave:</label>
                   <select
                     value={formData.pixKeyType || 'telefone'}
                     onChange={e => handleChange('pixKeyType', e.target.value)}
-                    className="w-full px-2 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-brand-500"
+                    className="w-full px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                   >
-                    <option value="telefone">Celular</option>
+                    <option value="telefone">Celular / Telefone</option>
                     <option value="cpf">CPF</option>
                     <option value="cnpj">CNPJ</option>
                     <option value="email">E-mail</option>
-                    <option value="aleatoria">Aleatória</option>
+                    <option value="aleatoria">Chave Aleatória (EVP)</option>
                   </select>
                 </div>
 
-                <div className="col-span-2">
-                  <label className="text-[11px] text-slate-400 block mb-1">Chave PIX</label>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">Cidade do Banco:</label>
                   <input
                     type="text"
-                    value={formData.pixKey || ''}
-                    onChange={e => handleChange('pixKey', e.target.value)}
-                    placeholder="Chave para receber os fiados"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-brand-500"
+                    value={formData.city || ''}
+                    onChange={e => handleChange('city', e.target.value)}
+                    placeholder="Ex: São Paulo"
+                    className="w-full px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-[11px] text-slate-400 block mb-1">Cidade do Titular</label>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Chave PIX:</label>
                 <input
                   type="text"
-                  value={formData.city || 'BRASIL'}
-                  onChange={e => handleChange('city', e.target.value)}
-                  placeholder="Ex: SAO PAULO (Sem acentos para o QR Code)"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-brand-500"
+                  value={formData.pixKey || ''}
+                  onChange={e => handleChange('pixKey', e.target.value)}
+                  placeholder="Cole sua chave PIX aqui"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
                 />
               </div>
             </div>
 
-            {/* Seção de Backup e Restauração */}
-            <div className="pt-2 border-t border-slate-800 space-y-2">
-              <span className="text-xs font-semibold text-slate-300 block">
-                Segurança dos Seus Dados
-              </span>
+            {/* Seção de Backup e Segurança dos Dados */}
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+              <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <span>💾</span> Backup e Segurança dos Seus Dados
+              </h4>
               <p className="text-[11px] text-slate-400">
-                Seus clientes e fiados ficam salvos neste aparelho. Faça backup periódico para trocar de celular com segurança.
+                Seus fiados ficam salvos de forma privada neste aparelho. Exporte uma cópia regularmente para garantir que nunca perderá suas anotações.
               </p>
 
-              <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={handleExportBackup}
-                  className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 flex items-center justify-center space-x-1.5 transition-colors"
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 border border-slate-700 transition-colors"
                 >
-                  <Download size={15} />
+                  <Download size={14} />
                   <span>Baixar Backup</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                  className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 flex items-center justify-center space-x-1.5 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 border border-slate-700 transition-colors"
                 >
-                  <Upload size={15} />
+                  <Upload size={14} />
                   <span>Restaurar Backup</span>
                 </button>
+
                 <input
-                  type="file"
                   ref={fileInputRef}
-                  onChange={handleFileSelect}
+                  type="file"
                   accept=".json"
+                  onChange={handleFileSelect}
                   className="hidden"
                 />
               </div>
 
-              {/* Seção WhatsApp de Vendas / Dono */}
-              <div className="pt-2 border-t border-slate-800 space-y-2">
-                <span className="text-xs font-semibold text-slate-300 block">
-                  Contato de Suporte & Vendas do App
-                </span>
-                <div>
-                  <label className="text-[11px] text-slate-400 block mb-1">
-                    WhatsApp para os lojistas solicitarem a assinatura VIP:
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.supportPhone || ''}
-                    onChange={e => handleChange('supportPhone', e.target.value)}
-                    placeholder="Ex: 51985661499 (Seu WhatsApp oficial de vendas)"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-brand-500 font-mono"
-                  />
-                </div>
-
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      if (onOpenAdmin) onOpenAdmin();
-                    }}
-                    className="w-full py-2.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-semibold text-xs border border-amber-500/30 flex items-center justify-center space-x-1.5 transition-colors"
-                  >
-                    <ShieldCheck size={15} />
-                    <span>🔐 Abrir Painel do Dono (Gerador de Códigos)</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-2">
+              <div className="pt-1 border-t border-slate-800/80">
                 <button
                   type="button"
-                  onClick={handleResetData}
-                  className="text-[11px] text-rose-400 hover:text-rose-300 flex items-center space-x-1 transition-colors"
+                  onClick={() => setConfirmResetOpen(true)}
+                  className="text-[11px] text-slate-400 hover:text-rose-400 flex items-center space-x-1 transition-colors"
                 >
                   <Trash2 size={13} />
-                  <span>Restaurar dados de demonstração iniciais</span>
+                  <span>Limpar dados locais deste aparelho</span>
                 </button>
               </div>
             </div>
@@ -2355,7 +2557,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
           <button
             type="submit"
             form="settings-form"
-            className="py-2.5 px-6 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs shadow-glow-emerald flex items-center space-x-1.5 transition-all active:scale-95"
+            className="py-2.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all active:scale-95"
           >
             {saveSuccess ? (
               <>
@@ -2368,6 +2570,29 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
           </button>
         </div>
 
+        {/* Modal de Confirmação para Limpeza de Dados */}
+        <window.ConfirmModal
+          isOpen={confirmResetOpen}
+          title="Limpar Dados Locais"
+          message="Tem certeza que deseja apagar os dados locais? Recomendamos baixar um backup antes caso queira recuperar no futuro."
+          confirmText="Sim, Limpar"
+          cancelText="Cancelar"
+          variant="danger"
+          onConfirm={handlePerformReset}
+          onCancel={() => setConfirmResetOpen(false)}
+        />
+
+        {/* Modal de Feedback (Avisos/Sucesso) */}
+        <window.ConfirmModal
+          isOpen={feedbackDialog.isOpen}
+          title={feedbackDialog.title}
+          message={feedbackDialog.message}
+          confirmText="Entendi"
+          variant={feedbackDialog.variant}
+          showCancel={false}
+          onConfirm={() => setFeedbackDialog({ ...feedbackDialog, isOpen: false })}
+        />
+
       </div>
     </div>
   );
@@ -2378,48 +2603,58 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
 // Arquivo: js\components\ClientDetailModal.js
 // ==========================================
 /**
- * Modal Detalhes do Cliente, Extrato Completo, Abatimento e Ações VIP
+ * Modal Detalhado do Cliente (Ficha de Fiados, Abatimentos e Ações Rápidas)
+ * Inclui geração robusta de PDF, integração com ConfirmModal e contingência via WhatsApp.
  */
 
 window.ClientDetailModal = function ClientDetailModal({
   isOpen,
-  onClose,
+  client: propClient,
   clientId,
+  onClose,
   onOpenWhatsApp,
   onOpenPix,
-  onOpenPdf,
-  isVip,
   onTriggerPaywall,
+  isVip,
   shopSettings
 }) {
+  const client = propClient || (clientId && window.AppState ? window.AppState.getClient(clientId) : null);
   const [activeSubTab, setActiveSubTab] = React.useState('extrato'); // 'extrato' | 'abater'
   const [payAmount, setPayAmount] = React.useState('');
   const [payMethod, setPayMethod] = React.useState('Dinheiro');
   const [payNotes, setPayNotes] = React.useState('');
   const [showPhotoModal, setShowPhotoModal] = React.useState(null);
+  
+  // Estados para diálogos integrados (sem alert/confirm nativos)
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const [feedbackModal, setFeedbackModal] = React.useState({ isOpen: false, title: '', message: '', variant: 'info' });
+  const [pdfLoading, setPdfLoading] = React.useState(false);
+  const [pdfErrorData, setPdfErrorData] = React.useState(null);
 
   const {
-    X, Phone, Calendar, DollarSign, MessageCircle, QrCode, FileText,
-    Crown, CheckCircle2, AlertTriangle, Clock, Trash2, Check, Sparkles
-  } = window.Icons;
+    X, Phone, MapPin, Calendar, Clock, DollarSign,
+    CheckCircle2, AlertTriangle, FileText, QrCode, MessageCircle, Trash2, Check, Crown
+  } = window.Icons || {};
 
-  if (!isOpen || !clientId) return null;
+  if (!isOpen || !client) return null;
 
-  const client = window.AppState.getClient(clientId);
-  if (!client) return null;
-
-  const debt = window.AppState.computeBalance(client);
-  const status = window.AppState.getClientStatus(client);
+  const debt = window.AppState ? window.AppState.computeBalance(client) : 0;
+  const status = window.AppState ? window.AppState.getClientStatus(client) : 'em_dia';
   const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
   const creditLimit = client.creditLimit || 300;
   const limitUsagePct = Math.min(100, Math.round((debt / creditLimit) * 100));
 
-  // Handler para dar baixa / abatimento
+  // Handler para registrar abatimento
   const handlePaymentSubmit = (e) => {
     e.preventDefault();
     const val = parseFloat(payAmount);
     if (isNaN(val) || val <= 0) {
-      alert('Por favor, informe um valor válido para pagamento.');
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Valor Inválido',
+        message: 'Por favor, informe um valor numérico válido maior que zero para o pagamento.',
+        variant: 'warning'
+      });
       return;
     }
 
@@ -2429,7 +2664,6 @@ window.ClientDetailModal = function ClientDetailModal({
       notes: payNotes
     });
 
-    // Se quitou totalmente, dispara confetes!
     if (remainingDebt <= 0.01) {
       if (typeof confetti === 'function') {
         confetti({
@@ -2445,7 +2679,7 @@ window.ClientDetailModal = function ClientDetailModal({
     setActiveSubTab('extrato');
   };
 
-  // Quitação total rápida com 1 clique
+  // Quitação total rápida
   const handleFullPayoff = () => {
     if (debt <= 0) return;
     setPayAmount(debt.toFixed(2));
@@ -2456,7 +2690,12 @@ window.ClientDetailModal = function ClientDetailModal({
   // Proteção de Recursos VIP
   const handlePixClick = () => {
     if (debt <= 0) {
-      alert('Este cliente já está com a conta quitada! Não há débito para cobrar.');
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Conta Quitada',
+        message: 'Este cliente já está com o saldo em dia! Não há débitos pendentes para gerar cobrança.',
+        variant: 'info'
+      });
       return;
     }
     if (isVip) {
@@ -2466,42 +2705,67 @@ window.ClientDetailModal = function ClientDetailModal({
     }
   };
 
-  const handlePdfClick = () => {
-    if (isVip) {
-      window.PdfService.generateReceiptPdf(client, shopSettings);
-    } else {
+  // Gerador de Recibo PDF com suporte a erro amigável e fallback
+  const handlePdfClick = async () => {
+    if (!isVip) {
       onTriggerPaywall('pdf');
+      return;
+    }
+
+    setPdfLoading(true);
+    const result = await window.PdfService.generateReceiptPdf(client, shopSettings);
+    setPdfLoading(false);
+
+    if (!result.success) {
+      setPdfErrorData(result);
     }
   };
 
-  const handleDeleteClient = () => {
-    if (confirm(`Tem certeza que deseja excluir o cadastro de ${client.name}? O histórico será removido.`)) {
-      window.AppState.deleteClient(client.id);
-      onClose();
-    }
+  // Envio alternativo em texto pelo WhatsApp quando PDF falha
+  const handleSendTextReceiptViaWhatsApp = () => {
+    if (!pdfErrorData || !pdfErrorData.receiptText) return;
+    const phone = (client.phone || '').replace(/\D/g, '');
+    const cleanPhone = phone.startsWith('55') ? phone : (phone ? '55' + phone : '');
+    const url = cleanPhone 
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(pdfErrorData.receiptText)}`
+      : `https://wa.me/?text=${encodeURIComponent(pdfErrorData.receiptText)}`;
+    window.open(url, '_blank');
+    setPdfErrorData(null);
+  };
+
+  const handleCopyTextReceipt = () => {
+    if (!pdfErrorData || !pdfErrorData.receiptText) return;
+    navigator.clipboard.writeText(pdfErrorData.receiptText);
+    setFeedbackModal({
+      isOpen: true,
+      title: 'Copiado com Sucesso',
+      message: 'O extrato detalhado em texto foi copiado para sua área de transferência! Você pode colar em qualquer conversa do WhatsApp.',
+      variant: 'success'
+    });
+    setPdfErrorData(null);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+      <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
         
         {/* Cabeçalho */}
-        <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+        <div className="p-4 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-center space-x-2">
               <h2 className="font-bold text-base text-white truncate">{client.name}</h2>
               {status === 'quitado' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                   <Check size={11} /> Quitado
                 </span>
               )}
               {status === 'atrasado' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1">
                   <AlertTriangle size={11} /> Atrasado
                 </span>
               )}
               {status === 'em_dia' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
                   Em Aberto
                 </span>
               )}
@@ -2536,14 +2800,14 @@ window.ClientDetailModal = function ClientDetailModal({
             {debt > 0 ? (
               <button
                 onClick={handleFullPayoff}
-                className="py-1.5 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                className="py-1.5 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
               >
                 <CheckCircle2 size={14} />
                 <span>Quitar Tudo</span>
               </button>
             ) : (
-              <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full">
-                ⭐ Bom Pagador
+              <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                ⭐ Em Dia
               </span>
             )}
           </div>
@@ -2557,29 +2821,29 @@ window.ClientDetailModal = function ClientDetailModal({
             <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-500 ${
-                  limitUsagePct > 90 ? 'bg-rose-500' : limitUsagePct > 60 ? 'bg-amber-500' : 'bg-brand-500'
+                  limitUsagePct > 90 ? 'bg-rose-500' : limitUsagePct > 60 ? 'bg-amber-500' : 'bg-emerald-500'
                 }`}
                 style={{ width: `${limitUsagePct}%` }}
               />
             </div>
             {limitUsagePct >= 100 && (
               <p className="text-[10px] text-rose-400 mt-1 font-semibold flex items-center gap-1">
-                <AlertTriangle size={11} /> Limite de crédito estourado! Evite novas vendas antes do acerto.
+                <AlertTriangle size={11} /> Limite de crédito atingido! Avalie um acerto antes de novas vendas.
               </p>
             )}
           </div>
         </div>
 
-        {/* 4 Botões Rápidos de Ação: Cobrar Zap, PIX VIP, PDF VIP, Abater */}
+        {/* 4 Botões Rápidos de Ação */}
         <div className="grid grid-cols-4 gap-2 p-3 bg-slate-900 border-b border-slate-800">
           
           {/* Cobrar Zap */}
           <button
             onClick={() => onOpenWhatsApp(client)}
             disabled={debt <= 0}
-            className="flex flex-col items-center justify-center p-2 rounded-2xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 disabled:opacity-40 transition-all active:scale-95 group"
+            className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-750 text-slate-200 disabled:opacity-40 transition-all active:scale-95"
           >
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-1">
               <MessageCircle size={16} />
             </div>
             <span className="text-[10px] font-semibold text-center leading-tight">Cobrar Zap</span>
@@ -2589,14 +2853,14 @@ window.ClientDetailModal = function ClientDetailModal({
           <button
             onClick={handlePixClick}
             disabled={debt <= 0}
-            className="relative flex flex-col items-center justify-center p-2 rounded-2xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 disabled:opacity-40 transition-all active:scale-95 group"
+            className="relative flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-750 text-slate-200 disabled:opacity-40 transition-all active:scale-95"
           >
             {!isVip && (
-              <span className="absolute -top-1.5 -right-1 px-1 py-0.2 rounded-full text-[8px] font-extrabold bg-amber-500 text-slate-950 shadow-sm flex items-center gap-0.5">
-                <Crown size={8} /> VIP
+              <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 rounded-full text-[8px] font-extrabold bg-amber-500 text-slate-950 flex items-center gap-0.5">
+                VIP
               </span>
             )}
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-1">
               <QrCode size={16} />
             </div>
             <span className="text-[10px] font-semibold text-center leading-tight">Gerar PIX</span>
@@ -2605,29 +2869,36 @@ window.ClientDetailModal = function ClientDetailModal({
           {/* Recibo PDF (VIP) */}
           <button
             onClick={handlePdfClick}
-            className="relative flex flex-col items-center justify-center p-2 rounded-2xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 transition-all active:scale-95 group"
+            disabled={pdfLoading}
+            className="relative flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-750 text-slate-200 transition-all active:scale-95"
           >
             {!isVip && (
-              <span className="absolute -top-1.5 -right-1 px-1 py-0.2 rounded-full text-[8px] font-extrabold bg-amber-500 text-slate-950 shadow-sm flex items-center gap-0.5">
-                <Crown size={8} /> VIP
+              <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 rounded-full text-[8px] font-extrabold bg-amber-500 text-slate-950 flex items-center gap-0.5">
+                VIP
               </span>
             )}
-            <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
-              <FileText size={16} />
+            <div className="w-8 h-8 rounded-lg bg-slate-700 text-slate-200 flex items-center justify-center mb-1">
+              {pdfLoading ? (
+                <div className="w-4 h-4 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin" />
+              ) : (
+                <FileText size={16} />
+              )}
             </div>
-            <span className="text-[10px] font-semibold text-center leading-tight">Recibo PDF</span>
+            <span className="text-[10px] font-semibold text-center leading-tight">
+              {pdfLoading ? 'Gerando...' : 'Recibo PDF'}
+            </span>
           </button>
 
           {/* Abater Pagamento */}
           <button
             onClick={() => setActiveSubTab(activeSubTab === 'abater' ? 'extrato' : 'abater')}
-            className={`flex flex-col items-center justify-center p-2 rounded-2xl border transition-all active:scale-95 ${
+            className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all active:scale-95 ${
               activeSubTab === 'abater'
-                ? 'bg-brand-500/20 border-brand-500 text-brand-300'
-                : 'bg-slate-800 hover:bg-slate-750 border-slate-700 text-slate-200'
+                ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+                : 'bg-slate-800 hover:bg-slate-750 border-slate-750 text-slate-200'
             }`}
           >
-            <div className="w-8 h-8 rounded-xl bg-brand-500/20 text-brand-400 flex items-center justify-center mb-1">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-1">
               <DollarSign size={16} />
             </div>
             <span className="text-[10px] font-semibold text-center leading-tight">
@@ -2643,11 +2914,11 @@ window.ClientDetailModal = function ClientDetailModal({
           {activeSubTab === 'abater' ? (
             /* Formulário de Baixa de Pagamento */
             <form onSubmit={handlePaymentSubmit} className="space-y-3 animate-fadeIn">
-              <div className="p-3 bg-emerald-950/30 rounded-2xl border border-emerald-800/40">
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
                 <h4 className="text-xs font-bold text-emerald-400 mb-1 flex items-center gap-1.5">
                   <DollarSign size={14} /> Registrar Pagamento / Abatimento
                 </h4>
-                <p className="text-[11px] text-slate-300">
+                <p className="text-[11px] text-slate-400">
                   Informe o valor recebido deste cliente. O saldo devedor será recalculado instantaneamente.
                 </p>
               </div>
@@ -2668,7 +2939,7 @@ window.ClientDetailModal = function ClientDetailModal({
                     placeholder="0,00"
                     required
                     autoFocus
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base font-bold text-white focus:outline-none focus:border-brand-500 font-mono"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base font-bold text-white focus:outline-none focus:border-emerald-500 font-mono"
                   />
                 </div>
               </div>
@@ -2679,7 +2950,7 @@ window.ClientDetailModal = function ClientDetailModal({
                   <select
                     value={payMethod}
                     onChange={e => setPayMethod(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="Dinheiro">Dinheiro</option>
                     <option value="PIX">PIX</option>
@@ -2696,7 +2967,7 @@ window.ClientDetailModal = function ClientDetailModal({
                     value={payNotes}
                     onChange={e => setPayNotes(e.target.value)}
                     placeholder="Ex: Deixou com a funcionária"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -2705,13 +2976,13 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={() => setActiveSubTab('extrato')}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-medium transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-bold shadow-glow-emerald"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all active:scale-95"
                 >
                   Confirmar Recebimento
                 </button>
@@ -2722,7 +2993,7 @@ window.ClientDetailModal = function ClientDetailModal({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Clock size={14} className="text-brand-400" />
+                  <Clock size={14} className="text-emerald-400" />
                   Extrato de Compras e Abates
                 </h4>
                 <span className="text-[10px] text-slate-400">
@@ -2731,8 +3002,12 @@ window.ClientDetailModal = function ClientDetailModal({
               </div>
 
               {(!client.transactions || client.transactions.length === 0) ? (
-                <div className="text-center py-8 text-slate-400 text-xs">
-                  Nenhuma transação registrada para este cliente.
+                <div className="text-center py-10 px-4 rounded-xl bg-slate-950/40 border border-slate-800/80">
+                  <span className="text-2xl block mb-1">📝</span>
+                  <p className="text-xs font-semibold text-slate-300">Nenhum registro ainda</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    As compras no fiado e pagamentos deste cliente serão listados aqui.
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -2748,7 +3023,7 @@ window.ClientDetailModal = function ClientDetailModal({
                       >
                         <div className="flex items-start space-x-2.5 min-w-0">
                           <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                            isSale ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'
+                            isSale ? 'bg-rose-500/15 text-rose-400' : 'bg-emerald-500/15 text-emerald-400'
                           }`}>
                             {isSale ? '🛍️' : '💵'}
                           </div>
@@ -2768,7 +3043,7 @@ window.ClientDetailModal = function ClientDetailModal({
                             {tx.photoUrl && (
                               <button
                                 onClick={() => setShowPhotoModal(tx.photoUrl)}
-                                className="text-[10px] text-brand-400 hover:underline mt-0.5 block"
+                                className="text-[10px] text-emerald-400 hover:underline mt-0.5 block"
                               >
                                 Ver Comprovante/Foto 📎
                               </button>
@@ -2794,17 +3069,90 @@ window.ClientDetailModal = function ClientDetailModal({
         {/* Rodapé com Exclusão */}
         <div className="p-3 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between text-xs">
           <button
-            onClick={handleDeleteClient}
+            onClick={() => setShowDeleteConfirm(true)}
             className="text-[11px] text-slate-400 hover:text-rose-400 flex items-center gap-1 transition-colors"
           >
             <Trash2 size={13} />
-            <span>Excluir cliente</span>
+            <span>Excluir cadastro</span>
           </button>
 
-          <span className="text-[10px] text-slate-400">
+          <span className="text-[10px] text-slate-500">
             Cadastrado em: {client.createdAt ? new Date(client.createdAt).toLocaleDateString('pt-BR') : '-'}
           </span>
         </div>
+
+        {/* Modal de Confirmação de Exclusão */}
+        <window.ConfirmModal
+          isOpen={showDeleteConfirm}
+          title="Excluir Cliente"
+          message={`Tem certeza que deseja remover o cadastro de ${client.name}?\nO histórico de compras e pagamentos será apagado.`}
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          variant="danger"
+          onConfirm={() => {
+            window.AppState.deleteClient(client.id);
+            setShowDeleteConfirm(false);
+            onClose();
+          }}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
+
+        {/* Modal de Contingência de PDF (Falha de download nativo) */}
+        {pdfErrorData && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+            <div className="relative w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-4 shadow-2xl">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Download do PDF Bloqueado</h3>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    O sistema operacional deste aparelho bloqueou o download direto de arquivos. Você pode enviar o extrato detalhado por texto no WhatsApp ou copiá-lo:
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleSendTextReceiptViaWhatsApp}
+                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+                >
+                  <MessageCircle size={15} />
+                  <span>Enviar Extrato no WhatsApp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyTextReceipt}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 font-semibold text-xs transition-colors"
+                >
+                  Copiar Texto do Extrato
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPdfErrorData(null)}
+                  className="w-full py-1.5 text-xs text-slate-400 hover:text-white text-center transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Genérico de Feedback */}
+        <window.ConfirmModal
+          isOpen={feedbackModal.isOpen}
+          title={feedbackModal.title}
+          message={feedbackModal.message}
+          confirmText="Entendi"
+          variant={feedbackModal.variant}
+          showCancel={false}
+          onConfirm={() => setFeedbackModal({ ...feedbackModal, isOpen: false })}
+        />
 
         {/* Modal de Foto/Comprovante Anexo */}
         {showPhotoModal && (
@@ -2832,7 +3180,7 @@ window.ClientDetailModal = function ClientDetailModal({
 // ==========================================
 /**
  * Aba Principal: Clientes & Fiados
- * Resumo financeiro rápido, busca instantânea, filtros por status e listagem interativa.
+ * Identidade visual comercial brasileira: limpa, ágil, acolhedora e com estados vazios humanizados.
  */
 
 window.ClientsTab = function ClientsTab({
@@ -2844,47 +3192,39 @@ window.ClientsTab = function ClientsTab({
 }) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('todos'); // 'todos' | 'atrasado' | 'em_dia' | 'quitado'
-  const [sortBy, setSortBy] = React.useState('debt_desc'); // 'debt_desc' | 'name_asc' | 'recent'
+  const [sortBy, setSortBy] = React.useState('debt_desc');
 
   const {
     Search, PlusCircle, MessageCircle, AlertTriangle, CheckCircle2,
-    Clock, DollarSign, Users, ChevronRight, Sparkles
-  } = window.Icons;
+    Clock, DollarSign, Users, ChevronRight, Sparkles, X
+  } = window.Icons || {};
 
-  // Métricas rápidas no topo
-  const totalReceivables = clients.reduce((acc, c) => acc + window.AppState.computeBalance(c), 0);
-  const overdueClientsCount = clients.filter(c => window.AppState.getClientStatus(c) === 'atrasado').length;
-  const inDebtClientsCount = clients.filter(c => window.AppState.computeBalance(c) > 0.01).length;
+  // Métricas financeiras no topo
+  const totalReceivables = clients.reduce((acc, c) => acc + (window.AppState ? window.AppState.computeBalance(c) : 0), 0);
+  const overdueClientsCount = clients.filter(c => window.AppState && window.AppState.getClientStatus(c) === 'atrasado').length;
+  const inDebtClientsCount = clients.filter(c => window.AppState && window.AppState.computeBalance(c) > 0.01).length;
 
   // Filtragem
   const filteredClients = clients.filter(client => {
-    // Busca textual
     const matchesSearch = 
       client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (client.phone && client.phone.includes(searchTerm.replace(/\D/g, '')));
 
     if (!matchesSearch) return false;
 
-    // Filtro por status
-    const status = window.AppState.getClientStatus(client);
+    const status = window.AppState ? window.AppState.getClientStatus(client) : 'em_dia';
     if (statusFilter === 'todos') return true;
     return status === statusFilter;
   });
 
   // Ordenação
   const sortedClients = [...filteredClients].sort((a, b) => {
-    const debtA = window.AppState.computeBalance(a);
-    const debtB = window.AppState.computeBalance(b);
+    const debtA = window.AppState ? window.AppState.computeBalance(a) : 0;
+    const debtB = window.AppState ? window.AppState.computeBalance(b) : 0;
 
-    if (sortBy === 'debt_desc') {
-      return debtB - debtA;
-    }
-    if (sortBy === 'name_asc') {
-      return a.name.localeCompare(b.name);
-    }
-    if (sortBy === 'recent') {
-      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-    }
+    if (sortBy === 'debt_desc') return debtB - debtA;
+    if (sortBy === 'name_asc') return a.name.localeCompare(b.name);
+    if (sortBy === 'recent') return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     return 0;
   });
 
@@ -2892,44 +3232,44 @@ window.ClientsTab = function ClientsTab({
     <div className="space-y-4 pb-24 animate-fadeIn">
       
       {/* 3 Cards de Resumo Financeiro no Topo */}
-      <div className="grid grid-cols-3 gap-2 px-1">
+      <div className="grid grid-cols-3 gap-2">
         
         {/* Total a Receber */}
-        <div className="p-3 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 shadow-sm">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
             A Receber
           </span>
-          <span className="text-base font-extrabold text-brand-400 font-mono block mt-0.5">
+          <span className="text-base font-black text-emerald-400 font-mono block mt-0.5 truncate">
             R$ {totalReceivables.toFixed(2).replace('.', ',')}
           </span>
-          <span className="text-[9px] text-slate-400">
-            {inDebtClientsCount} com saldo
+          <span className="text-[10px] text-slate-500 mt-0.5 block">
+            {inDebtClientsCount} {inDebtClientsCount === 1 ? 'com saldo' : 'com saldo'}
           </span>
         </div>
 
         {/* Em Atraso */}
-        <div className="p-3 rounded-2xl bg-gradient-to-br from-rose-950/40 to-slate-950 border border-rose-900/30 shadow-sm">
-          <span className="text-[10px] font-semibold text-rose-300 uppercase tracking-wider block flex items-center gap-1">
+        <div className="p-3.5 rounded-2xl bg-slate-900 border border-rose-900/30 shadow-sm">
+          <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block flex items-center gap-1">
             <AlertTriangle size={11} /> Atrasados
           </span>
-          <span className="text-base font-extrabold text-rose-400 font-mono block mt-0.5">
-            {overdueClientsCount} {overdueClientsCount === 1 ? 'cliente' : 'clientes'}
+          <span className="text-base font-black text-rose-400 font-mono block mt-0.5 truncate">
+            {overdueClientsCount}
           </span>
-          <span className="text-[9px] text-rose-300/80">
-            Ação necessária
+          <span className="text-[10px] text-rose-300/70 mt-0.5 block">
+            {overdueClientsCount === 1 ? 'Cobrança urgente' : 'Cobranças urgentes'}
           </span>
         </div>
 
         {/* Total Cadastrado */}
-        <div className="p-3 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 shadow-sm">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block flex items-center gap-1">
-            <Users size={11} /> Carteira
+        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block flex items-center gap-1">
+            <Users size={11} /> Clientes
           </span>
-          <span className="text-base font-extrabold text-slate-200 font-mono block mt-0.5">
-            {clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}
+          <span className="text-base font-black text-slate-200 font-mono block mt-0.5 truncate">
+            {clients.length}
           </span>
-          <span className="text-[9px] text-slate-400">
-            Base ativa
+          <span className="text-[10px] text-slate-500 mt-0.5 block">
+            Cadastrados
           </span>
         </div>
 
@@ -2944,7 +3284,7 @@ window.ClientsTab = function ClientsTab({
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="Buscar por nome ou WhatsApp..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 shadow-inner"
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
           />
           {searchTerm && (
             <button
@@ -2956,13 +3296,13 @@ window.ClientsTab = function ClientsTab({
           )}
         </div>
 
-        {/* Filtros em Pílula (Horizontal Scroll) */}
+        {/* Filtros em Pílula */}
         <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5">
           <button
             onClick={() => setStatusFilter('todos')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
               statusFilter === 'todos'
-                ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
+                ? 'bg-emerald-600 text-white'
                 : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
             }`}
           >
@@ -2973,8 +3313,8 @@ window.ClientsTab = function ClientsTab({
             onClick={() => setStatusFilter('atrasado')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 ${
               statusFilter === 'atrasado'
-                ? 'bg-rose-500 text-white shadow-sm'
-                : 'bg-slate-900 text-rose-400/90 border border-slate-800 hover:bg-slate-850'
+                ? 'bg-rose-600 text-white'
+                : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
             }`}
           >
             <AlertTriangle size={12} /> Atrasados ({overdueClientsCount})
@@ -2982,10 +3322,10 @@ window.ClientsTab = function ClientsTab({
 
           <button
             onClick={() => setStatusFilter('em_dia')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 ${
               statusFilter === 'em_dia'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'bg-slate-900 text-amber-400/90 border border-slate-800 hover:bg-slate-850'
+                ? 'bg-amber-500 text-slate-950 font-bold'
+                : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
             }`}
           >
             Em Aberto
@@ -2995,8 +3335,8 @@ window.ClientsTab = function ClientsTab({
             onClick={() => setStatusFilter('quitado')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 ${
               statusFilter === 'quitado'
-                ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                : 'bg-slate-900 text-emerald-400/90 border border-slate-800 hover:bg-slate-850'
+                ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
+                : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
             }`}
           >
             <CheckCircle2 size={12} /> Quitados
@@ -3004,38 +3344,86 @@ window.ClientsTab = function ClientsTab({
         </div>
       </div>
 
-      {/* Lista de Clientes */}
+      {/* Lista de Clientes ou Estados Vazios Humanizados */}
       <div className="space-y-2.5">
         {sortedClients.length === 0 ? (
-          <div className="text-center py-12 px-4 rounded-3xl bg-slate-900/40 border border-dashed border-slate-800">
-            <div className="w-12 h-12 rounded-2xl bg-slate-800/80 text-slate-400 flex items-center justify-center mx-auto mb-3">
-              <Users size={24} />
-            </div>
-            <h3 className="text-sm font-bold text-white">
-              {searchTerm ? 'Nenhum cliente encontrado' : clients.length === 0 ? 'Seu Caderno está pronto!' : 'Nenhum cliente nessa categoria'}
-            </h3>
-            <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-              {searchTerm 
-                ? 'Não encontramos nenhum cliente correspondente à sua busca.' 
-                : clients.length === 0
-                  ? 'Cadastre seu primeiro cliente ou anote uma venda fiada para começar a usar o CadernoFiado.'
-                  : 'Você não possui clientes com esse filtro no momento.'}
-            </p>
-            <button
-              onClick={onOpenNewRecord}
-              className="mt-4 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-bold shadow-glow-emerald inline-flex items-center space-x-1.5 transition-transform active:scale-95"
-            >
-              <PlusCircle size={16} />
-              <span>{clients.length === 0 ? 'Adicionar Primeiro Cliente' : 'Registrar Novo Fiado'}</span>
-            </button>
+          /* Estado Vazio com Ilustração e Acolhimento */
+          <div className="text-center py-10 px-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+            
+            {clients.length === 0 ? (
+              /* Caso 1: App recém-instalado ou sem nenhum cliente */
+              <>
+                <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-3xl shadow-sm">
+                  📖
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-white">
+                    Seu Caderno de Fiado está pronto!
+                  </h3>
+                  <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                    Cadastre os clientes que compram fiado e controle cobranças no WhatsApp com total clareza e tranquilidade.
+                  </p>
+                </div>
+                <button
+                  onClick={onOpenNewRecord}
+                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center space-x-2 transition-all active:scale-95 shadow-md"
+                >
+                  <PlusCircle size={16} />
+                  <span>Cadastrar Primeiro Cliente</span>
+                </button>
+              </>
+            ) : searchTerm ? (
+              /* Caso 2: Busca sem resultados */
+              <>
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-800 text-slate-400 flex items-center justify-center text-2xl">
+                  🔍
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-white">
+                    Nenhum cliente encontrado
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Não encontramos resultados para "{searchTerm}".
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors"
+                >
+                  Limpar busca
+                </button>
+              </>
+            ) : (
+              /* Caso 3: Filtro de status vazio */
+              <>
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-800 text-slate-400 flex items-center justify-center text-2xl">
+                  📋
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-white">
+                    Nenhum cliente nesta categoria
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Não há registros correspondentes ao filtro selecionado.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setStatusFilter('todos')}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors"
+                >
+                  Ver todos os clientes
+                </button>
+              </>
+            )}
+
           </div>
         ) : (
+          /* Listagem de Clientes */
           sortedClients.map(client => {
-            const debt = window.AppState.computeBalance(client);
-            const status = window.AppState.getClientStatus(client);
+            const debt = window.AppState ? window.AppState.computeBalance(client) : 0;
+            const status = window.AppState ? window.AppState.getClientStatus(client) : 'em_dia';
             const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
 
-            // Pega o primeiro nome para a foto/avatar
             const initials = client.name
               .split(' ')
               .map(n => n[0])
@@ -3043,7 +3431,6 @@ window.ClientsTab = function ClientsTab({
               .join('')
               .toUpperCase();
 
-            // Pega a data da última compra ou vencimento
             const openSales = (client.transactions || []).filter(t => t.type === 'sale');
             const nearestDue = openSales.length > 0 && openSales[0].dueDate 
               ? openSales[0].dueDate.split('-').reverse().join('/') 
@@ -3053,25 +3440,25 @@ window.ClientsTab = function ClientsTab({
               <div
                 key={client.id}
                 onClick={() => onSelectClient(client.id)}
-                className="p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-850/80 border border-slate-800/80 hover:border-slate-700 transition-all cursor-pointer shadow-sm group active:scale-[0.99]"
+                className="p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 transition-all cursor-pointer shadow-sm group active:scale-[0.99]"
               >
                 <div className="flex items-center justify-between gap-3">
                   
                   {/* Avatar com Iniciais e Informações */}
                   <div className="flex items-center space-x-3 min-w-0 flex-1">
-                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-xs flex-shrink-0 shadow-sm ${
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 ${
                       status === 'atrasado'
-                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                        ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                         : status === 'quitado'
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        : 'bg-brand-500/20 text-brand-300 border border-brand-500/30'
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-slate-800 text-slate-200 border border-slate-700'
                     }`}>
                       {initials}
                     </div>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <h4 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-brand-300 transition-colors">
+                        <h4 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-emerald-400 transition-colors">
                           {client.name}
                         </h4>
                         {status === 'quitado' && (
@@ -3080,50 +3467,31 @@ window.ClientsTab = function ClientsTab({
                       </div>
 
                       <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                        {client.phone ? `Zap: ${client.phone}` : 'Sem WhatsApp'}
+                        {client.phone ? client.phone : (client.address || 'Sem telefone')}
                       </p>
-
-                      {status === 'atrasado' && nearestDue && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-400 mt-0.5">
-                          <AlertTriangle size={10} /> Vencido em {nearestDue}
-                        </span>
-                      )}
-                      {status === 'em_dia' && nearestDue && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-300/80 mt-0.5">
-                          <Clock size={10} /> Vence em {nearestDue}
-                        </span>
-                      )}
                     </div>
                   </div>
 
-                  {/* Saldo e Ações Rápidas */}
-                  <div className="text-right flex flex-col items-end flex-shrink-0">
-                    <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
-                      Saldo
-                    </span>
-                    <span className={`text-sm sm:text-base font-extrabold font-mono ${
+                  {/* Saldo Devedor e Status */}
+                  <div className="text-right flex-shrink-0">
+                    <span className={`font-mono font-bold text-sm block ${
                       debt > 0 
                         ? (status === 'atrasado' ? 'text-rose-400' : 'text-amber-400') 
                         : 'text-emerald-400'
                     }`}>
-                      {formattedDebt}
+                      {debt > 0 ? formattedDebt : 'Quitado'}
                     </span>
 
-                    {/* Botão de Atalho Rápido para WhatsApp */}
-                    {debt > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenWhatsApp(client);
-                        }}
-                        className="mt-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold flex items-center gap-1 transition-transform active:scale-95"
-                        title="Cobrar este cliente no WhatsApp"
-                      >
-                        <MessageCircle size={12} />
-                        <span>Cobrar</span>
-                      </button>
-                    )}
+                    <span className="text-[10px] text-slate-500 mt-0.5 block">
+                      {status === 'atrasado' 
+                        ? (nearestDue ? `Venceu ${nearestDue}` : 'Atrasado') 
+                        : status === 'em_dia' 
+                        ? (nearestDue ? `Vence ${nearestDue}` : 'Em dia') 
+                        : 'Sem pendências'}
+                    </span>
                   </div>
+
+                  <ChevronRight size={16} className="text-slate-600 group-hover:text-slate-400 flex-shrink-0 ml-1 transition-colors" />
 
                 </div>
               </div>
@@ -3171,18 +3539,21 @@ window.NewRecordTab = function NewRecordTab({
   const [clientAddress, setClientAddress] = React.useState('');
   const [clientLimit, setClientLimit] = React.useState('350');
 
+  // Diálogo amigável de feedback (sem alert nativo)
+  const [feedbackDialog, setFeedbackDialog] = React.useState({ isOpen: false, title: '', message: '', variant: 'warning' });
+
   const {
     PlusCircle, UserPlus, DollarSign, Calendar, Camera, X, Check,
     Sparkles, AlertTriangle, Users
-  } = window.Icons;
+  } = window.Icons || {};
 
-  // Tags rápidas de produtos/serviços comuns
+  // Tags rápidas de produtos/serviços comuns no comércio popular brasileiro
   const quickTags = [
-    'Alongamento / Manicure',
-    'Escova & Tratamento',
-    'Roupas & Vestuário',
+    'Manicure / Unhas',
+    'Corte & Cabelo',
+    'Roupas / Calçados',
     'Cosméticos / Perfume',
-    'Troca de Óleo & Peças',
+    'Oficina / Peças',
     'Mercadoria / Alimentos'
   ];
 
@@ -3198,7 +3569,6 @@ window.NewRecordTab = function NewRecordTab({
     const file = e.target.files[0];
     if (!file) return;
 
-    // Converte para Base64 para persistência simples
     const reader = new FileReader();
     reader.onload = (event) => {
       setPhotoPreview(event.target.result);
@@ -3210,12 +3580,22 @@ window.NewRecordTab = function NewRecordTab({
   const handleSaleSubmit = (e) => {
     e.preventDefault();
     if (!selectedClientId) {
-      alert('Por favor, selecione um cliente.');
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Selecione o Cliente',
+        message: 'Por favor, selecione para qual cliente esta venda fiada será anotada.',
+        variant: 'warning'
+      });
       return;
     }
     const val = parseFloat(saleAmount);
     if (isNaN(val) || val <= 0) {
-      alert('Por favor, informe um valor válido para a venda.');
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Valor Inválido',
+        message: 'Por favor, informe um valor numérico válido para a venda.',
+        variant: 'warning'
+      });
       return;
     }
 
@@ -3227,15 +3607,18 @@ window.NewRecordTab = function NewRecordTab({
         photoUrl: photoPreview
       });
 
-      // Limpa formulário
       setSaleAmount('');
       setSaleDesc('');
       setPhotoPreview(null);
 
-      // Notifica e redireciona
       onRecordCreated(selectedClientId);
     } catch(err) {
-      alert('Erro ao registrar venda: ' + err.message);
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Erro ao Registrar',
+        message: 'Não foi possível salvar a venda: ' + err.message,
+        variant: 'danger'
+      });
     }
   };
 
@@ -3243,7 +3626,12 @@ window.NewRecordTab = function NewRecordTab({
   const handleClientSubmit = (e) => {
     e.preventDefault();
     if (!clientName.trim()) {
-      alert('Por favor, informe o nome do cliente.');
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Nome Obrigatório',
+        message: 'Por favor, informe o nome ou apelido do cliente.',
+        variant: 'warning'
+      });
       return;
     }
 
@@ -3257,213 +3645,217 @@ window.NewRecordTab = function NewRecordTab({
     setClientName('');
     setClientPhone('');
     setClientAddress('');
+    setClientLimit('350');
 
     onClientCreated(newClient.id);
   };
 
   return (
-    <div className="space-y-4 pb-24 animate-fadeIn">
+    <div className="space-y-4 pb-28 animate-fadeIn">
       
-      {/* Seletor de Tipo de Registro: Nova Venda Fiada vs Novo Cliente */}
-      <div className="grid grid-cols-2 gap-2 p-1 bg-slate-900 rounded-2xl border border-slate-800">
+      {/* Alternador de Tipo de Registro: Fiado OU Novo Cliente */}
+      <div className="grid grid-cols-2 p-1 rounded-2xl bg-slate-900 border border-slate-800 text-xs font-bold">
         <button
           type="button"
           onClick={() => setRecordType('sale')}
-          className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-2 ${
+          className={`py-2.5 rounded-xl transition-all flex items-center justify-center space-x-1.5 ${
             recordType === 'sale'
-              ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
+              ? 'bg-emerald-600 text-white shadow-sm'
               : 'text-slate-400 hover:text-white'
           }`}
         >
-          <PlusCircle size={16} />
+          <DollarSign size={15} />
           <span>Anotar Fiado</span>
         </button>
 
         <button
           type="button"
           onClick={() => setRecordType('client')}
-          className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-2 ${
+          className={`py-2.5 rounded-xl transition-all flex items-center justify-center space-x-1.5 ${
             recordType === 'client'
-              ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
+              ? 'bg-emerald-600 text-white shadow-sm'
               : 'text-slate-400 hover:text-white'
           }`}
         >
-          <UserPlus size={16} />
-          <span>Cadastrar Cliente</span>
+          <UserPlus size={15} />
+          <span>Novo Cliente</span>
         </button>
       </div>
 
       {recordType === 'sale' ? (
-        /* FORMULÁRIO DE ANOTAR FIADO */
+        /* FORMULÁRIO DE ANOTAR VENDA FIADA */
         <form onSubmit={handleSaleSubmit} className="space-y-4">
           
-          {/* Seleção do Cliente */}
-          <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <Users size={14} className="text-brand-400" />
-                Para quem é este fiado?
-              </label>
-              <button
-                type="button"
-                onClick={() => setRecordType('client')}
-                className="text-[11px] text-brand-400 hover:underline font-semibold"
-              >
-                + Novo Cliente
-              </button>
-            </div>
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3.5 shadow-sm">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <DollarSign size={16} className="text-emerald-400" />
+              Dados da Venda no Fiado
+            </h3>
 
-            <select
-              value={selectedClientId}
-              onChange={e => setSelectedClientId(e.target.value)}
-              required
-              className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm font-semibold text-white focus:outline-none focus:border-brand-500 shadow-inner"
-            >
-              <option value="">
-                {clients.length === 0 
-                  ? 'Nenhum cliente cadastrado ainda (clique acima em "+ Novo Cliente")' 
-                  : 'Selecione um cliente cadastrado...'}
-              </option>
-              {clients.map(c => {
-                const debt = window.AppState.computeBalance(c);
-                return (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {debt > 0 ? `(Deve R$ ${debt.toFixed(2).replace('.', ',')})` : '(Quitado)'}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-
-          {/* Valor da Venda */}
-          <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
-            <label className="text-xs font-bold text-slate-300 block">
-              Valor da Venda Fiada (R$):
-            </label>
-            <div className="relative">
-              <span className="absolute left-4 top-3 text-lg font-bold text-slate-400">R$</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0.50"
-                value={saleAmount}
-                onChange={e => setSaleAmount(e.target.value)}
-                placeholder="0,00"
-                required
-                className="w-full pl-12 pr-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-xl font-extrabold text-white focus:outline-none focus:border-brand-500 font-mono shadow-inner"
-              />
-            </div>
-
-            {/* Chips de valores rápidos */}
-            <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar pt-1">
-              {[20, 50, 80, 100, 150].map(amt => (
-                <button
-                  key={amt}
-                  type="button"
-                  onClick={() => setSaleAmount(amt.toString())}
-                  className="px-2.5 py-1 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/70 text-xs font-mono font-semibold text-slate-300 active:scale-95"
-                >
-                  +R${amt}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Descrição & Tags Rápidas */}
-          <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
-            <label className="text-xs font-bold text-slate-300 block">
-              Descrição dos Produtos ou Serviços:
-            </label>
-            <input
-              type="text"
-              value={saleDesc}
-              onChange={e => setSaleDesc(e.target.value)}
-              placeholder="Ex: Escova + Selagem, 2 Camisetas, Troca de pastilhas..."
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500 shadow-inner"
-            />
-
-            {/* Sugestões de Tags */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {quickTags.map(tag => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => setSaleDesc(prev => prev ? `${prev}, ${tag}` : tag)}
-                  className="px-2 py-1 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-[10px] text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  + {tag}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Data Combinada de Vencimento */}
-          <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              <Calendar size={14} className="text-brand-400" />
-              Data Combinada para Pagamento (Vencimento):
-            </label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={e => setDueDate(e.target.value)}
-              required
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500 shadow-inner font-mono"
-            />
-
-            {/* Atalhos de Prazo */}
-            <div className="grid grid-cols-3 gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => handleQuickDue(7)}
-                className="py-1.5 px-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-[11px] font-medium text-slate-300"
-              >
-                Em 7 dias
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDue(15)}
-                className="py-1.5 px-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-[11px] font-medium text-slate-300"
-              >
-                Em 15 dias
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDue(30)}
-                className="py-1.5 px-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-[11px] font-medium text-slate-300"
-              >
-                Em 30 dias
-              </button>
-            </div>
-          </div>
-
-          {/* Anexo de Foto / Comprovante Opcional */}
-          <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <Camera size={14} className="text-brand-400" />
-                Foto / Comprovante Assinado (Opcional):
-              </label>
-              {photoPreview && (
+            {/* Seletor de Cliente */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-300">Cliente:</label>
                 <button
                   type="button"
-                  onClick={() => setPhotoPreview(null)}
-                  className="text-[10px] text-rose-400 hover:underline"
+                  onClick={() => setRecordType('client')}
+                  className="text-[11px] text-emerald-400 hover:underline"
                 >
-                  Remover
+                  + Cadastrar novo
                 </button>
+              </div>
+
+              {(!clients || clients.length === 0) ? (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300">
+                  Nenhum cliente cadastrado ainda. 
+                  <button
+                    type="button"
+                    onClick={() => setRecordType('client')}
+                    className="underline font-bold ml-1"
+                  >
+                    Clique aqui para cadastrar o primeiro!
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={selectedClientId}
+                  onChange={e => setSelectedClientId(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="">Selecione o cliente...</option>
+                  {clients.map(c => {
+                    const debt = window.AppState.computeBalance(c);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {debt > 0 ? `(Deve R$ ${debt.toFixed(2)})` : '(Quitado)'}
+                      </option>
+                    );
+                  })}
+                </select>
               )}
             </div>
+
+            {/* Valor da Venda */}
+            <div>
+              <label className="text-xs font-bold text-slate-300 block mb-1">
+                Valor Total (R$):
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-2.5 text-base font-bold text-slate-400">R$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={saleAmount}
+                  onChange={e => setSaleAmount(e.target.value)}
+                  placeholder="0,00"
+                  required
+                  className="w-full pl-11 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base font-bold text-white focus:outline-none focus:border-emerald-500 font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Descrição do Fiado */}
+            <div>
+              <label className="text-xs font-bold text-slate-300 block mb-1">
+                Descrição do Produto ou Serviço:
+              </label>
+              <input
+                type="text"
+                value={saleDesc}
+                onChange={e => setSaleDesc(e.target.value)}
+                placeholder="Ex: Manicure + Pedicure / 2 Calças Jeans"
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
+
+              {/* Tags rápidas */}
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {quickTags.map((tag, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSaleDesc(tag)}
+                    className="text-[10px] px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-colors"
+                  >
+                    + {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Data de Vencimento */}
+            <div>
+              <label className="text-xs font-bold text-slate-300 block mb-1">
+                Data do Vencimento Acordada:
+              </label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={e => setDueDate(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
+
+              {/* Atalhos de prazo */}
+              <div className="grid grid-cols-4 gap-1.5 mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleQuickDue(7)}
+                  className="py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-[10px] text-slate-300 border border-slate-700"
+                >
+                  +7 Dias
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickDue(15)}
+                  className="py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-[10px] text-slate-300 border border-slate-700"
+                >
+                  +15 Dias
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickDue(30)}
+                  className="py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-[10px] text-slate-300 border border-slate-700"
+                >
+                  +30 Dias
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const today = new Date().toISOString().split('T')[0];
+                    setDueDate(today);
+                  }}
+                  className="py-1 rounded-lg bg-slate-800 hover:bg-slate-750 text-[10px] text-slate-300 border border-slate-700"
+                >
+                  Hoje
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Anexo de Foto / Cupom / Assinatura */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2.5">
+            <span className="text-xs font-bold text-slate-300 block">
+              Foto do Comprovante / Cupom (Opcional):
+            </span>
 
             {photoPreview ? (
               <div className="relative rounded-xl overflow-hidden border border-slate-700 max-h-40">
                 <img src={photoPreview} alt="Comprovante" className="w-full h-40 object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setPhotoPreview(null)}
+                  className="absolute top-2 right-2 p-1 rounded-full bg-black/80 text-white hover:bg-black"
+                >
+                  <X size={16} />
+                </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-800 hover:border-slate-700 rounded-2xl cursor-pointer bg-slate-950/40 transition-colors">
-                <Camera size={22} className="text-slate-500 mb-1" />
-                <span className="text-xs font-semibold text-slate-400">Tirar foto ou anexar recibo</span>
-                <span className="text-[10px] text-slate-400">Ajuda a comprovar o pedido em caso de dúvida</span>
+              <label className="flex flex-col items-center justify-center p-4 rounded-xl border border-dashed border-slate-700 bg-slate-950/60 hover:bg-slate-950 cursor-pointer text-slate-400 hover:text-slate-200 transition-colors">
+                <Camera size={22} className="mb-1 text-slate-500" />
+                <span className="text-xs font-semibold">Tirar Foto ou Anexar Imagem</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -3474,10 +3866,10 @@ window.NewRecordTab = function NewRecordTab({
             )}
           </div>
 
-          {/* Botão de Gravar Registro */}
+          {/* Botão Salvar Fiado */}
           <button
             type="submit"
-            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-500 to-emerald-400 hover:from-brand-400 hover:to-emerald-300 text-slate-950 font-extrabold text-sm shadow-glow-emerald flex items-center justify-center space-x-2 transition-all active:scale-95"
+            className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-[0.99] shadow-md"
           >
             <Check size={18} />
             <span>Salvar Fiado no Caderno</span>
@@ -3487,9 +3879,9 @@ window.NewRecordTab = function NewRecordTab({
       ) : (
         /* FORMULÁRIO DE CADASTRAR NOVO CLIENTE */
         <form onSubmit={handleClientSubmit} className="space-y-4">
-          <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3.5 shadow-sm">
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3.5 shadow-sm">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <UserPlus size={16} className="text-brand-400" />
+              <UserPlus size={16} className="text-emerald-400" />
               Cadastrar Novo Cliente no Caderno
             </h3>
 
@@ -3501,9 +3893,9 @@ window.NewRecordTab = function NewRecordTab({
                 type="text"
                 value={clientName}
                 onChange={e => setClientName(e.target.value)}
-                placeholder="Ex: Dona Neide (Costureira)"
+                placeholder="Ex: Dona Neide / Seu Jorge"
                 required
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500 shadow-inner"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
               />
             </div>
 
@@ -3517,7 +3909,7 @@ window.NewRecordTab = function NewRecordTab({
                 onChange={e => setClientPhone(e.target.value)}
                 placeholder="Ex: 11987654321 (apenas números)"
                 required
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500 shadow-inner"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
               />
               <span className="text-[10px] text-slate-400 mt-1 block">
                 Fundamental para a cobrança automática e envio do PIX com 1 clique.
@@ -3532,8 +3924,8 @@ window.NewRecordTab = function NewRecordTab({
                 type="text"
                 value={clientAddress}
                 onChange={e => setClientAddress(e.target.value)}
-                placeholder="Ex: Casa verde em frente à padaria / Bloco C Apto 12"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500 shadow-inner"
+                placeholder="Ex: Rua das Flores, 120 / Bloco B Apto 10"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
               />
             </div>
 
@@ -3547,7 +3939,7 @@ window.NewRecordTab = function NewRecordTab({
                 value={clientLimit}
                 onChange={e => setClientLimit(e.target.value)}
                 placeholder="350,00"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500 font-mono shadow-inner"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
               />
               <span className="text-[10px] text-slate-400 mt-1 block">
                 O app avisará quando a dívida acumulada ultrapassar esse limite.
@@ -3556,7 +3948,7 @@ window.NewRecordTab = function NewRecordTab({
 
             <button
               type="submit"
-              className="w-full mt-2 py-3 rounded-2xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs shadow-glow-emerald flex items-center justify-center space-x-2 transition-all active:scale-95"
+              className="w-full mt-2 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all active:scale-[0.99] shadow-md"
             >
               <Check size={16} />
               <span>Concluir Cadastro de Cliente</span>
@@ -3564,6 +3956,17 @@ window.NewRecordTab = function NewRecordTab({
           </div>
         </form>
       )}
+
+      {/* Modal de Feedback Amigável */}
+      <window.ConfirmModal
+        isOpen={feedbackDialog.isOpen}
+        title={feedbackDialog.title}
+        message={feedbackDialog.message}
+        confirmText="Entendi"
+        variant={feedbackDialog.variant}
+        showCancel={false}
+        onConfirm={() => setFeedbackDialog({ ...feedbackDialog, isOpen: false })}
+      />
 
     </div>
   );
@@ -3575,16 +3978,16 @@ window.NewRecordTab = function NewRecordTab({
 // ==========================================
 /**
  * Aba de Relatórios de Caixa & Saúde Financeira
- * Gráficos de inadimplência, projeção de recebimentos futuros e ranking de bons pagadores.
+ * Indicadores claros, projeção de recebimentos e ranking de clientes pontuais.
  */
 
 window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSelectClient }) {
   const {
     BarChart3, DollarSign, AlertTriangle, CheckCircle2, Clock,
     Crown, Sparkles, TrendingUp, Users, ChevronRight, ShieldCheck
-  } = window.Icons;
+  } = window.Icons || {};
 
-  // 1. Cálculos de métricas gerais
+  // Métricas gerais
   let totalReceivables = 0;
   let totalOverdue = 0;
   let totalOnTime = 0;
@@ -3601,7 +4004,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
   const upcomingClients = [];
 
   clients.forEach(c => {
-    const debt = window.AppState.computeBalance(c);
+    const debt = window.AppState ? window.AppState.computeBalance(c) : 0;
     totalReceivables += debt;
 
     const sales = (c.transactions || []).filter(t => t.type === 'sale');
@@ -3612,7 +4015,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
       totalSalesEver += (parseFloat(s.amount) || 0);
       if (debt > 0 && s.dueDate) {
         if (s.dueDate < todayStr) {
-          // Atrasado
+          // Em atraso
         } else if (s.dueDate <= next7DaysStr) {
           forecast7Days += Math.min(debt, parseFloat(s.amount) || 0);
           upcomingClients.push({ client: c, amount: parseFloat(s.amount) || 0, dueDate: s.dueDate });
@@ -3626,7 +4029,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
       totalPaidEver += (parseFloat(p.amount) || 0);
     });
 
-    const status = window.AppState.getClientStatus(c);
+    const status = window.AppState ? window.AppState.getClientStatus(c) : 'em_dia';
     if (status === 'atrasado') {
       totalOverdue += debt;
     } else if (status === 'em_dia') {
@@ -3634,7 +4037,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
     }
   });
 
-  // Taxa de Inadimplência
+  // Inadimplência
   const defaultRate = totalReceivables > 0 
     ? Math.round((totalOverdue / totalReceivables) * 100) 
     : 0;
@@ -3642,13 +4045,13 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
   // Ticket Médio
   const avgTicket = totalSalesCount > 0 ? (totalSalesEver / totalSalesCount) : 0;
 
-  // Ranking de Melhores Pagadores (clientes com maior volume pago e sem atraso atual)
+  // Ranking de Bons Pagadores
   const bestPayers = [...clients]
     .map(c => {
       const paid = (c.transactions || [])
         .filter(t => t.type === 'payment')
         .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-      const status = window.AppState.getClientStatus(c);
+      const status = window.AppState ? window.AppState.getClientStatus(c) : 'em_dia';
       return { client: c, totalPaid: paid, status };
     })
     .filter(item => item.totalPaid > 0)
@@ -3658,11 +4061,11 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
   return (
     <div className="space-y-4 pb-24 animate-fadeIn">
       
-      {/* Top Banner de Resumo da Saúde do Negócio */}
-      <div className="p-4 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 shadow-sm space-y-3">
+      {/* Top Banner de Resumo de Caixa */}
+      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-xl bg-brand-500/20 text-brand-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
               <BarChart3 size={18} />
             </div>
             <h3 className="font-bold text-sm text-white">Relatório de Caixa & Fiados</h3>
@@ -3675,31 +4078,31 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
 
         {/* Grade 2x2 de Indicadores */}
         <div className="grid grid-cols-2 gap-2.5 pt-1">
-          <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/90">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/90">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Total a Receber
             </span>
-            <span className="text-base font-extrabold text-brand-400 font-mono block mt-0.5">
+            <span className="text-base font-black text-emerald-400 font-mono block mt-0.5">
               R$ {totalReceivables.toFixed(2).replace('.', ',')}
             </span>
-            <span className="text-[9px] text-slate-400">Capital na rua</span>
+            <span className="text-[9px] text-slate-500">Capital na rua</span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/90">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/90">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Total Já Recebido
             </span>
-            <span className="text-base font-extrabold text-emerald-400 font-mono block mt-0.5">
+            <span className="text-base font-black text-emerald-400 font-mono block mt-0.5">
               R$ {totalPaidEver.toFixed(2).replace('.', ',')}
             </span>
-            <span className="text-[9px] text-emerald-400/80">Recuperado com sucesso</span>
+            <span className="text-[9px] text-slate-500">Recuperado com sucesso</span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/90">
-            <span className="text-[10px] font-semibold text-rose-300 uppercase tracking-wider block">
-              Taxa Inadimplência
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/90">
+            <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block">
+              Inadimplência
             </span>
-            <span className="text-base font-extrabold text-rose-400 font-mono block mt-0.5">
+            <span className="text-base font-black text-rose-400 font-mono block mt-0.5">
               {defaultRate}%
             </span>
             <span className="text-[9px] text-rose-300/80">
@@ -3707,35 +4110,35 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
             </span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/90">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/90">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Ticket Médio Fiado
             </span>
-            <span className="text-base font-extrabold text-slate-200 font-mono block mt-0.5">
+            <span className="text-base font-black text-slate-200 font-mono block mt-0.5">
               R$ {avgTicket.toFixed(2).replace('.', ',')}
             </span>
-            <span className="text-[9px] text-slate-400">Por venda anotada</span>
+            <span className="text-[9px] text-slate-500">Por venda anotada</span>
           </div>
         </div>
       </div>
 
       {/* Gráfico Visual de Distribuição da Inadimplência */}
-      <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
+      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-            <TrendingUp size={14} className="text-brand-400" />
+            <TrendingUp size={14} className="text-emerald-400" />
             Distribuição dos Valores a Receber
           </h4>
           <span className="text-[10px] text-slate-400">Total: 100%</span>
         </div>
 
-        {/* Barra Proporcional Multi-segmentada */}
-        <div className="w-full h-4 bg-slate-950 rounded-full overflow-hidden flex border border-slate-800 p-0.5">
+        {/* Barra Proporcional */}
+        <div className="w-full h-3.5 bg-slate-950 rounded-full overflow-hidden flex border border-slate-800 p-0.5">
           {totalReceivables > 0 ? (
             <>
               <div
                 title={`Em Dia: R$ ${totalOnTime.toFixed(2)}`}
-                className="bg-brand-500 h-full rounded-l-full transition-all duration-500"
+                className="bg-emerald-500 h-full rounded-l-full transition-all duration-500"
                 style={{ width: `${(totalOnTime / totalReceivables) * 100}%` }}
               />
               <div
@@ -3752,7 +4155,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         {/* Legenda Explicativa */}
         <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
           <div className="flex items-center space-x-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800">
-            <div className="w-3 h-3 rounded-full bg-brand-500 flex-shrink-0" />
+            <div className="w-3 h-3 rounded-full bg-emerald-500 flex-shrink-0" />
             <div className="min-w-0">
               <span className="text-[10px] text-slate-400 block truncate">No Prazo / Em Dia</span>
               <span className="font-bold text-white font-mono text-xs">
@@ -3773,8 +4176,8 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         </div>
       </div>
 
-      {/* Previsão de Recebimentos (Fluxo Projetado 7 e 30 dias) */}
-      <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
+      {/* Previsão de Entradas Acordadas */}
+      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
             <Clock size={14} className="text-amber-400" />
@@ -3783,8 +4186,8 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20">
-            <span className="text-[10px] font-semibold text-amber-300 uppercase block">
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <span className="text-[10px] font-bold text-amber-300 uppercase block">
               Próximos 7 Dias
             </span>
             <span className="text-sm font-extrabold text-amber-400 font-mono block mt-1">
@@ -3793,8 +4196,8 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
             <span className="text-[9px] text-slate-400 mt-0.5 block">Entradas previstas</span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase block">
+          <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">
               Próximos 30 Dias
             </span>
             <span className="text-sm font-extrabold text-slate-200 font-mono block mt-1">
@@ -3805,20 +4208,24 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         </div>
       </div>
 
-      {/* Ranking dos Clientes Mais Pontuais ("Top Bons Pagadores ⭐") */}
-      <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
+      {/* Ranking dos Melhores Pagadores */}
+      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-            <Sparkles size={14} className="text-gold-400" />
-            Ranking: Clientes Mais Pontuais ⭐
+            <span>⭐</span>
+            Ranking: Clientes Mais Pontuais
           </h4>
-          <span className="text-[10px] text-slate-400">Maior fidelidade</span>
+          <span className="text-[10px] text-slate-400">Honraram compromissos</span>
         </div>
 
         {bestPayers.length === 0 ? (
-          <p className="text-xs text-slate-400 py-3 text-center">
-            Nenhum histórico de pagamentos registrado ainda.
-          </p>
+          <div className="text-center py-6 px-4 rounded-xl bg-slate-950/40 border border-slate-800/80">
+            <span className="text-2xl block mb-1">🤝</span>
+            <p className="text-xs font-semibold text-slate-300">Nenhum pagamento registrado ainda</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Conforme os clientes forem abatendo suas dívidas, o ranking de pontualidade aparecerá aqui.
+            </p>
+          </div>
         ) : (
           <div className="space-y-2">
             {bestPayers.map((item, idx) => {
@@ -3845,7 +4252,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
                     <span className="text-xs font-bold text-emerald-400 font-mono block">
                       R$ {item.totalPaid.toFixed(2).replace('.', ',')}
                     </span>
-                    <span className="text-[9px] text-slate-400">total honrado</span>
+                    <span className="text-[9px] text-slate-500">total honrado</span>
                   </div>
                 </div>
               );
@@ -3863,28 +4270,28 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
 // Arquivo: js\components\VipTab.js
 // ==========================================
 /**
- * Aba e Tela de Paywall de Alta Conversão: Plano VIP Pro
- * Sistema real de Licenciamento por ID de Aparelho, Contagem Regressiva de Expiração e Renovação via WhatsApp.
+ * Aba e Tela de Paywall: Plano VIP Pro
+ * Sistema seguro de Licenciamento Criptográfico por ID de Aparelho e Contagem Regressiva.
  */
 
 window.VipTab = function VipTab({
   vipInfo,
   onWatchRewarded,
   triggerReason,
-  shopSettings,
-  onOpenAdmin
+  shopSettings
 }) {
   const [selectedPlan, setSelectedPlan] = React.useState('monthly'); // 'monthly' | 'annual' | 'lifetime'
   const [licenseCode, setLicenseCode] = React.useState('');
   const [activationMessage, setActivationMessage] = React.useState(null);
+  const [activating, setActivating] = React.useState(false);
   const [copiedId, setCopiedId] = React.useState(false);
 
   const {
     Crown, Sparkles, Check, QrCode, FileText, ShieldCheck,
     Play, Clock, Star, Users, CheckCircle2, DollarSign, Copy, MessageCircle, AlertTriangle
-  } = window.Icons;
+  } = window.Icons || {};
 
-  const installationId = vipInfo.installationId || window.AppState.getInstallationId();
+  const installationId = vipInfo.installationId || (window.AppState ? window.AppState.getInstallationId() : '');
 
   // Copia o ID do aparelho
   const handleCopyId = () => {
@@ -3904,22 +4311,26 @@ window.VipTab = function VipTab({
 
     const message = `Olá! Quero assinar o *${current.name} (${current.price})* do CadernoFiado.\n\n📲 *ID do meu aparelho:* \`${installationId}\`\n\nPode me enviar a chave PIX para eu fazer o pagamento e liberar meu código de ativação? Obrigado!`;
 
-    // Número do criador configurado ou fallback padrão
     const ownerPhone = (shopSettings?.supportPhone || '51985661499').replace(/\D/g, '');
     const cleanPhone = ownerPhone.startsWith('55') ? ownerPhone : '55' + ownerPhone;
 
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  // Ativação do código digitado
-  const handleActivateCode = (e) => {
+  // Ativação assíncrona do código digitado via Web Crypto ECDSA
+  const handleActivateCode = async (e) => {
     e.preventDefault();
     if (!licenseCode.trim()) {
-      setActivationMessage({ success: false, text: 'Digite o código de ativação fornecido no WhatsApp.' });
+      setActivationMessage({ success: false, text: 'Digite o código de ativação recebido no WhatsApp.' });
       return;
     }
 
-    const result = window.AppState.activateLicenseKey(licenseCode);
+    setActivating(true);
+    setActivationMessage(null);
+
+    const result = await window.AppState.activateLicenseKey(licenseCode);
+    setActivating(false);
+
     if (result.success) {
       setActivationMessage({ success: true, text: result.message });
       setLicenseCode('');
@@ -3938,13 +4349,13 @@ window.VipTab = function VipTab({
   return (
     <div className="space-y-4 pb-28 animate-fadeIn">
       
-      {/* Alerta de Recurso Bloqueado (se veio de um gatilho de Paywall) */}
+      {/* Alerta de Recurso Bloqueado */}
       {triggerReason && !vipInfo.isVip && (
-        <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-xs text-amber-300 flex items-start space-x-2.5 shadow-lg">
+        <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-xs text-amber-300 flex items-start space-x-2.5">
           <Crown size={18} className="text-amber-400 flex-shrink-0 mt-0.5" />
           <div>
             <span className="font-bold block">
-              {triggerReason === 'pix' ? 'Geração de PIX Automático' : 'Emissão de Recibo em PDF Timbrado'} é um recurso VIP!
+              {triggerReason === 'pix' ? 'Cobrança PIX Automática' : 'Emissão de Recibo em PDF Timbrado'} é um recurso VIP!
             </span>
             <span className="text-[11px] text-slate-300">
               Assine um plano a partir de R$ 9,90/mês ou assista a um vídeo rápido para desbloquear por 24h.
@@ -3955,17 +4366,17 @@ window.VipTab = function VipTab({
 
       {/* --- SE O CLIENTE JÁ TEM O VIP ATIVO --- */}
       {vipInfo.isVip ? (
-        <div className="relative p-5 rounded-3xl bg-gradient-to-br from-amber-950/50 via-slate-900 to-slate-950 border border-amber-500/40 shadow-2xl text-center space-y-4 overflow-hidden">
+        <div className="relative p-5 rounded-2xl bg-slate-900 border border-amber-500/40 shadow-xl text-center space-y-4 overflow-hidden">
           
-          <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center text-slate-950 shadow-glow-gold">
-            <Crown size={34} strokeWidth={2.5} />
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+            <Crown size={28} strokeWidth={2.5} />
           </div>
 
           <div>
-            <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1.5">
+            <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1.5">
               <CheckCircle2 size={13} /> Assinatura Ativa
             </span>
-            <h2 className="text-xl font-black text-white mt-2">
+            <h2 className="text-xl font-bold text-white mt-2">
               {vipInfo.planName || 'VIP PRO Ativo'}
             </h2>
             
@@ -3975,7 +4386,7 @@ window.VipTab = function VipTab({
               </p>
             ) : vipInfo.daysRemaining !== null ? (
               <div className="mt-2 space-y-1">
-                <p className="text-sm font-extrabold text-emerald-400">
+                <p className="text-sm font-bold text-emerald-400">
                   ⏳ Vence em {vipInfo.daysRemaining} dias ({vipInfo.expiresAtDateStr})
                 </p>
                 <p className="text-[11px] text-slate-400">
@@ -3990,18 +4401,18 @@ window.VipTab = function VipTab({
           </div>
 
           {/* Dados do Aparelho */}
-          <div className="p-3 bg-slate-950/80 rounded-2xl border border-slate-800 flex items-center justify-between text-xs">
+          <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
             <span className="text-slate-400">ID deste Aparelho:</span>
             <span className="font-mono font-bold text-white">{installationId}</span>
           </div>
 
-          {/* Botão de Renovação se estiver próximo do vencimento */}
+          {/* Renovação se estiver próximo do vencimento */}
           {!vipInfo.isLifetime && vipInfo.daysRemaining !== null && vipInfo.daysRemaining <= 5 && (
-            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-300 space-y-2">
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300 space-y-2">
               <p className="font-semibold">⚠️ Seu plano vence em breve!</p>
               <button
                 onClick={() => handleOrderViaWhatsApp('monthly')}
-                className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl shadow-glow-gold flex items-center justify-center gap-1.5 transition-all text-xs"
+                className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all text-xs"
               >
                 <MessageCircle size={15} />
                 <span>Renovar Plano no WhatsApp Agora</span>
@@ -4015,25 +4426,25 @@ window.VipTab = function VipTab({
         <div className="space-y-4">
           
           {/* Card Principal de Apresentação */}
-          <div className="relative p-5 rounded-3xl bg-gradient-to-b from-amber-950/40 via-slate-900 to-slate-950 border border-amber-500/30 shadow-xl text-center space-y-3 overflow-hidden">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center text-slate-950 shadow-glow-gold">
-              <Crown size={30} strokeWidth={2.5} />
+          <div className="relative p-5 rounded-2xl bg-slate-900 border border-amber-500/30 shadow-lg text-center space-y-3 overflow-hidden">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Crown size={26} strokeWidth={2.5} />
             </div>
 
             <div>
-              <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/40 inline-flex items-center gap-1">
-                <Sparkles size={12} /> Acelere seu Caixa
+              <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30 inline-flex items-center gap-1">
+                <Sparkles size={12} /> Recursos Profissionais
               </span>
-              <h2 className="text-xl font-extrabold text-white mt-2 leading-tight">
-                CadernoFiado <span className="vip-gradient-text">VIP PRO</span>
+              <h2 className="text-xl font-bold text-white mt-2 leading-tight">
+                CadernoFiado <span className="text-amber-400 font-extrabold">VIP PRO</span>
               </h2>
               <p className="text-xs text-slate-300 mt-1.5 max-w-xs mx-auto leading-relaxed">
-                Cobrança PIX automática, extratos timbrados em PDF e zero limites para expandir seu negócio!
+                Cobrança com QR Code PIX automático no WhatsApp e recibos em PDF timbrados para seus clientes.
               </p>
             </div>
 
             {/* Caixa do ID do Celular */}
-            <div className="p-3 bg-slate-950/80 rounded-2xl border border-slate-800 flex items-center justify-between text-xs">
+            <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
               <div className="text-left">
                 <span className="text-[10px] text-slate-400 block">Seu ID de Aparelho:</span>
                 <span className="font-mono font-bold text-emerald-400 text-sm">{installationId}</span>
@@ -4041,7 +4452,7 @@ window.VipTab = function VipTab({
               <button
                 type="button"
                 onClick={handleCopyId}
-                className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium flex items-center gap-1 border border-slate-700"
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 text-[11px] font-medium flex items-center gap-1 border border-slate-700"
               >
                 {copiedId ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
                 <span>{copiedId ? 'Copiado' : 'Copiar ID'}</span>
@@ -4052,7 +4463,7 @@ window.VipTab = function VipTab({
           {/* Seleção de Planos de Preço */}
           <div className="space-y-2">
             <p className="text-xs font-bold text-slate-300 px-1">
-              Escolha seu plano de assinatura:
+              Escolha seu plano de acesso:
             </p>
 
             <div className="grid grid-cols-3 gap-2">
@@ -4062,13 +4473,13 @@ window.VipTab = function VipTab({
                 onClick={() => setSelectedPlan('monthly')}
                 className={`p-3 rounded-2xl border cursor-pointer transition-all text-center relative ${
                   selectedPlan === 'monthly'
-                    ? 'bg-emerald-950/40 border-emerald-500 shadow-glow-emerald'
+                    ? 'bg-emerald-950/30 border-emerald-500'
                     : 'bg-slate-900 border-slate-800 hover:border-slate-700'
                 }`}
               >
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Mensal</span>
-                <span className="text-lg font-black text-white block mt-0.5">R$ 9,90</span>
-                <span className="text-[10px] text-slate-400">por 30 dias</span>
+                <span className="text-base font-extrabold text-white block mt-0.5">R$ 9,90</span>
+                <span className="text-[10px] text-slate-400">30 dias</span>
               </div>
 
               {/* Anual (Destaque) */}
@@ -4076,15 +4487,15 @@ window.VipTab = function VipTab({
                 onClick={() => setSelectedPlan('annual')}
                 className={`p-3 rounded-2xl border cursor-pointer transition-all text-center relative ${
                   selectedPlan === 'annual'
-                    ? 'bg-amber-950/40 border-amber-500 shadow-glow-gold'
+                    ? 'bg-amber-950/30 border-amber-500'
                     : 'bg-slate-900 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] uppercase shadow-sm">
-                  Mais Vendido
+                <span className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.2 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] uppercase shadow-sm">
+                  Mais Popular
                 </span>
-                <span className="text-[10px] font-bold text-amber-400 uppercase block mt-1">Anual</span>
-                <span className="text-lg font-black text-amber-300 block mt-0.5">R$ 59,90</span>
+                <span className="text-[10px] font-bold text-amber-400 uppercase block mt-0.5">Anual</span>
+                <span className="text-base font-extrabold text-amber-300 block mt-0.5">R$ 59,90</span>
                 <span className="text-[10px] text-emerald-400 font-semibold">R$ 4,99/mês</span>
               </div>
 
@@ -4093,50 +4504,50 @@ window.VipTab = function VipTab({
                 onClick={() => setSelectedPlan('lifetime')}
                 className={`p-3 rounded-2xl border cursor-pointer transition-all text-center relative ${
                   selectedPlan === 'lifetime'
-                    ? 'bg-purple-950/40 border-purple-500 shadow-glow-violet'
+                    ? 'bg-amber-950/30 border-amber-500'
                     : 'bg-slate-900 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                <span className="text-[10px] font-bold text-purple-300 uppercase block">Vitalício</span>
-                <span className="text-lg font-black text-white block mt-0.5">R$ 97,00</span>
-                <span className="text-[10px] text-purple-300">Paga 1x só</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Vitalício</span>
+                <span className="text-base font-extrabold text-white block mt-0.5">R$ 97,00</span>
+                <span className="text-[10px] text-slate-400">Paga 1x só</span>
               </div>
 
             </div>
           </div>
 
-          {/* Botão de Pagamento / Contratação pelo WhatsApp */}
+          {/* Botão de Pagamento pelo WhatsApp */}
           <button
             onClick={() => handleOrderViaWhatsApp()}
-            className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm shadow-glow-emerald flex items-center justify-center space-x-2 transition-all transform active:scale-95"
+            className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-[0.99] shadow-md"
           >
-            <MessageCircle size={19} />
-            <span>Pagar via PIX e Liberar no WhatsApp</span>
+            <MessageCircle size={18} />
+            <span>Pagar via PIX e Liberar Código</span>
           </button>
 
           {/* Formulário de Ativação de Código do Cliente */}
-          <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-md">
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-md">
             <div className="flex items-center space-x-2">
-              <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+              <div className="w-7 h-7 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
                 <Check size={16} />
               </div>
-              <h4 className="font-bold text-xs text-white">Já fez o PIX? Ative seu Código:</h4>
+              <h4 className="font-bold text-xs text-white">Já recebeu seu código? Ative aqui:</h4>
             </div>
 
             <form onSubmit={handleActivateCode} className="space-y-2.5">
               <input
                 type="text"
                 value={licenseCode}
-                onChange={(e) => setLicenseCode(e.target.value.toUpperCase())}
-                placeholder="Cole seu código (ex: CF-30D-XXXX-YYYY)"
-                className="w-full bg-slate-950 border border-slate-700 rounded-2xl py-2.5 px-3.5 text-xs text-white font-mono uppercase tracking-wider focus:outline-none focus:border-amber-500"
+                onChange={(e) => setLicenseCode(e.target.value.trim())}
+                placeholder="Cole o código fornecido (ex: CFVIP...)"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
               />
 
               {activationMessage && (
                 <div className={`p-2.5 rounded-xl text-xs font-medium flex items-center gap-1.5 ${
                   activationMessage.success 
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
-                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' 
+                    : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                 }`}>
                   {activationMessage.success ? <Check size={15} /> : <AlertTriangle size={15} />}
                   <span>{activationMessage.text}</span>
@@ -4145,9 +4556,10 @@ window.VipTab = function VipTab({
 
               <button
                 type="submit"
-                className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-glow-gold transition-all"
+                disabled={activating}
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-white font-bold text-xs border border-slate-700 transition-all"
               >
-                Validar e Ativar VIP Agora
+                {activating ? 'Validando chave...' : 'Validar e Ativar Acesso'}
               </button>
             </form>
           </div>
@@ -4156,31 +4568,18 @@ window.VipTab = function VipTab({
           {onWatchRewarded && (
             <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-2">
               <span className="text-[11px] text-slate-400 block">
-                Quer testar antes? Libere 24h grátis assistindo a um vídeo patrocinado:
+                Quer testar antes? Libere 24h grátis assistindo a um vídeo rápido:
               </span>
               <button
                 onClick={onWatchRewarded}
-                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 mx-auto border border-slate-700 transition-colors"
+                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 mx-auto border border-slate-700 transition-colors"
               >
                 <Play size={14} className="text-emerald-400" />
-                <span>Assistir Vídeo (Liberar 24h Grátis)</span>
+                <span>Assistir Vídeo (Liberar 24h)</span>
               </button>
             </div>
           )}
 
-        </div>
-      )}
-
-      {/* Acesso Secreto ao Painel do Administrador para o Dono */}
-      {onOpenAdmin && (
-        <div className="pt-2 text-center">
-          <button
-            onClick={onOpenAdmin}
-            className="text-[11px] text-slate-500 hover:text-amber-400 transition-colors font-mono flex items-center justify-center gap-1 mx-auto"
-          >
-            <ShieldCheck size={12} />
-            <span>Área do Dono (Gerar Chaves)</span>
-          </button>
         </div>
       )}
 
@@ -4339,269 +4738,6 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
 
 
 // ==========================================
-// Arquivo: js\components\AdminLicenseModal.js
-// ==========================================
-/**
- * Painel Administrativo Secreto do Dono do App (Gerador de Licenças VIP)
- * Permite gerar chaves de ativação personalizadas por ID do celular do cliente.
- */
-
-window.AdminLicenseModal = function AdminLicenseModal({ isOpen, onClose }) {
-  const [pin, setPin] = React.useState('');
-  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
-  const [targetDeviceId, setTargetDeviceId] = React.useState('');
-  const [selectedPlan, setSelectedPlan] = React.useState('30D');
-  const [generatedKey, setGeneratedKey] = React.useState('');
-  const [copiedKey, setCopiedKey] = React.useState(false);
-  const [copiedMsg, setCopiedMsg] = React.useState(false);
-  const [authError, setAuthError] = React.useState('');
-
-  const { X, ShieldCheck, Key, Copy, Check, Sparkles, MessageCircle, Crown, Clock } = window.Icons;
-
-  React.useEffect(() => {
-    if (isOpen) {
-      setAuthError('');
-      // Pré-preenche com o próprio ID do aparelho como sugestão
-      const currentId = window.AppState.getInstallationId();
-      if (!targetDeviceId) setTargetDeviceId(currentId);
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (pin.trim() === '2026' || pin.trim() === 'admin123') {
-      setIsAuthenticated(true);
-      setAuthError('');
-    } else {
-      setAuthError('Senha de Administrador incorreta.');
-    }
-  };
-
-  const handleGenerate = () => {
-    if (!targetDeviceId.trim()) {
-      alert('Informe o ID do aparelho do cliente (ex: CF-7482).');
-      return;
-    }
-    const key = window.AppState.generateLicenseKey(targetDeviceId, selectedPlan);
-    setGeneratedKey(key);
-    setCopiedKey(false);
-    setCopiedMsg(false);
-  };
-
-  const planLabels = {
-    '30D': 'Plano Mensal (30 Dias)',
-    '365D': 'Plano Anual (1 Ano)',
-    'LIFETIME': 'Plano Vitalício Pro'
-  };
-
-  const fullWhatsAppMessage = `Olá! Seu pagamento do ${planLabels[selectedPlan]} do CadernoFiado foi confirmado com sucesso! 🎉\n\n🔑 *Seu Código de Ativação Exclusivo:*\n\`${generatedKey}\`\n\n📲 *Como ativar no seu aparelho:*\n1. Abra o CadernoFiado no seu celular\n2. Vá na aba inferior "Plano VIP"\n3. Cole o código acima no campo "Código de Ativação" e clique em Ativar!\n\nSeu acesso com cobrança PIX e PDFs timbrados já está liberado. Obrigado pela confiança! 🤝`;
-
-  const handleCopyKey = () => {
-    navigator.clipboard.writeText(generatedKey);
-    setCopiedKey(true);
-    setTimeout(() => setCopiedKey(false), 2000);
-  };
-
-  const handleCopyMessage = () => {
-    navigator.clipboard.writeText(fullWhatsAppMessage);
-    setCopiedMsg(true);
-    setTimeout(() => setCopiedMsg(false), 2000);
-  };
-
-  const handleSelfActivate = () => {
-    const res = window.AppState.activateLicenseKey(generatedKey);
-    alert(res.message);
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-amber-500/40 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        
-        {/* Cabeçalho do Painel Dono */}
-        <div className="px-4 py-3.5 bg-gradient-to-r from-amber-950/70 via-slate-900 to-amber-950/50 border-b border-amber-500/30 flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shadow-glow-gold">
-              <ShieldCheck size={20} />
-            </div>
-            <div>
-              <h3 className="font-bold text-sm text-white flex items-center gap-1.5">
-                Painel do Administrador <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">Dono</span>
-              </h3>
-              <p className="text-[11px] text-slate-300">Gerador Oficial de Chaves & Licenças</p>
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Conteúdo */}
-        <div className="p-4 space-y-4 overflow-y-auto">
-          {!isAuthenticated ? (
-            /* Tela de Bloqueio por PIN */
-            <form onSubmit={handleLogin} className="space-y-4 py-3">
-              <div className="text-center space-y-1.5">
-                <span className="text-3xl">🔒</span>
-                <h4 className="font-bold text-sm text-white">Acesso Restrito ao Dono</h4>
-                <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                  Digite sua senha de administrador para gerar chaves de ativação para seus clientes.
-                </p>
-              </div>
-
-              <div>
-                <input
-                  type="password"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  placeholder="Digite a senha (padrão: 2026)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-2xl py-3 px-4 text-center font-mono text-sm tracking-widest text-white focus:outline-none focus:border-amber-500"
-                  autoFocus
-                />
-                {authError && (
-                  <p className="text-xs text-rose-400 text-center mt-1.5 font-medium">{authError}</p>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-glow-gold transition-all"
-              >
-                Entrar no Gerador de Chaves
-              </button>
-            </form>
-          ) : (
-            /* Painel de Geração de Chaves */
-            <div className="space-y-4">
-              
-              {/* Campo ID do Cliente */}
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  ID do Aparelho do Cliente (fornecido pelo cliente no Zap):
-                </label>
-                <input
-                  type="text"
-                  value={targetDeviceId}
-                  onChange={(e) => setTargetDeviceId(e.target.value.toUpperCase())}
-                  placeholder="Ex: CF-7482"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-2xl py-2.5 px-3.5 text-xs text-white font-mono uppercase focus:outline-none focus:border-amber-500"
-                />
-                <span className="text-[10px] text-slate-400 block mt-1">
-                  Seu ID local para testes: <strong>{window.AppState.getInstallationId()}</strong>
-                </span>
-              </div>
-
-              {/* Seletor de Tipo de Plano */}
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                  Tempo de Acesso da Licença:
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPlan('30D')}
-                    className={`py-2.5 px-2 rounded-2xl text-xs font-medium border text-center transition-all ${
-                      selectedPlan === '30D'
-                        ? 'bg-emerald-500/25 border-emerald-500 text-emerald-300 font-bold'
-                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:bg-slate-800'
-                    }`}
-                  >
-                    30 Dias (Mensal)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPlan('365D')}
-                    className={`py-2.5 px-2 rounded-2xl text-xs font-medium border text-center transition-all ${
-                      selectedPlan === '365D'
-                        ? 'bg-amber-500/25 border-amber-500 text-amber-300 font-bold'
-                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:bg-slate-800'
-                    }`}
-                  >
-                    1 Ano (Anual)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPlan('LIFETIME')}
-                    className={`py-2.5 px-2 rounded-2xl text-xs font-medium border text-center transition-all ${
-                      selectedPlan === 'LIFETIME'
-                        ? 'bg-purple-500/25 border-purple-500 text-purple-300 font-bold'
-                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:bg-slate-800'
-                    }`}
-                  >
-                    Vitalício Pro
-                  </button>
-                </div>
-              </div>
-
-              {/* Botão de Geração */}
-              <button
-                type="button"
-                onClick={handleGenerate}
-                className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-gold-500 hover:from-amber-400 hover:to-gold-400 text-slate-950 font-extrabold text-xs shadow-glow-gold flex items-center justify-center space-x-2 transition-all transform active:scale-95"
-              >
-                <Sparkles size={16} />
-                <span>Gerar Código de Ativação Agora</span>
-              </button>
-
-              {/* Resultado da Chave Gerada */}
-              {generatedKey && (
-                <div className="bg-slate-950 border border-amber-500/40 rounded-2xl p-3.5 space-y-3 shadow-inner">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-bold text-amber-300 uppercase">
-                        Código Gerado com Sucesso:
-                      </span>
-                      <button
-                        onClick={handleCopyKey}
-                        className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1"
-                      >
-                        {copiedKey ? <Check size={13} /> : <Copy size={13} />}
-                        <span>{copiedKey ? 'Copiado!' : 'Copiar'}</span>
-                      </button>
-                    </div>
-                    <div className="p-2.5 bg-slate-900 rounded-xl font-mono text-xs font-bold text-center text-emerald-400 tracking-wider border border-slate-800 select-all">
-                      {generatedKey}
-                    </div>
-                  </div>
-
-                  {/* Ações Rápidas */}
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      onClick={handleCopyMessage}
-                      className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 flex items-center justify-center gap-1.5 transition-all active:scale-95"
-                    >
-                      {copiedMsg ? <Check size={14} className="text-emerald-400" /> : <MessageCircle size={14} />}
-                      <span>{copiedMsg ? 'Mensagem Copiada!' : 'Copiar p/ Zap'}</span>
-                    </button>
-
-                    <button
-                      onClick={handleSelfActivate}
-                      className="py-2.5 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs border border-emerald-500/40 flex items-center justify-center gap-1.5 transition-all active:scale-95"
-                    >
-                      <Check size={14} />
-                      <span>Ativar Neste Celular</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          )}
-        </div>
-
-      </div>
-    </div>
-  );
-};
-
-
-// ==========================================
 // Arquivo: js\app.js
 // ==========================================
 /**
@@ -4624,7 +4760,6 @@ function App() {
   const [settingsModalOpen, setSettingsModalOpen] = React.useState(false);
   const [rewardedModalOpen, setRewardedModalOpen] = React.useState(false);
   const [installModalOpen, setInstallModalOpen] = React.useState(false);
-  const [adminModalOpen, setAdminModalOpen] = React.useState(false);
   const [paywallReason, setPaywallReason] = React.useState(null);
 
   // Sincronização reativa com o AppState
@@ -4733,7 +4868,6 @@ function App() {
               onWatchRewarded={() => setRewardedModalOpen(true)}
               triggerReason={paywallReason}
               shopSettings={shopSettings}
-              onOpenAdmin={() => setAdminModalOpen(true)}
             />
           )}
         </main>
@@ -4809,19 +4943,12 @@ function App() {
           onClose={() => setSettingsModalOpen(false)}
           shopSettings={shopSettings}
           onSaveSettings={(newSettings) => window.AppState.saveSettings(newSettings)}
-          onOpenAdmin={() => setAdminModalOpen(true)}
         />
 
         {/* Modal de Instalação do Aplicativo (PWA) */}
         <window.InstallPwaModal
           isOpen={installModalOpen}
           onClose={() => setInstallModalOpen(false)}
-        />
-
-        {/* Modal do Painel do Administrador (Gerador de Chaves) */}
-        <window.AdminLicenseModal
-          isOpen={adminModalOpen}
-          onClose={() => setAdminModalOpen(false)}
         />
 
       </div>

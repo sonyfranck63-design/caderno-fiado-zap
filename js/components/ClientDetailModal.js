@@ -1,46 +1,56 @@
 /**
- * Modal Detalhes do Cliente, Extrato Completo, Abatimento e Ações VIP
+ * Modal Detalhado do Cliente (Ficha de Fiados, Abatimentos e Ações Rápidas)
+ * Inclui geração robusta de PDF, integração com ConfirmModal e contingência via WhatsApp.
  */
 
 window.ClientDetailModal = function ClientDetailModal({
   isOpen,
-  onClose,
+  client: propClient,
   clientId,
+  onClose,
   onOpenWhatsApp,
   onOpenPix,
-  onOpenPdf,
-  isVip,
   onTriggerPaywall,
+  isVip,
   shopSettings
 }) {
+  const client = propClient || (clientId && window.AppState ? window.AppState.getClient(clientId) : null);
   const [activeSubTab, setActiveSubTab] = React.useState('extrato'); // 'extrato' | 'abater'
   const [payAmount, setPayAmount] = React.useState('');
   const [payMethod, setPayMethod] = React.useState('Dinheiro');
   const [payNotes, setPayNotes] = React.useState('');
   const [showPhotoModal, setShowPhotoModal] = React.useState(null);
+  
+  // Estados para diálogos integrados (sem alert/confirm nativos)
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const [feedbackModal, setFeedbackModal] = React.useState({ isOpen: false, title: '', message: '', variant: 'info' });
+  const [pdfLoading, setPdfLoading] = React.useState(false);
+  const [pdfErrorData, setPdfErrorData] = React.useState(null);
 
   const {
-    X, Phone, Calendar, DollarSign, MessageCircle, QrCode, FileText,
-    Crown, CheckCircle2, AlertTriangle, Clock, Trash2, Check, Sparkles
-  } = window.Icons;
+    X, Phone, MapPin, Calendar, Clock, DollarSign,
+    CheckCircle2, AlertTriangle, FileText, QrCode, MessageCircle, Trash2, Check, Crown
+  } = window.Icons || {};
 
-  if (!isOpen || !clientId) return null;
+  if (!isOpen || !client) return null;
 
-  const client = window.AppState.getClient(clientId);
-  if (!client) return null;
-
-  const debt = window.AppState.computeBalance(client);
-  const status = window.AppState.getClientStatus(client);
+  const debt = window.AppState ? window.AppState.computeBalance(client) : 0;
+  const status = window.AppState ? window.AppState.getClientStatus(client) : 'em_dia';
   const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
   const creditLimit = client.creditLimit || 300;
   const limitUsagePct = Math.min(100, Math.round((debt / creditLimit) * 100));
 
-  // Handler para dar baixa / abatimento
+  // Handler para registrar abatimento
   const handlePaymentSubmit = (e) => {
     e.preventDefault();
     const val = parseFloat(payAmount);
     if (isNaN(val) || val <= 0) {
-      alert('Por favor, informe um valor válido para pagamento.');
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Valor Inválido',
+        message: 'Por favor, informe um valor numérico válido maior que zero para o pagamento.',
+        variant: 'warning'
+      });
       return;
     }
 
@@ -50,7 +60,6 @@ window.ClientDetailModal = function ClientDetailModal({
       notes: payNotes
     });
 
-    // Se quitou totalmente, dispara confetes!
     if (remainingDebt <= 0.01) {
       if (typeof confetti === 'function') {
         confetti({
@@ -66,7 +75,7 @@ window.ClientDetailModal = function ClientDetailModal({
     setActiveSubTab('extrato');
   };
 
-  // Quitação total rápida com 1 clique
+  // Quitação total rápida
   const handleFullPayoff = () => {
     if (debt <= 0) return;
     setPayAmount(debt.toFixed(2));
@@ -77,7 +86,12 @@ window.ClientDetailModal = function ClientDetailModal({
   // Proteção de Recursos VIP
   const handlePixClick = () => {
     if (debt <= 0) {
-      alert('Este cliente já está com a conta quitada! Não há débito para cobrar.');
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Conta Quitada',
+        message: 'Este cliente já está com o saldo em dia! Não há débitos pendentes para gerar cobrança.',
+        variant: 'info'
+      });
       return;
     }
     if (isVip) {
@@ -87,42 +101,67 @@ window.ClientDetailModal = function ClientDetailModal({
     }
   };
 
-  const handlePdfClick = () => {
-    if (isVip) {
-      window.PdfService.generateReceiptPdf(client, shopSettings);
-    } else {
+  // Gerador de Recibo PDF com suporte a erro amigável e fallback
+  const handlePdfClick = async () => {
+    if (!isVip) {
       onTriggerPaywall('pdf');
+      return;
+    }
+
+    setPdfLoading(true);
+    const result = await window.PdfService.generateReceiptPdf(client, shopSettings);
+    setPdfLoading(false);
+
+    if (!result.success) {
+      setPdfErrorData(result);
     }
   };
 
-  const handleDeleteClient = () => {
-    if (confirm(`Tem certeza que deseja excluir o cadastro de ${client.name}? O histórico será removido.`)) {
-      window.AppState.deleteClient(client.id);
-      onClose();
-    }
+  // Envio alternativo em texto pelo WhatsApp quando PDF falha
+  const handleSendTextReceiptViaWhatsApp = () => {
+    if (!pdfErrorData || !pdfErrorData.receiptText) return;
+    const phone = (client.phone || '').replace(/\D/g, '');
+    const cleanPhone = phone.startsWith('55') ? phone : (phone ? '55' + phone : '');
+    const url = cleanPhone 
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(pdfErrorData.receiptText)}`
+      : `https://wa.me/?text=${encodeURIComponent(pdfErrorData.receiptText)}`;
+    window.open(url, '_blank');
+    setPdfErrorData(null);
+  };
+
+  const handleCopyTextReceipt = () => {
+    if (!pdfErrorData || !pdfErrorData.receiptText) return;
+    navigator.clipboard.writeText(pdfErrorData.receiptText);
+    setFeedbackModal({
+      isOpen: true,
+      title: 'Copiado com Sucesso',
+      message: 'O extrato detalhado em texto foi copiado para sua área de transferência! Você pode colar em qualquer conversa do WhatsApp.',
+      variant: 'success'
+    });
+    setPdfErrorData(null);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+      <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
         
         {/* Cabeçalho */}
-        <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+        <div className="p-4 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-center space-x-2">
               <h2 className="font-bold text-base text-white truncate">{client.name}</h2>
               {status === 'quitado' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                   <Check size={11} /> Quitado
                 </span>
               )}
               {status === 'atrasado' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1">
                   <AlertTriangle size={11} /> Atrasado
                 </span>
               )}
               {status === 'em_dia' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
                   Em Aberto
                 </span>
               )}
@@ -157,14 +196,14 @@ window.ClientDetailModal = function ClientDetailModal({
             {debt > 0 ? (
               <button
                 onClick={handleFullPayoff}
-                className="py-1.5 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                className="py-1.5 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
               >
                 <CheckCircle2 size={14} />
                 <span>Quitar Tudo</span>
               </button>
             ) : (
-              <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full">
-                ⭐ Bom Pagador
+              <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                ⭐ Em Dia
               </span>
             )}
           </div>
@@ -178,29 +217,29 @@ window.ClientDetailModal = function ClientDetailModal({
             <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-500 ${
-                  limitUsagePct > 90 ? 'bg-rose-500' : limitUsagePct > 60 ? 'bg-amber-500' : 'bg-brand-500'
+                  limitUsagePct > 90 ? 'bg-rose-500' : limitUsagePct > 60 ? 'bg-amber-500' : 'bg-emerald-500'
                 }`}
                 style={{ width: `${limitUsagePct}%` }}
               />
             </div>
             {limitUsagePct >= 100 && (
               <p className="text-[10px] text-rose-400 mt-1 font-semibold flex items-center gap-1">
-                <AlertTriangle size={11} /> Limite de crédito estourado! Evite novas vendas antes do acerto.
+                <AlertTriangle size={11} /> Limite de crédito atingido! Avalie um acerto antes de novas vendas.
               </p>
             )}
           </div>
         </div>
 
-        {/* 4 Botões Rápidos de Ação: Cobrar Zap, PIX VIP, PDF VIP, Abater */}
+        {/* 4 Botões Rápidos de Ação */}
         <div className="grid grid-cols-4 gap-2 p-3 bg-slate-900 border-b border-slate-800">
           
           {/* Cobrar Zap */}
           <button
             onClick={() => onOpenWhatsApp(client)}
             disabled={debt <= 0}
-            className="flex flex-col items-center justify-center p-2 rounded-2xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 disabled:opacity-40 transition-all active:scale-95 group"
+            className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-750 text-slate-200 disabled:opacity-40 transition-all active:scale-95"
           >
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-1">
               <MessageCircle size={16} />
             </div>
             <span className="text-[10px] font-semibold text-center leading-tight">Cobrar Zap</span>
@@ -210,14 +249,14 @@ window.ClientDetailModal = function ClientDetailModal({
           <button
             onClick={handlePixClick}
             disabled={debt <= 0}
-            className="relative flex flex-col items-center justify-center p-2 rounded-2xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 disabled:opacity-40 transition-all active:scale-95 group"
+            className="relative flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-750 text-slate-200 disabled:opacity-40 transition-all active:scale-95"
           >
             {!isVip && (
-              <span className="absolute -top-1.5 -right-1 px-1 py-0.2 rounded-full text-[8px] font-extrabold bg-amber-500 text-slate-950 shadow-sm flex items-center gap-0.5">
-                <Crown size={8} /> VIP
+              <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 rounded-full text-[8px] font-extrabold bg-amber-500 text-slate-950 flex items-center gap-0.5">
+                VIP
               </span>
             )}
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-1">
               <QrCode size={16} />
             </div>
             <span className="text-[10px] font-semibold text-center leading-tight">Gerar PIX</span>
@@ -226,29 +265,36 @@ window.ClientDetailModal = function ClientDetailModal({
           {/* Recibo PDF (VIP) */}
           <button
             onClick={handlePdfClick}
-            className="relative flex flex-col items-center justify-center p-2 rounded-2xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 transition-all active:scale-95 group"
+            disabled={pdfLoading}
+            className="relative flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-750 text-slate-200 transition-all active:scale-95"
           >
             {!isVip && (
-              <span className="absolute -top-1.5 -right-1 px-1 py-0.2 rounded-full text-[8px] font-extrabold bg-amber-500 text-slate-950 shadow-sm flex items-center gap-0.5">
-                <Crown size={8} /> VIP
+              <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 rounded-full text-[8px] font-extrabold bg-amber-500 text-slate-950 flex items-center gap-0.5">
+                VIP
               </span>
             )}
-            <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
-              <FileText size={16} />
+            <div className="w-8 h-8 rounded-lg bg-slate-700 text-slate-200 flex items-center justify-center mb-1">
+              {pdfLoading ? (
+                <div className="w-4 h-4 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin" />
+              ) : (
+                <FileText size={16} />
+              )}
             </div>
-            <span className="text-[10px] font-semibold text-center leading-tight">Recibo PDF</span>
+            <span className="text-[10px] font-semibold text-center leading-tight">
+              {pdfLoading ? 'Gerando...' : 'Recibo PDF'}
+            </span>
           </button>
 
           {/* Abater Pagamento */}
           <button
             onClick={() => setActiveSubTab(activeSubTab === 'abater' ? 'extrato' : 'abater')}
-            className={`flex flex-col items-center justify-center p-2 rounded-2xl border transition-all active:scale-95 ${
+            className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all active:scale-95 ${
               activeSubTab === 'abater'
-                ? 'bg-brand-500/20 border-brand-500 text-brand-300'
-                : 'bg-slate-800 hover:bg-slate-750 border-slate-700 text-slate-200'
+                ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+                : 'bg-slate-800 hover:bg-slate-750 border-slate-750 text-slate-200'
             }`}
           >
-            <div className="w-8 h-8 rounded-xl bg-brand-500/20 text-brand-400 flex items-center justify-center mb-1">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-1">
               <DollarSign size={16} />
             </div>
             <span className="text-[10px] font-semibold text-center leading-tight">
@@ -264,11 +310,11 @@ window.ClientDetailModal = function ClientDetailModal({
           {activeSubTab === 'abater' ? (
             /* Formulário de Baixa de Pagamento */
             <form onSubmit={handlePaymentSubmit} className="space-y-3 animate-fadeIn">
-              <div className="p-3 bg-emerald-950/30 rounded-2xl border border-emerald-800/40">
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
                 <h4 className="text-xs font-bold text-emerald-400 mb-1 flex items-center gap-1.5">
                   <DollarSign size={14} /> Registrar Pagamento / Abatimento
                 </h4>
-                <p className="text-[11px] text-slate-300">
+                <p className="text-[11px] text-slate-400">
                   Informe o valor recebido deste cliente. O saldo devedor será recalculado instantaneamente.
                 </p>
               </div>
@@ -289,7 +335,7 @@ window.ClientDetailModal = function ClientDetailModal({
                     placeholder="0,00"
                     required
                     autoFocus
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base font-bold text-white focus:outline-none focus:border-brand-500 font-mono"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base font-bold text-white focus:outline-none focus:border-emerald-500 font-mono"
                   />
                 </div>
               </div>
@@ -300,7 +346,7 @@ window.ClientDetailModal = function ClientDetailModal({
                   <select
                     value={payMethod}
                     onChange={e => setPayMethod(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="Dinheiro">Dinheiro</option>
                     <option value="PIX">PIX</option>
@@ -317,7 +363,7 @@ window.ClientDetailModal = function ClientDetailModal({
                     value={payNotes}
                     onChange={e => setPayNotes(e.target.value)}
                     placeholder="Ex: Deixou com a funcionária"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-brand-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -326,13 +372,13 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={() => setActiveSubTab('extrato')}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-medium transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-bold shadow-glow-emerald"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all active:scale-95"
                 >
                   Confirmar Recebimento
                 </button>
@@ -343,7 +389,7 @@ window.ClientDetailModal = function ClientDetailModal({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Clock size={14} className="text-brand-400" />
+                  <Clock size={14} className="text-emerald-400" />
                   Extrato de Compras e Abates
                 </h4>
                 <span className="text-[10px] text-slate-400">
@@ -352,8 +398,12 @@ window.ClientDetailModal = function ClientDetailModal({
               </div>
 
               {(!client.transactions || client.transactions.length === 0) ? (
-                <div className="text-center py-8 text-slate-400 text-xs">
-                  Nenhuma transação registrada para este cliente.
+                <div className="text-center py-10 px-4 rounded-xl bg-slate-950/40 border border-slate-800/80">
+                  <span className="text-2xl block mb-1">📝</span>
+                  <p className="text-xs font-semibold text-slate-300">Nenhum registro ainda</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    As compras no fiado e pagamentos deste cliente serão listados aqui.
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -369,7 +419,7 @@ window.ClientDetailModal = function ClientDetailModal({
                       >
                         <div className="flex items-start space-x-2.5 min-w-0">
                           <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                            isSale ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'
+                            isSale ? 'bg-rose-500/15 text-rose-400' : 'bg-emerald-500/15 text-emerald-400'
                           }`}>
                             {isSale ? '🛍️' : '💵'}
                           </div>
@@ -389,7 +439,7 @@ window.ClientDetailModal = function ClientDetailModal({
                             {tx.photoUrl && (
                               <button
                                 onClick={() => setShowPhotoModal(tx.photoUrl)}
-                                className="text-[10px] text-brand-400 hover:underline mt-0.5 block"
+                                className="text-[10px] text-emerald-400 hover:underline mt-0.5 block"
                               >
                                 Ver Comprovante/Foto 📎
                               </button>
@@ -415,17 +465,90 @@ window.ClientDetailModal = function ClientDetailModal({
         {/* Rodapé com Exclusão */}
         <div className="p-3 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between text-xs">
           <button
-            onClick={handleDeleteClient}
+            onClick={() => setShowDeleteConfirm(true)}
             className="text-[11px] text-slate-400 hover:text-rose-400 flex items-center gap-1 transition-colors"
           >
             <Trash2 size={13} />
-            <span>Excluir cliente</span>
+            <span>Excluir cadastro</span>
           </button>
 
-          <span className="text-[10px] text-slate-400">
+          <span className="text-[10px] text-slate-500">
             Cadastrado em: {client.createdAt ? new Date(client.createdAt).toLocaleDateString('pt-BR') : '-'}
           </span>
         </div>
+
+        {/* Modal de Confirmação de Exclusão */}
+        <window.ConfirmModal
+          isOpen={showDeleteConfirm}
+          title="Excluir Cliente"
+          message={`Tem certeza que deseja remover o cadastro de ${client.name}?\nO histórico de compras e pagamentos será apagado.`}
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          variant="danger"
+          onConfirm={() => {
+            window.AppState.deleteClient(client.id);
+            setShowDeleteConfirm(false);
+            onClose();
+          }}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
+
+        {/* Modal de Contingência de PDF (Falha de download nativo) */}
+        {pdfErrorData && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+            <div className="relative w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-4 shadow-2xl">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Download do PDF Bloqueado</h3>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    O sistema operacional deste aparelho bloqueou o download direto de arquivos. Você pode enviar o extrato detalhado por texto no WhatsApp ou copiá-lo:
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleSendTextReceiptViaWhatsApp}
+                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+                >
+                  <MessageCircle size={15} />
+                  <span>Enviar Extrato no WhatsApp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyTextReceipt}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 font-semibold text-xs transition-colors"
+                >
+                  Copiar Texto do Extrato
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPdfErrorData(null)}
+                  className="w-full py-1.5 text-xs text-slate-400 hover:text-white text-center transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Genérico de Feedback */}
+        <window.ConfirmModal
+          isOpen={feedbackModal.isOpen}
+          title={feedbackModal.title}
+          message={feedbackModal.message}
+          confirmText="Entendi"
+          variant={feedbackModal.variant}
+          showCancel={false}
+          onConfirm={() => setFeedbackModal({ ...feedbackModal, isOpen: false })}
+        />
 
         {/* Modal de Foto/Comprovante Anexo */}
         {showPhotoModal && (

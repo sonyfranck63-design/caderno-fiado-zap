@@ -1,9 +1,13 @@
 # Script de build para consolidar scripts em bundle.js
+$root = $PSScriptRoot
+if (-not $root) { $root = (Get-Location).Path }
+
 $files = @(
     "js\pix.js",
     "js\pdf.js",
     "js\state.js",
     "js\components\Icons.js",
+    "js\components\ConfirmModal.js",
     "js\components\AdMobBanner.js",
     "js\components\Header.js",
     "js\components\BottomNav.js",
@@ -17,13 +21,12 @@ $files = @(
     "js\components\ReportsTab.js",
     "js\components\VipTab.js",
     "js\components\InstallPwaModal.js",
-    "js\components\AdminLicenseModal.js",
     "js\app.js"
 )
 
 $sb = [System.Text.StringBuilder]::new()
 foreach ($file in $files) {
-    $fullPath = Join-Path $PSScriptRoot $file
+    $fullPath = Join-Path $root $file
     if (Test-Path $fullPath) {
         $text = [System.IO.File]::ReadAllText($fullPath, [System.Text.Encoding]::UTF8)
         [void]$sb.AppendLine("// ==========================================")
@@ -36,6 +39,6 @@ foreach ($file in $files) {
     }
 }
 
-$bundlePath = Join-Path $PSScriptRoot "js\bundle.js"
+$bundlePath = Join-Path $root "js\bundle.js"
 [System.IO.File]::WriteAllText($bundlePath, $sb.ToString(), [System.Text.Encoding]::UTF8)
 Write-Host "Bundle criado com sucesso em: $bundlePath"
