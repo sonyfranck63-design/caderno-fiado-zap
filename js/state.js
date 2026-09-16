@@ -10,6 +10,22 @@ window.AppState = (function() {
   const STORAGE_KEY_REWARDED = 'cadernofiado_rewarded_pass_v1';
   const STORAGE_KEY_LICENSE = 'cadernofiado_license_v2';
   const STORAGE_KEY_DEVICE_ID = 'cadernofiado_device_id_v1';
+  const STORAGE_KEY_LAST_SEEN_TIME = 'cadernofiado_last_seen_time_v1';
+
+  function getEffectiveTime() {
+    const now = Date.now();
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
+      const lastSeen = raw ? parseInt(raw, 10) : 0;
+      if (lastSeen && now < lastSeen - 300000) {
+        return lastSeen;
+      }
+      if (now > lastSeen) {
+        localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, now.toString());
+      }
+    } catch(e) {}
+    return now;
+  }
 
   // Chave Pública Criptográfica ECDSA P-256 Oficial do CadernoFiado
   // Utilizada exclusivamente para validar assinaturas digitais de licenças de forma 100% offline e segura.
@@ -564,7 +580,7 @@ window.AppState = (function() {
   function getVipInfo() {
     const installationId = getInstallationId();
     const license = getStoredLicense();
-    const now = Date.now();
+    const now = getEffectiveTime();
 
     let isVip = false;
     let isLifetime = false;
@@ -589,10 +605,15 @@ window.AppState = (function() {
       }
     }
 
-    // Suporte ao passe de 24h por anúncio (Rewarded Video)
+    // Suporte ao passe de 24h por anúncio (Rewarded Video) com bloqueio estrito em tempo real
     const rewardedPassRaw = localStorage.getItem(STORAGE_KEY_REWARDED);
     const rewardedPassExpiresAt = rewardedPassRaw ? parseInt(rewardedPassRaw, 10) : null;
-    const isPassActive = rewardedPassExpiresAt && rewardedPassExpiresAt > now;
+    const isPassActive = Boolean(rewardedPassExpiresAt && rewardedPassExpiresAt > now);
+
+    // Se o passe de 24h expirou, remove do storage imediatamente para garantir bloqueio real sem tolerância
+    if (rewardedPassExpiresAt && rewardedPassExpiresAt <= now) {
+      try { localStorage.removeItem(STORAGE_KEY_REWARDED); } catch(e) {}
+    }
 
     if (isPassActive && !isVip) {
       isVip = true;
@@ -605,7 +626,7 @@ window.AppState = (function() {
       isLifetime,
       isExpired,
       isPassActive,
-      passExpiresAt: rewardedPassExpiresAt,
+      passExpiresAt: isPassActive ? rewardedPassExpiresAt : null,
       daysRemaining,
       expiresAt: license ? license.expiresAt : null,
       expiresAtDateStr,
@@ -632,8 +653,10 @@ window.AppState = (function() {
   }
 
   function activate24hPass() {
-    const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    const now = getEffectiveTime();
+    const expiresAt = now + 24 * 60 * 60 * 1000;
     localStorage.setItem(STORAGE_KEY_REWARDED, expiresAt.toString());
+    try { localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, now.toString()); } catch(e) {}
     notify();
     return expiresAt;
   }
@@ -643,8 +666,9 @@ window.AppState = (function() {
     if (info.isVip && info.daysRemaining !== null) {
       return `${info.daysRemaining} dias restantes`;
     }
-    if (!info.isPassActive) return null;
-    const diffMs = info.passExpiresAt - Date.now();
+    if (!info.isPassActive || !info.passExpiresAt) return null;
+    const now = getEffectiveTime();
+    const diffMs = info.passExpiresAt - now;
     if (diffMs <= 0) return null;
 
     const hours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -658,7 +682,9 @@ window.AppState = (function() {
       version: '1.0',
       exportedAt: new Date().toISOString(),
       shopSettings: getSettings(),
-      clients: getClients()
+      clients: getClients(),
+      license: getStoredLicense(),
+      deviceId: getInstallationId()
     };
   }
 
@@ -799,6 +825,12 @@ window.AppState = (function() {
       if (validatedData.shopSettings) {
         saveSettings(validatedData.shopSettings);
       }
+      if (validatedData.license && validatedData.deviceId) {
+        // Restaura a licença e o deviceId vinculado para manter o status VIP no aparelho novo
+        localStorage.setItem(STORAGE_KEY_DEVICE_ID, validatedData.deviceId);
+        saveLicense(validatedData.license);
+      }
+      notify();
       return { success: true, count: validatedData.clients.length };
     } catch (e) {
       return { success: false, error: e.message };

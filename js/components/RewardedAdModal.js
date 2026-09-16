@@ -24,14 +24,6 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
         if (prev <= 1) {
           clearInterval(timer);
           setCompleted(true);
-          // Dispara confetes de comemoração!
-          if (typeof confetti === 'function') {
-            confetti({
-              particleCount: 80,
-              spread: 70,
-              origin: { y: 0.6 }
-            });
-          }
           return 0;
         }
         return prev - 1;
@@ -50,7 +42,7 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
       <div className="relative w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden">
         
         {/* Barra de Progresso Superior */}

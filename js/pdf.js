@@ -397,16 +397,20 @@ window.PdfService = (function() {
   }
 
   /**
-   * Abre o PDF para visualização imediata em nova aba
+   * Abre o PDF para visualização com segurança sem quebrar WebViews Android
    */
   function openPdfPreview(blobUrl) {
     try {
-      const win = window.open(blobUrl, '_blank');
-      if (!win) {
-        return { success: false, reason: 'popup_blocked' };
+      // No Android WebView, window.open(blobUrl) provoca crash nativo (ActivityNotFoundException).
+      // Em desktops, pode abrir em nova aba; no Android, o app deve priorizar o visualizador interno.
+      const isAndroid = /android/i.test(navigator.userAgent || '');
+      if (!isAndroid && typeof window !== 'undefined' && window.open) {
+        const win = window.open(blobUrl, '_blank');
+        if (win) return { success: true };
       }
-      return { success: true };
+      return { success: false, reason: 'use_internal_viewer' };
     } catch(err) {
+      console.warn('Visualização externa não suportada no ambiente atual:', err);
       return { success: false, error: err.message };
     }
   }

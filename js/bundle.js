@@ -102,23 +102,34 @@ window.PixService = (function() {
   }
 
   /**
-   * Renderiza o QR Code dinâmico em um elemento HTML container
+   * Renderiza o QR Code dinâmico em um elemento HTML container com proteção total contra falhas
    */
   function renderQRCode(containerElement, payload, size = 200) {
     if (!containerElement) return;
     containerElement.innerHTML = '';
     
-    if (typeof QRCode !== 'undefined') {
-      new QRCode(containerElement, {
-        text: payload,
-        width: size,
-        height: size,
-        colorDark: "#0f172a",
-        colorLight: "#ffffff",
-        correctLevel: QRCode.CorrectLevel.M
-      });
-    } else {
-      console.error("Biblioteca QRCode.js não disponível.");
+    try {
+      if (typeof QRCode !== 'undefined') {
+        new QRCode(containerElement, {
+          text: payload,
+          width: size,
+          height: size,
+          colorDark: "#0f172a",
+          colorLight: "#ffffff",
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } else {
+        throw new Error("Biblioteca QRCode.js não disponível.");
+      }
+    } catch (err) {
+      console.warn("Fallback visual do QR Code ativado:", err);
+      containerElement.innerHTML = `
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:${size}px; height:${size}px; border:2px dashed #cbd5e1; border-radius:20px; padding:12px; text-align:center; color:#64748b; font-size:11px; background:#f8fafc;">
+          <span style="font-size:28px; margin-bottom:6px;">⚡</span>
+          <strong style="color:#0f172a;">PIX Disponível</strong>
+          <span style="font-size:10px; margin-top:4px; line-height:1.3;">Use o botão "Copiar código" abaixo para pagar no app do seu banco.</span>
+        </div>
+      `;
     }
   }
 
@@ -532,16 +543,20 @@ window.PdfService = (function() {
   }
 
   /**
-   * Abre o PDF para visualização imediata em nova aba
+   * Abre o PDF para visualização com segurança sem quebrar WebViews Android
    */
   function openPdfPreview(blobUrl) {
     try {
-      const win = window.open(blobUrl, '_blank');
-      if (!win) {
-        return { success: false, reason: 'popup_blocked' };
+      // No Android WebView, window.open(blobUrl) provoca crash nativo (ActivityNotFoundException).
+      // Em desktops, pode abrir em nova aba; no Android, o app deve priorizar o visualizador interno.
+      const isAndroid = /android/i.test(navigator.userAgent || '');
+      if (!isAndroid && typeof window !== 'undefined' && window.open) {
+        const win = window.open(blobUrl, '_blank');
+        if (win) return { success: true };
       }
-      return { success: true };
+      return { success: false, reason: 'use_internal_viewer' };
     } catch(err) {
+      console.warn('Visualização externa não suportada no ambiente atual:', err);
       return { success: false, error: err.message };
     }
   }
@@ -571,6 +586,22 @@ window.AppState = (function() {
   const STORAGE_KEY_REWARDED = 'cadernofiado_rewarded_pass_v1';
   const STORAGE_KEY_LICENSE = 'cadernofiado_license_v2';
   const STORAGE_KEY_DEVICE_ID = 'cadernofiado_device_id_v1';
+  const STORAGE_KEY_LAST_SEEN_TIME = 'cadernofiado_last_seen_time_v1';
+
+  function getEffectiveTime() {
+    const now = Date.now();
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
+      const lastSeen = raw ? parseInt(raw, 10) : 0;
+      if (lastSeen && now < lastSeen - 300000) {
+        return lastSeen;
+      }
+      if (now > lastSeen) {
+        localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, now.toString());
+      }
+    } catch(e) {}
+    return now;
+  }
 
   // Chave Pública Criptográfica ECDSA P-256 Oficial do CadernoFiado
   // Utilizada exclusivamente para validar assinaturas digitais de licenças de forma 100% offline e segura.
@@ -1125,7 +1156,7 @@ window.AppState = (function() {
   function getVipInfo() {
     const installationId = getInstallationId();
     const license = getStoredLicense();
-    const now = Date.now();
+    const now = getEffectiveTime();
 
     let isVip = false;
     let isLifetime = false;
@@ -1150,10 +1181,15 @@ window.AppState = (function() {
       }
     }
 
-    // Suporte ao passe de 24h por anúncio (Rewarded Video)
+    // Suporte ao passe de 24h por anúncio (Rewarded Video) com bloqueio estrito em tempo real
     const rewardedPassRaw = localStorage.getItem(STORAGE_KEY_REWARDED);
     const rewardedPassExpiresAt = rewardedPassRaw ? parseInt(rewardedPassRaw, 10) : null;
-    const isPassActive = rewardedPassExpiresAt && rewardedPassExpiresAt > now;
+    const isPassActive = Boolean(rewardedPassExpiresAt && rewardedPassExpiresAt > now);
+
+    // Se o passe de 24h expirou, remove do storage imediatamente para garantir bloqueio real sem tolerância
+    if (rewardedPassExpiresAt && rewardedPassExpiresAt <= now) {
+      try { localStorage.removeItem(STORAGE_KEY_REWARDED); } catch(e) {}
+    }
 
     if (isPassActive && !isVip) {
       isVip = true;
@@ -1166,7 +1202,7 @@ window.AppState = (function() {
       isLifetime,
       isExpired,
       isPassActive,
-      passExpiresAt: rewardedPassExpiresAt,
+      passExpiresAt: isPassActive ? rewardedPassExpiresAt : null,
       daysRemaining,
       expiresAt: license ? license.expiresAt : null,
       expiresAtDateStr,
@@ -1193,8 +1229,10 @@ window.AppState = (function() {
   }
 
   function activate24hPass() {
-    const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    const now = getEffectiveTime();
+    const expiresAt = now + 24 * 60 * 60 * 1000;
     localStorage.setItem(STORAGE_KEY_REWARDED, expiresAt.toString());
+    try { localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, now.toString()); } catch(e) {}
     notify();
     return expiresAt;
   }
@@ -1204,8 +1242,9 @@ window.AppState = (function() {
     if (info.isVip && info.daysRemaining !== null) {
       return `${info.daysRemaining} dias restantes`;
     }
-    if (!info.isPassActive) return null;
-    const diffMs = info.passExpiresAt - Date.now();
+    if (!info.isPassActive || !info.passExpiresAt) return null;
+    const now = getEffectiveTime();
+    const diffMs = info.passExpiresAt - now;
     if (diffMs <= 0) return null;
 
     const hours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -1219,7 +1258,9 @@ window.AppState = (function() {
       version: '1.0',
       exportedAt: new Date().toISOString(),
       shopSettings: getSettings(),
-      clients: getClients()
+      clients: getClients(),
+      license: getStoredLicense(),
+      deviceId: getInstallationId()
     };
   }
 
@@ -1360,6 +1401,12 @@ window.AppState = (function() {
       if (validatedData.shopSettings) {
         saveSettings(validatedData.shopSettings);
       }
+      if (validatedData.license && validatedData.deviceId) {
+        // Restaura a licença e o deviceId vinculado para manter o status VIP no aparelho novo
+        localStorage.setItem(STORAGE_KEY_DEVICE_ID, validatedData.deviceId);
+        saveLicense(validatedData.license);
+      }
+      notify();
       return { success: true, count: validatedData.clients.length };
     } catch (e) {
       return { success: false, error: e.message };
@@ -1652,7 +1699,7 @@ window.ConfirmModal = function ConfirmModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 animate-fadeIn">
       <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden p-5 space-y-4 animate-pop-in">
         
         <div className="flex items-start gap-3.5">
@@ -2065,14 +2112,6 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
         if (prev <= 1) {
           clearInterval(timer);
           setCompleted(true);
-          // Dispara confetes de comemoração!
-          if (typeof confetti === 'function') {
-            confetti({
-              particleCount: 80,
-              spread: 70,
-              origin: { y: 0.6 }
-            });
-          }
           return 0;
         }
         return prev - 1;
@@ -2091,7 +2130,7 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
       <div className="relative w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden">
         
         {/* Barra de Progresso Superior */}
@@ -2349,7 +2388,7 @@ window.WhatsAppModal = function WhatsAppModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 animate-fadeIn">
       <div className="relative w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-pop-in transition-colors">
         
         {/* Topo Elegante do Modal */}
@@ -2551,18 +2590,21 @@ window.WhatsAppModal = function WhatsAppModal({
 window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onOpenWhatsApp }) {
   const [copied, setCopied] = React.useState(false);
   const [pixPayload, setPixPayload] = React.useState('');
+  const [errorMsg, setErrorMsg] = React.useState(null);
   const qrRef = React.useRef(null);
-  const { X, QrCode, Copy, Check, MessageCircle, Crown, ShieldCheck, Sparkles, AlertTriangle } = window.Icons;
+  const timerRef = React.useRef(null);
+  const { X, QrCode, Copy, Check, MessageCircle, Crown, ShieldCheck, Sparkles, AlertTriangle } = window.Icons || {};
 
   if (!isOpen || !client) return null;
 
-  const debt = window.AppState.computeBalance(client);
+  const debt = window.AppState ? window.AppState.computeBalance(client) : 0;
   const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
   const hasCustomPixKey = !!shopSettings?.pixKey;
 
   // Gera o payload oficial do PIX e renderiza o QR Code
   React.useEffect(() => {
     if (!isOpen || !client) return;
+    setErrorMsg(null);
 
     try {
       const payload = window.PixService.generatePayload({
@@ -2575,28 +2617,38 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
 
       setPixPayload(payload);
 
-      // Renderiza o QR Code após o elemento estar no DOM
-      setTimeout(() => {
+      // Renderiza o QR Code com cleanup seguro
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
         if (qrRef.current) {
           qrRef.current.innerHTML = '';
           window.PixService.renderQRCode(qrRef.current, payload, 190);
         }
-      }, 50);
+      }, 60);
     } catch(err) {
       console.error('Erro ao gerar payload PIX:', err);
+      setErrorMsg('Não foi possível gerar o QR Code. Utilize os dados manuais abaixo.');
     }
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [isOpen, client, debt, shopSettings]);
 
   const handleCopy = () => {
     if (!pixPayload) return;
-    navigator.clipboard.writeText(pixPayload);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    try {
+      navigator.clipboard.writeText(pixPayload);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch(e) {
+      console.warn('Clipboard writeText falhou:', e);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex flex-col animate-pop-in transition-colors">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/75 animate-fadeIn">
+      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-pop-in transition-colors">
         
         {/* Cabeçalho VIP com Destaque Dourado */}
         <div className="p-4 bg-gradient-to-r from-amber-500/10 via-white to-amber-500/10 dark:from-amber-950/60 dark:via-slate-900 dark:to-amber-950/50 border-b border-amber-500/30 flex items-center justify-between">
@@ -2653,7 +2705,14 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
           {/* QR Code Oficial */}
           <div className="flex flex-col items-center justify-center">
             <div className="relative p-3 bg-white rounded-3xl shadow-lg border-4 border-slate-200 dark:border-slate-800 flex items-center justify-center">
-              <div ref={qrRef} className="w-[190px] h-[190px] flex items-center justify-center" />
+              <div ref={qrRef} className="w-[190px] h-[190px] flex items-center justify-center">
+                {errorMsg && (
+                  <div className="text-center p-3 text-slate-500 text-xs">
+                    <p className="font-semibold text-slate-700 dark:text-slate-300">Código PIX Pronto</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Copie o código Copia e Cola abaixo.</p>
+                  </div>
+                )}
+              </div>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center mt-2 flex items-center gap-1 font-medium">
               <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
@@ -2904,7 +2963,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-fadeIn">
       <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-pop-in transition-colors">
         
         {/* Cabeçalho */}
@@ -3113,7 +3172,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
 
         {/* Modal de Colar Backup */}
         {pasteBackupOpen && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-3 shadow-2xl animate-pop-in">
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">Restaurar Código de Backup</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -3226,6 +3285,8 @@ window.ClientDetailModal = function ClientDetailModal({
   const [feedbackModal, setFeedbackModal] = React.useState({ isOpen: false, title: '', message: '', variant: 'info' });
   const [pdfLoading, setPdfLoading] = React.useState(false);
   const [pdfModalData, setPdfModalData] = React.useState(null);
+  const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false);
+  const [showInAppReceipt, setShowInAppReceipt] = React.useState(false);
 
   const {
     X, Phone, MapPin, Calendar, Clock, DollarSign,
@@ -3243,6 +3304,8 @@ window.ClientDetailModal = function ClientDetailModal({
   // Handler para registrar abatimento
   const handlePaymentSubmit = (e) => {
     e.preventDefault();
+    if (isSubmittingPayment) return;
+
     const val = parseFloat(payAmount);
     if (isNaN(val) || val <= 0) {
       setFeedbackModal({
@@ -3254,6 +3317,7 @@ window.ClientDetailModal = function ClientDetailModal({
       return;
     }
 
+    setIsSubmittingPayment(true);
     try {
       window.AppState.addPayment(client.id, {
         amount: val,
@@ -3267,8 +3331,20 @@ window.ClientDetailModal = function ClientDetailModal({
       setTargetSaleId(null);
       setActiveSubTab('extrato');
 
-      if (val >= debt && typeof confetti === 'function') {
-        confetti({ particleCount: 60, spread: 55, origin: { y: 0.6 } });
+      if (val >= debt) {
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Dívida Quitada!',
+          message: `Pagamento de R$ ${val.toFixed(2).replace('.', ',')} registrado com sucesso! O cliente ${client.name} está com a conta em dia.`,
+          variant: 'success'
+        });
+      } else {
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Abatimento Registrado',
+          message: `Abatimento de R$ ${val.toFixed(2).replace('.', ',')} registrado no extrato de ${client.name}.`,
+          variant: 'success'
+        });
       }
     } catch(err) {
       setFeedbackModal({
@@ -3277,6 +3353,8 @@ window.ClientDetailModal = function ClientDetailModal({
         message: 'Falha ao salvar abatimento: ' + err.message,
         variant: 'danger'
       });
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -3348,7 +3426,7 @@ window.ClientDetailModal = function ClientDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-fadeIn">
       <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-pop-in transition-colors">
         
         {/* Cabeçalho */}
@@ -3603,9 +3681,10 @@ window.ClientDetailModal = function ClientDetailModal({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all active:scale-95 shadow-md btn-smooth"
+                  disabled={isSubmittingPayment}
+                  className={`flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all active:scale-95 shadow-md btn-smooth ${isSubmittingPayment ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  Confirmar Recebimento
+                  {isSubmittingPayment ? 'Salvando...' : 'Confirmar Recebimento'}
                 </button>
               </div>
             </form>
@@ -3807,7 +3886,7 @@ window.ClientDetailModal = function ClientDetailModal({
 
         {/* Modal de Entrega do Recibo de Fiado com Download Real de PDF, Visualização e WhatsApp */}
         {pdfModalData && (
-          <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
@@ -3865,20 +3944,14 @@ window.ClientDetailModal = function ClientDetailModal({
                   <span>📤 Compartilhar PDF no Zap / Drive</span>
                 </button>
 
-                {/* 3. Visualizar PDF */}
-                {pdfModalData.blobUrl && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.PdfService) {
-                        window.PdfService.openPdfPreview(pdfModalData.blobUrl);
-                      }
-                    }}
-                    className="w-full py-2 px-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors btn-smooth"
-                  >
-                    <span>👁️ Abrir / Visualizar Documento</span>
-                  </button>
-                )}
+                {/* 3. Visualizar Recibo na Tela (In-App seguro sem risco de crash no Android) */}
+                <button
+                  type="button"
+                  onClick={() => setShowInAppReceipt(true)}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
+                >
+                  <span>👁️ Abrir / Visualizar Documento</span>
+                </button>
 
                 {/* 4. Enviar Extrato em Texto no WhatsApp */}
                 <button
@@ -3899,6 +3972,149 @@ window.ClientDetailModal = function ClientDetailModal({
                     Fechar
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Visualizador In-App do Recibo Timbrado (Totalmente Seguro no Android - Sem Intent de blob: que crasha) */}
+        {showInAppReceipt && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-black/90 animate-fadeIn">
+            <div className="relative w-full max-w-md max-h-[92vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 shadow-2xl overflow-hidden animate-pop-in">
+              {/* Barra de Título */}
+              <div className="p-3.5 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText size={18} className="text-emerald-600 dark:text-emerald-400" />
+                  <span className="font-bold text-xs text-slate-800 dark:text-white">Extrato Timbrado de Fiado</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowInAppReceipt(false)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Conteúdo Timbrado Scrollável */}
+              <div className="p-4 sm:p-5 overflow-y-auto flex-1 text-slate-800 dark:text-slate-100 space-y-4 font-sans text-xs bg-slate-50/50 dark:bg-slate-900/50">
+                {/* Cabeçalho da Loja */}
+                <div className="text-center pb-3 border-b border-dashed border-slate-300 dark:border-slate-700">
+                  <h3 className="font-black text-sm uppercase tracking-wide text-slate-900 dark:text-white">
+                    {shopSettings?.shopName || 'CadernoFiado Zap'}
+                  </h3>
+                  {shopSettings?.phone && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Contato: {shopSettings.phone}</p>
+                  )}
+                  {shopSettings?.pixKey && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">Chave PIX: {shopSettings.pixKey}</p>
+                  )}
+                  <div className="mt-2 inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    EXTRATO DE CONTA FIADO
+                  </div>
+                </div>
+
+                {/* Dados do Cliente */}
+                <div className="bg-white dark:bg-slate-800/80 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Cliente:</span>
+                    <strong className="text-slate-900 dark:text-white">{client.name}</strong>
+                  </div>
+                  {client.phone && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">Telefone:</span>
+                      <span>{client.phone}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Situação:</span>
+                    <span className={debt > 0 ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-bold'}>
+                      {debt > 0 ? 'Débito Pendente' : 'Conta em Dia'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tabela de Lançamentos */}
+                <div className="space-y-1.5">
+                  <div className="font-bold text-[11px] text-slate-600 dark:text-slate-400 uppercase tracking-wider">Histórico de Movimentações</div>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {(!client.transactions || client.transactions.length === 0) ? (
+                      <p className="text-slate-400 text-center py-2">Nenhuma movimentação registrada.</p>
+                    ) : (
+                      client.transactions.map((tx) => {
+                        const isSale = tx.type === 'sale';
+                        const txDate = tx.date ? new Date(tx.date).toLocaleDateString('pt-BR') : '-';
+                        return (
+                          <div key={tx.id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px]">
+                            <div className="min-w-0 flex-1 pr-2">
+                              <div className="font-medium truncate text-slate-800 dark:text-slate-200">
+                                {isSale ? (tx.description || 'Compra no Fiado') : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {txDate} {tx.dueDate ? `• Venc: ${tx.dueDate.split('-').reverse().join('/')}` : ''}
+                              </div>
+                            </div>
+                            <div className={`font-black whitespace-nowrap ${isSale ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                              {isSale ? '+' : '-'} R$ {Number(tx.amount || 0).toFixed(2).replace('.', ',')}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Saldo Total */}
+                <div className="p-3 rounded-xl bg-slate-900 text-white dark:bg-emerald-950/40 dark:border dark:border-emerald-800/60 flex items-center justify-between">
+                  <span className="font-semibold text-xs text-slate-300">SALDO TOTAL DEVEDOR:</span>
+                  <span className="text-base font-black text-emerald-400">{formattedDebt}</span>
+                </div>
+
+                <div className="text-center text-[10px] text-slate-400">
+                  Emitido em: {new Date().toLocaleString('pt-BR')}
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="p-3 bg-slate-100 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.PdfService && pdfModalData?.blob) {
+                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      setFeedbackModal({
+                        isOpen: true,
+                        title: 'PDF Baixado',
+                        message: `O arquivo "${pdfModalData.filename}" foi baixado para seu aparelho!`,
+                        variant: 'success'
+                      });
+                    }
+                  }}
+                  className="flex-1 py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <FileText size={14} className="text-rose-500" />
+                  <span>Baixar PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.PdfService && pdfModalData?.blob) {
+                      const res = await window.PdfService.sharePdfFile(
+                        pdfModalData.blob,
+                        pdfModalData.filename,
+                        `Recibo Fiado - ${client.name}`,
+                        `Recibo de fiado de ${client.name}`
+                      );
+                      if (res && res.reason === 'unsupported') {
+                        window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      }
+                    }
+                  }}
+                  className="flex-1 py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                >
+                  <MessageCircle size={14} />
+                  <span>Enviar Zap / Drive</span>
+                </button>
               </div>
             </div>
           </div>
@@ -5188,13 +5404,6 @@ window.VipTab = function VipTab({
     if (result.success) {
       setActivationMessage({ success: true, text: result.message });
       setLicenseCode('');
-      if (typeof confetti === 'function') {
-        confetti({
-          particleCount: 120,
-          spread: 90,
-          origin: { y: 0.5 }
-        });
-      }
     } else {
       setActivationMessage({ success: false, text: result.message });
     }
@@ -5487,7 +5696,7 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 animate-fadeIn">
       <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl text-slate-900 dark:text-slate-100 overflow-hidden animate-pop-in">
         
         {/* Detalhe de iluminação de fundo */}

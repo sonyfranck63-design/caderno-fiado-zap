@@ -99,23 +99,34 @@ window.PixService = (function() {
   }
 
   /**
-   * Renderiza o QR Code dinâmico em um elemento HTML container
+   * Renderiza o QR Code dinâmico em um elemento HTML container com proteção total contra falhas
    */
   function renderQRCode(containerElement, payload, size = 200) {
     if (!containerElement) return;
     containerElement.innerHTML = '';
     
-    if (typeof QRCode !== 'undefined') {
-      new QRCode(containerElement, {
-        text: payload,
-        width: size,
-        height: size,
-        colorDark: "#0f172a",
-        colorLight: "#ffffff",
-        correctLevel: QRCode.CorrectLevel.M
-      });
-    } else {
-      console.error("Biblioteca QRCode.js não disponível.");
+    try {
+      if (typeof QRCode !== 'undefined') {
+        new QRCode(containerElement, {
+          text: payload,
+          width: size,
+          height: size,
+          colorDark: "#0f172a",
+          colorLight: "#ffffff",
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } else {
+        throw new Error("Biblioteca QRCode.js não disponível.");
+      }
+    } catch (err) {
+      console.warn("Fallback visual do QR Code ativado:", err);
+      containerElement.innerHTML = `
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:${size}px; height:${size}px; border:2px dashed #cbd5e1; border-radius:20px; padding:12px; text-align:center; color:#64748b; font-size:11px; background:#f8fafc;">
+          <span style="font-size:28px; margin-bottom:6px;">⚡</span>
+          <strong style="color:#0f172a;">PIX Disponível</strong>
+          <span style="font-size:10px; margin-top:4px; line-height:1.3;">Use o botão "Copiar código" abaixo para pagar no app do seu banco.</span>
+        </div>
+      `;
     }
   }
 

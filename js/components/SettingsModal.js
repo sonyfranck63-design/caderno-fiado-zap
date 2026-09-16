@@ -183,7 +183,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-fadeIn">
       <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-pop-in transition-colors">
         
         {/* Cabeçalho */}
@@ -392,7 +392,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
 
         {/* Modal de Colar Backup */}
         {pasteBackupOpen && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-3 shadow-2xl animate-pop-in">
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">Restaurar Código de Backup</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">

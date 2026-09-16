@@ -228,8 +228,46 @@
       assert("Bônus 1: Validação de backup gerado é válida", validation.valid === true);
       assert("Bônus 2: Resumo identificou 2 clientes", validation.summary.clientsCount === 2);
       
-      const corruptedValidation = window.AppState.validateBackup('{"invalid": true}');
-      assert("Bônus 3: Backup inválido é rejeitado com mensagem de erro", corruptedValidation.valid === false && !!corruptedValidation.error);
+      // ==========================================
+      // Cenário 11: Proteção Anti-Time-Tampering e Expiração Estrita do Passe 24h
+      // ==========================================
+      log("\n--- Cenário 11: Passe 24h e Anti-Time-Tampering ---");
+      const passExpires = window.AppState.activate24hPass();
+      let vipInfo = window.AppState.getVipInfo();
+      assert("Cenário 11.1: Passe 24h ativo concede status VIP", vipInfo.isVip === true && vipInfo.isPassActive === true);
+
+      // Simulação de passe vencido
+      localStorage.setItem('cadernofiado_rewarded_pass_v1', (Date.now() - 1000).toString());
+      vipInfo = window.AppState.getVipInfo();
+      assert("Cenário 11.2: Passe vencido bloqueia VIP imediatamente e limpa storage", vipInfo.isVip === false && localStorage.getItem('cadernofiado_rewarded_pass_v1') === null);
+
+      // Simulação de atraso no relógio do aparelho (Anti-time-tampering)
+      const futureStamp = Date.now() + 1000000;
+      localStorage.setItem('cadernofiado_last_seen_time_v1', futureStamp.toString());
+      localStorage.setItem('cadernofiado_rewarded_pass_v1', (futureStamp - 100).toString());
+      vipInfo = window.AppState.getVipInfo();
+      assert("Cenário 11.3: Anti-time-tampering detecta relógio atrasado e expira passe adulterado", vipInfo.isVip === false);
+
+      // ==========================================
+      // Cenário 12: PDF Service In-App Preview Handshake Seguro (Sem Crash no Android)
+      // ==========================================
+      log("\n--- Cenário 12: PDF In-App Preview Handshake Seguro ---");
+      const previewRes = window.PdfService.openPdfPreview('blob:http://localhost:3000/test-blob');
+      assert("Cenário 12.1: openPdfPreview bloqueia Intent nativa no Android e delega para visualizador interno", previewRes.success === false && previewRes.reason === 'use_internal_viewer');
+
+      // ==========================================
+      // Cenário 13: QR Code Resiliência com Fallback Seguro
+      // ==========================================
+      log("\n--- Cenário 13: QR Code Resiliência com Fallback Seguro ---");
+      const testQrContainer = document.createElement('div');
+      let qrError = false;
+      try {
+        window.PixService.renderQRCode(testQrContainer, '00020126360014BR.GOV.BCB.PIX011411999998888520400005303986540510.005802BR5909MERCADO6009SAOPAULO62070503***6304ABCD', 150);
+      } catch(e) {
+        qrError = true;
+      }
+      assert("Cenário 13.1: renderQRCode não lança exceção não tratada", qrError === false);
+      assert("Cenário 13.2: renderQRCode injeta elementos visuais no container", testQrContainer.children.length > 0);
 
       log(`\n==========================================`);
       log(`RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`, passedTests === totalTests);

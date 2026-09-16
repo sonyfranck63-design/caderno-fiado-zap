@@ -64,13 +64,6 @@ window.VipTab = function VipTab({
     if (result.success) {
       setActivationMessage({ success: true, text: result.message });
       setLicenseCode('');
-      if (typeof confetti === 'function') {
-        confetti({
-          particleCount: 120,
-          spread: 90,
-          origin: { y: 0.5 }
-        });
-      }
     } else {
       setActivationMessage({ success: false, text: result.message });
     }

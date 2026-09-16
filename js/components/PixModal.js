@@ -7,18 +7,21 @@
 window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onOpenWhatsApp }) {
   const [copied, setCopied] = React.useState(false);
   const [pixPayload, setPixPayload] = React.useState('');
+  const [errorMsg, setErrorMsg] = React.useState(null);
   const qrRef = React.useRef(null);
-  const { X, QrCode, Copy, Check, MessageCircle, Crown, ShieldCheck, Sparkles, AlertTriangle } = window.Icons;
+  const timerRef = React.useRef(null);
+  const { X, QrCode, Copy, Check, MessageCircle, Crown, ShieldCheck, Sparkles, AlertTriangle } = window.Icons || {};
 
   if (!isOpen || !client) return null;
 
-  const debt = window.AppState.computeBalance(client);
+  const debt = window.AppState ? window.AppState.computeBalance(client) : 0;
   const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
   const hasCustomPixKey = !!shopSettings?.pixKey;
 
   // Gera o payload oficial do PIX e renderiza o QR Code
   React.useEffect(() => {
     if (!isOpen || !client) return;
+    setErrorMsg(null);
 
     try {
       const payload = window.PixService.generatePayload({
@@ -31,28 +34,38 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
 
       setPixPayload(payload);
 
-      // Renderiza o QR Code após o elemento estar no DOM
-      setTimeout(() => {
+      // Renderiza o QR Code com cleanup seguro
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
         if (qrRef.current) {
           qrRef.current.innerHTML = '';
           window.PixService.renderQRCode(qrRef.current, payload, 190);
         }
-      }, 50);
+      }, 60);
     } catch(err) {
       console.error('Erro ao gerar payload PIX:', err);
+      setErrorMsg('Não foi possível gerar o QR Code. Utilize os dados manuais abaixo.');
     }
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [isOpen, client, debt, shopSettings]);
 
   const handleCopy = () => {
     if (!pixPayload) return;
-    navigator.clipboard.writeText(pixPayload);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    try {
+      navigator.clipboard.writeText(pixPayload);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch(e) {
+      console.warn('Clipboard writeText falhou:', e);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex flex-col animate-pop-in transition-colors">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/75 animate-fadeIn">
+      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-pop-in transition-colors">
         
         {/* Cabeçalho VIP com Destaque Dourado */}
         <div className="p-4 bg-gradient-to-r from-amber-500/10 via-white to-amber-500/10 dark:from-amber-950/60 dark:via-slate-900 dark:to-amber-950/50 border-b border-amber-500/30 flex items-center justify-between">
@@ -109,7 +122,14 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
           {/* QR Code Oficial */}
           <div className="flex flex-col items-center justify-center">
             <div className="relative p-3 bg-white rounded-3xl shadow-lg border-4 border-slate-200 dark:border-slate-800 flex items-center justify-center">
-              <div ref={qrRef} className="w-[190px] h-[190px] flex items-center justify-center" />
+              <div ref={qrRef} className="w-[190px] h-[190px] flex items-center justify-center">
+                {errorMsg && (
+                  <div className="text-center p-3 text-slate-500 text-xs">
+                    <p className="font-semibold text-slate-700 dark:text-slate-300">Código PIX Pronto</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Copie o código Copia e Cola abaixo.</p>
+                  </div>
+                )}
+              </div>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center mt-2 flex items-center gap-1 font-medium">
               <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />

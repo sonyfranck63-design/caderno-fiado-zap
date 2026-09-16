@@ -27,6 +27,8 @@ window.ClientDetailModal = function ClientDetailModal({
   const [feedbackModal, setFeedbackModal] = React.useState({ isOpen: false, title: '', message: '', variant: 'info' });
   const [pdfLoading, setPdfLoading] = React.useState(false);
   const [pdfModalData, setPdfModalData] = React.useState(null);
+  const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false);
+  const [showInAppReceipt, setShowInAppReceipt] = React.useState(false);
 
   const {
     X, Phone, MapPin, Calendar, Clock, DollarSign,
@@ -44,6 +46,8 @@ window.ClientDetailModal = function ClientDetailModal({
   // Handler para registrar abatimento
   const handlePaymentSubmit = (e) => {
     e.preventDefault();
+    if (isSubmittingPayment) return;
+
     const val = parseFloat(payAmount);
     if (isNaN(val) || val <= 0) {
       setFeedbackModal({
@@ -55,6 +59,7 @@ window.ClientDetailModal = function ClientDetailModal({
       return;
     }
 
+    setIsSubmittingPayment(true);
     try {
       window.AppState.addPayment(client.id, {
         amount: val,
@@ -68,8 +73,20 @@ window.ClientDetailModal = function ClientDetailModal({
       setTargetSaleId(null);
       setActiveSubTab('extrato');
 
-      if (val >= debt && typeof confetti === 'function') {
-        confetti({ particleCount: 60, spread: 55, origin: { y: 0.6 } });
+      if (val >= debt) {
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Dívida Quitada!',
+          message: `Pagamento de R$ ${val.toFixed(2).replace('.', ',')} registrado com sucesso! O cliente ${client.name} está com a conta em dia.`,
+          variant: 'success'
+        });
+      } else {
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Abatimento Registrado',
+          message: `Abatimento de R$ ${val.toFixed(2).replace('.', ',')} registrado no extrato de ${client.name}.`,
+          variant: 'success'
+        });
       }
     } catch(err) {
       setFeedbackModal({
@@ -78,6 +95,8 @@ window.ClientDetailModal = function ClientDetailModal({
         message: 'Falha ao salvar abatimento: ' + err.message,
         variant: 'danger'
       });
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -149,7 +168,7 @@ window.ClientDetailModal = function ClientDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-fadeIn">
       <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-pop-in transition-colors">
         
         {/* Cabeçalho */}
@@ -404,9 +423,10 @@ window.ClientDetailModal = function ClientDetailModal({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all active:scale-95 shadow-md btn-smooth"
+                  disabled={isSubmittingPayment}
+                  className={`flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all active:scale-95 shadow-md btn-smooth ${isSubmittingPayment ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  Confirmar Recebimento
+                  {isSubmittingPayment ? 'Salvando...' : 'Confirmar Recebimento'}
                 </button>
               </div>
             </form>
@@ -608,7 +628,7 @@ window.ClientDetailModal = function ClientDetailModal({
 
         {/* Modal de Entrega do Recibo de Fiado com Download Real de PDF, Visualização e WhatsApp */}
         {pdfModalData && (
-          <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
@@ -666,20 +686,14 @@ window.ClientDetailModal = function ClientDetailModal({
                   <span>📤 Compartilhar PDF no Zap / Drive</span>
                 </button>
 
-                {/* 3. Visualizar PDF */}
-                {pdfModalData.blobUrl && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.PdfService) {
-                        window.PdfService.openPdfPreview(pdfModalData.blobUrl);
-                      }
-                    }}
-                    className="w-full py-2 px-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors btn-smooth"
-                  >
-                    <span>👁️ Abrir / Visualizar Documento</span>
-                  </button>
-                )}
+                {/* 3. Visualizar Recibo na Tela (In-App seguro sem risco de crash no Android) */}
+                <button
+                  type="button"
+                  onClick={() => setShowInAppReceipt(true)}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
+                >
+                  <span>👁️ Abrir / Visualizar Documento</span>
+                </button>
 
                 {/* 4. Enviar Extrato em Texto no WhatsApp */}
                 <button
@@ -700,6 +714,149 @@ window.ClientDetailModal = function ClientDetailModal({
                     Fechar
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Visualizador In-App do Recibo Timbrado (Totalmente Seguro no Android - Sem Intent de blob: que crasha) */}
+        {showInAppReceipt && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-black/90 animate-fadeIn">
+            <div className="relative w-full max-w-md max-h-[92vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 shadow-2xl overflow-hidden animate-pop-in">
+              {/* Barra de Título */}
+              <div className="p-3.5 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText size={18} className="text-emerald-600 dark:text-emerald-400" />
+                  <span className="font-bold text-xs text-slate-800 dark:text-white">Extrato Timbrado de Fiado</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowInAppReceipt(false)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Conteúdo Timbrado Scrollável */}
+              <div className="p-4 sm:p-5 overflow-y-auto flex-1 text-slate-800 dark:text-slate-100 space-y-4 font-sans text-xs bg-slate-50/50 dark:bg-slate-900/50">
+                {/* Cabeçalho da Loja */}
+                <div className="text-center pb-3 border-b border-dashed border-slate-300 dark:border-slate-700">
+                  <h3 className="font-black text-sm uppercase tracking-wide text-slate-900 dark:text-white">
+                    {shopSettings?.shopName || 'CadernoFiado Zap'}
+                  </h3>
+                  {shopSettings?.phone && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Contato: {shopSettings.phone}</p>
+                  )}
+                  {shopSettings?.pixKey && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">Chave PIX: {shopSettings.pixKey}</p>
+                  )}
+                  <div className="mt-2 inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    EXTRATO DE CONTA FIADO
+                  </div>
+                </div>
+
+                {/* Dados do Cliente */}
+                <div className="bg-white dark:bg-slate-800/80 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Cliente:</span>
+                    <strong className="text-slate-900 dark:text-white">{client.name}</strong>
+                  </div>
+                  {client.phone && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">Telefone:</span>
+                      <span>{client.phone}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 dark:text-slate-400">Situação:</span>
+                    <span className={debt > 0 ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-bold'}>
+                      {debt > 0 ? 'Débito Pendente' : 'Conta em Dia'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tabela de Lançamentos */}
+                <div className="space-y-1.5">
+                  <div className="font-bold text-[11px] text-slate-600 dark:text-slate-400 uppercase tracking-wider">Histórico de Movimentações</div>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {(!client.transactions || client.transactions.length === 0) ? (
+                      <p className="text-slate-400 text-center py-2">Nenhuma movimentação registrada.</p>
+                    ) : (
+                      client.transactions.map((tx) => {
+                        const isSale = tx.type === 'sale';
+                        const txDate = tx.date ? new Date(tx.date).toLocaleDateString('pt-BR') : '-';
+                        return (
+                          <div key={tx.id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px]">
+                            <div className="min-w-0 flex-1 pr-2">
+                              <div className="font-medium truncate text-slate-800 dark:text-slate-200">
+                                {isSale ? (tx.description || 'Compra no Fiado') : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {txDate} {tx.dueDate ? `• Venc: ${tx.dueDate.split('-').reverse().join('/')}` : ''}
+                              </div>
+                            </div>
+                            <div className={`font-black whitespace-nowrap ${isSale ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                              {isSale ? '+' : '-'} R$ {Number(tx.amount || 0).toFixed(2).replace('.', ',')}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Saldo Total */}
+                <div className="p-3 rounded-xl bg-slate-900 text-white dark:bg-emerald-950/40 dark:border dark:border-emerald-800/60 flex items-center justify-between">
+                  <span className="font-semibold text-xs text-slate-300">SALDO TOTAL DEVEDOR:</span>
+                  <span className="text-base font-black text-emerald-400">{formattedDebt}</span>
+                </div>
+
+                <div className="text-center text-[10px] text-slate-400">
+                  Emitido em: {new Date().toLocaleString('pt-BR')}
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="p-3 bg-slate-100 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.PdfService && pdfModalData?.blob) {
+                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      setFeedbackModal({
+                        isOpen: true,
+                        title: 'PDF Baixado',
+                        message: `O arquivo "${pdfModalData.filename}" foi baixado para seu aparelho!`,
+                        variant: 'success'
+                      });
+                    }
+                  }}
+                  className="flex-1 py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <FileText size={14} className="text-rose-500" />
+                  <span>Baixar PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.PdfService && pdfModalData?.blob) {
+                      const res = await window.PdfService.sharePdfFile(
+                        pdfModalData.blob,
+                        pdfModalData.filename,
+                        `Recibo Fiado - ${client.name}`,
+                        `Recibo de fiado de ${client.name}`
+                      );
+                      if (res && res.reason === 'unsupported') {
+                        window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      }
+                    }
+                  }}
+                  className="flex-1 py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                >
+                  <MessageCircle size={14} />
+                  <span>Enviar Zap / Drive</span>
+                </button>
               </div>
             </div>
           </div>

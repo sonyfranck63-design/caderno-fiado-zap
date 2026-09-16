@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="../vendor/qrcode.min.js"></script>
+  <script src="../js/pix.js"></script>
+</head>
+<body>
+  <div id="qr"></div>
+  <div id="output"></div>
+  <script>
+    try {
+      const payload = window.PixService.generatePayload({
+        pixKey: '11999998888',
+        merchantName: 'MERCADINHO',
+        merchantCity: 'SAO PAULO',
+        amount: 150.50,
+        txid: 'F000001'
+      });
+      document.getElementById('output').innerText = 'Payload: ' + payload + ' (Length: ' + payload.length + ')';
+      
+      const container = document.getElementById('qr');
+      window.PixService.renderQRCode(container, payload, 190);
+      document.getElementById('output').innerText += '\nQRCode rendered successfully. Children count: ' + container.children.length;
+    } catch (e) {
+      document.getElementById('output').innerText += '\nERROR: ' + e.message + '\n' + e.stack;
+    }
+  </script>
+</body>
+</html>
