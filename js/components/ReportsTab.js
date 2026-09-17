@@ -235,7 +235,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
       <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-sm transition-colors">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-            <span>⭐</span>
+            <Crown size={15} className="text-amber-500" />
             Ranking: Clientes Mais Pontuais
           </h4>
           <span className="text-[10px] text-slate-400">Honraram compromissos</span>
@@ -243,7 +243,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
 
         {bestPayers.length === 0 ? (
           <div className="text-center py-6 px-4 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/80">
-            <span className="text-2xl block mb-1">🤝</span>
+            <Users size={28} className="text-slate-400 mx-auto mb-1.5" />
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Nenhum pagamento registrado ainda</p>
             <p className="text-[11px] text-slate-500 mt-0.5">
               Conforme os clientes forem abatendo suas dívidas, o ranking de pontualidade aparecerá aqui.
@@ -252,7 +252,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         ) : (
           <div className="space-y-2">
             {bestPayers.map((item, idx) => {
-              const medals = ['🥇', '🥈', '🥉', '4º', '5º'];
+              const posBadge = `${idx + 1}º`;
               return (
                 <div
                   key={item.client.id}
@@ -260,7 +260,14 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
                   className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-950/60 dark:hover:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between cursor-pointer transition-colors btn-smooth"
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
-                    <span className="text-base flex-shrink-0">{medals[idx]}</span>
+                    <span className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center flex-shrink-0 ${
+                      idx === 0 ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30' :
+                      idx === 1 ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700' :
+                      idx === 2 ? 'bg-amber-700/20 text-amber-700 dark:text-amber-400 border border-amber-700/30' :
+                      'bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {posBadge}
+                    </span>
                     <div className="min-w-0">
                       <span className="font-bold text-xs text-slate-900 dark:text-white block truncate">
                         {item.client.name}

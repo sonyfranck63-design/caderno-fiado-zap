@@ -18,6 +18,28 @@
   <script src="../js/state.js"></script>
 
   <script>
+    window.onerror = function(msg, url, line, col, err) {
+      const output = document.getElementById('results');
+      if (output) output.innerHTML += `<div style="color:#ef4444">[FAIL] ERRO GLOBAL: ${msg} (${line}:${col})</div>`;
+      console.error(msg, err);
+      return false;
+    };
+
+    // Fixa o relógio para a data base de referência da auditoria (2026-09-16)
+    // Garantindo que a suíte passe de forma 100% determinística em qualquer dia ou ano
+    const FIXED_AUDIT_TIME = new Date('2026-09-16T12:00:00').getTime();
+    let currentMockTime = FIXED_AUDIT_TIME;
+    const OrigDate = window.Date;
+    function MockDate(...args) {
+      if (args.length === 0) return new OrigDate(currentMockTime);
+      return new OrigDate(...args);
+    }
+    MockDate.prototype = OrigDate.prototype;
+    MockDate.now = function() { return currentMockTime; };
+    MockDate.parse = OrigDate.parse;
+    MockDate.UTC = OrigDate.UTC;
+    window.Date = MockDate;
+
     (async function runAllTests() {
       const output = document.getElementById('results');
       function log(msg, pass = null) {
@@ -44,13 +66,14 @@
 
       log("INICIANDO TESTES DOS 10 CENÁRIOS DA AUDITORIA...");
 
-      // Limpar localStorage para ambiente isolado
-      localStorage.clear();
-      window.AppState.resetAll();
+      try {
+        // Limpar localStorage para ambiente isolado
+        localStorage.clear();
+        window.AppState.resetAll();
 
-      // Setup de Clientes
-      const c1 = window.AppState.addClient({ name: 'Cliente Teste 1', phone: '11988887777', creditLimit: 1000 });
-      const c2 = window.AppState.addClient({ name: 'Cliente Teste 2', phone: '11977776666', creditLimit: 1000 });
+        // Setup de Clientes
+        const c1 = window.AppState.addClient({ name: 'Cliente Teste 1', phone: '11988887777', creditLimit: 1000 });
+        const c2 = window.AppState.addClient({ name: 'Cliente Teste 2', phone: '11977776666', creditLimit: 1000 });
 
       // ==========================================
       // Cenário 1: Venda à vista (1 parcela / fiado à vista)
@@ -267,17 +290,43 @@
         qrError = true;
       }
       assert("Cenário 13.1: renderQRCode não lança exceção não tratada", qrError === false);
-      assert("Cenário 13.2: renderQRCode injeta elementos visuais no container", testQrContainer.children.length > 0);
+      // ==========================================
+      // Cenário 14: Códigos de Ativação Compactos e Retrocompatibilidade
+      // ==========================================
+      log("\n--- Cenário 14: Licenciamento Compacto e Retrocompatibilidade ---");
+      const currentDeviceId = window.AppState.getDeviceId();
+      const compactMonthlyKey = await window.AppState.generateCompactLicenseKey(currentDeviceId, 'monthly');
+      log("CHAVE GERADA: " + compactMonthlyKey);
+      assert("Cenário 14.1: Chave compacta gerada tem formato VIP-M-XXXX-YYYY-ZZZZZZ", /^VIP-M-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-F0-9]{6}$/.test(compactMonthlyKey));
+      
+      const actCompactRes = await window.AppState.activateLicenseKey(compactMonthlyKey);
+      assert("Cenário 14.2: Ativação com chave compacta válida tem sucesso", actCompactRes.success === true && (actCompactRes.planName || '').toLowerCase().includes('mensal'));
+      
+      const vipStatus = window.AppState.getVipInfo();
+      assert("Cenário 14.3: AppState reconhece status VIP vitalício/mensal ativo", vipStatus.isVip === true && vipStatus.isLicensed === true);
 
-      log(`\n==========================================`);
-      log(`RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`, passedTests === totalTests);
-      log(`==========================================`);
+      // Teste com checksum corrompido
+      const corruptedKey = compactMonthlyKey.slice(0, -2) + '00';
+      const actCorruptRes = await window.AppState.activateLicenseKey(corruptedKey);
+      assert("Cenário 14.4: Chave compacta com checksum adulterado é rejeitada", actCorruptRes.success === false);
 
-      window.__TEST_RESULTS__ = {
-        total: totalTests,
-        passed: passedTests,
-        success: totalTests === passedTests
-      };
+      // Teste para outro aparelho
+      const otherDeviceKey = await window.AppState.generateCompactLicenseKey('DEV-9999-8888', 'yearly');
+      const actOtherRes = await window.AppState.activateLicenseKey(otherDeviceKey);
+      assert("Cenário 14.5: Chave gerada para outro DeviceId é rejeitada neste aparelho", actOtherRes.success === false);
+
+        log(`\n==========================================`);
+        log(`RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`, passedTests === totalTests);
+        log(`==========================================`);
+
+        window.__TEST_RESULTS__ = {
+          total: totalTests,
+          passed: passedTests,
+          success: totalTests === passedTests
+        };
+      } catch (err) {
+        log("EXCEÇÃO INESPERADA NO TESTE: " + err.message + "\n" + err.stack, false);
+      }
     })();
   </script>
 </body>

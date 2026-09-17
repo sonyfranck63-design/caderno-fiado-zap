@@ -184,11 +184,11 @@ window.WhatsAppModal = function WhatsAppModal({
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Tom da Mensagem:
               </label>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                {tone === 'amigavel' && '🌸 Mantém a boa relação'}
-                {tone === 'hoje' && '📅 Lembrete de vencimento'}
-                {tone === 'acordo' && '🏷️ 5% desc. p/ receber na hora'}
-                {tone === 'firme' && '⚠️ Aviso formal de cobrança'}
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                {tone === 'amigavel' && 'Manutenção de relacionamento'}
+                {tone === 'hoje' && 'Lembrete de vencimento na data'}
+                {tone === 'acordo' && 'Desconto de 5% à vista'}
+                {tone === 'firme' && 'Notificação formal de cobrança'}
               </span>
             </div>
 

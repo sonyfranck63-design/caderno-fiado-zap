@@ -98,7 +98,7 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
               <AlertTriangle size={15} className="flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
               <div>
                 <strong className="block">Chave PIX padrão</strong>
-                Cadastre sua chave PIX nas Configurações (⚙️) para o valor cair diretamente na sua conta.
+                Cadastre sua chave PIX nas Configurações para receber diretamente na sua conta bancária.
               </div>
             </div>
           )}

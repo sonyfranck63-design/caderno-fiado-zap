@@ -13,10 +13,13 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
         
         {/* Lado Esquerdo: Identidade do App e Estabelecimento */}
         <div className="flex items-center space-x-2.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 p-0.5 shadow-md dark:shadow-glow-emerald flex items-center justify-center">
-            <div className="w-full h-full bg-white dark:bg-slate-950 rounded-[10px] flex items-center justify-center">
-              <span className="text-xl">📒</span>
-            </div>
+          <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/>
+              <path d="M6 6h10"/>
+              <path d="M6 10h7"/>
+              <polygon points="17 12 14 17 17 17 16 21 21 15 18 15 19 12" fill="#facc15" stroke="none"/>
+            </svg>
           </div>
           <div>
             <div className="flex items-center space-x-1.5">

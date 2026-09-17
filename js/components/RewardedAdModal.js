@@ -85,8 +85,8 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
             <div className="space-y-4">
               {/* Moldura de Vídeo Interativa */}
               <div className="relative rounded-2xl bg-gradient-to-br from-slate-950 to-slate-800 border border-slate-700/60 p-6 flex flex-col items-center justify-center min-h-[190px] shadow-inner">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center text-3xl shadow-glow-emerald animate-bounce">
-                  💳
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center shadow-glow-emerald animate-bounce text-white">
+                  <window.Icons.Zap size={32} />
                 </div>
                 <h3 className="text-base font-bold text-white mt-3">
                   InfinitePay & Ton Brasil

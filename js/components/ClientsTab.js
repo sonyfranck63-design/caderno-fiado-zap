@@ -16,7 +16,7 @@ window.ClientsTab = function ClientsTab({
 
   const {
     Search, PlusCircle, MessageCircle, AlertTriangle, CheckCircle2,
-    Clock, DollarSign, Users, ChevronRight, Sparkles, X
+    Clock, DollarSign, Users, ChevronRight, Sparkles, X, BookOpen
   } = window.Icons || {};
 
   // Métricas financeiras no topo
@@ -164,51 +164,51 @@ window.ClientsTab = function ClientsTab({
         </div>
       </div>
 
-      {/* Lista de Clientes ou Estados Vazios Humanizados */}
+      {/* Lista de Clientes ou Estados Vazios */}
       <div className="space-y-2.5">
         {sortedClients.length === 0 ? (
-          /* Estado Vazio com Ilustração e Acolhimento */
-          <div className="text-center py-10 px-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm transition-colors">
+          /* Estado Vazio */
+          <div className="text-center py-10 px-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3.5 shadow-sm transition-colors">
             
             {clients.length === 0 ? (
               /* Caso 1: App recém-instalado ou sem nenhum cliente */
               <>
-                <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-3xl shadow-sm">
-                  📖
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-sm">
+                  <BookOpen size={26} />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Seu Caderno de Fiado está pronto!
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Nenhum cliente cadastrado
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
-                    Cadastre os clientes que compram fiado e controle cobranças no WhatsApp com total clareza e tranquilidade.
+                    Cadastre o primeiro cliente para registrar fiados e enviar cobranças no WhatsApp.
                   </p>
                 </div>
                 <button
                   onClick={onOpenNewRecord}
-                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center space-x-2 transition-all active:scale-95 shadow-md btn-smooth"
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center space-x-2 transition-all active:scale-95 shadow-md btn-smooth"
                 >
-                  <PlusCircle size={16} />
-                  <span>Cadastrar Primeiro Cliente</span>
+                  <PlusCircle size={15} />
+                  <span>Novo Cliente</span>
                 </button>
               </>
             ) : searchTerm ? (
               /* Caso 2: Busca sem resultados */
               <>
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center text-2xl">
-                  🔍
+                <div className="w-12 h-12 mx-auto rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center">
+                  <Search size={22} />
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Nenhum cliente encontrado
+                    Nenhum resultado
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Não encontramos resultados para "{searchTerm}".
+                    Nenhum cliente corresponde a "{searchTerm}".
                   </p>
                 </div>
                 <button
                   onClick={() => setSearchTerm('')}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors btn-smooth"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors btn-smooth"
                 >
                   Limpar busca
                 </button>
@@ -216,22 +216,22 @@ window.ClientsTab = function ClientsTab({
             ) : (
               /* Caso 3: Filtro de status vazio */
               <>
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center text-2xl">
-                  📋
+                <div className="w-12 h-12 mx-auto rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center">
+                  <Users size={22} />
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Nenhum cliente nesta categoria
+                    Sem registros neste filtro
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Não há registros correspondentes ao filtro selecionado.
+                    Não há clientes correspondentes à categoria selecionada.
                   </p>
                 </div>
                 <button
                   onClick={() => setStatusFilter('todos')}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors btn-smooth"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors btn-smooth"
                 >
-                  Ver todos os clientes
+                  Ver todos
                 </button>
               </>
             )}
@@ -282,7 +282,7 @@ window.ClientsTab = function ClientsTab({
                           {client.name}
                         </h4>
                         {status === 'quitado' && (
-                          <span className="text-[10px] text-emerald-500">⭐</span>
+                          <CheckCircle2 size={12} className="text-emerald-500" />
                         )}
                       </div>
 

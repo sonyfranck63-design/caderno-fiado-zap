@@ -59,7 +59,7 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
         <div className="flex items-center space-x-3 mb-5">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-600 to-emerald-400 p-0.5 shadow-glow-emerald flex items-center justify-center">
             <div className="w-full h-full bg-slate-900 rounded-[14px] flex items-center justify-center">
-              <span className="text-2xl">📲</span>
+              <Smartphone size={24} className="text-emerald-400" />
             </div>
           </div>
           <div>
@@ -98,7 +98,7 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
           /* Instruções para iPhone / Safari */
           <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-4 text-xs text-slate-700 dark:text-slate-300">
             <p className="font-semibold text-amber-600 dark:text-amber-300 flex items-center gap-1.5 text-sm">
-              <span>🍎</span> No iPhone ou iPad (Safari):
+              Dispositivos Apple (iOS / Safari):
             </p>
             <ol className="space-y-2 list-decimal list-inside pl-1 text-slate-600 dark:text-slate-300">
               <li>Toque no botão <strong>Compartilhar</strong> (ícone com quadrado e seta para cima).</li>
@@ -119,7 +119,7 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
           /* Instruções Genéricas / Menu do Navegador */
           <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-4 text-xs text-slate-700 dark:text-slate-300">
             <p className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 text-sm">
-              <span>🤖</span> Como adicionar à sua tela inicial:
+              Como adicionar à tela inicial:
             </p>
             <ol className="space-y-2 list-decimal list-inside pl-1 text-slate-600 dark:text-slate-300">
               <li>Toque nos <strong>três pontinhos (⋮)</strong> no canto superior do navegador.</li>

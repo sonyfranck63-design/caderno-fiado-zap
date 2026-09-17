@@ -344,12 +344,12 @@ window.AppState = (function() {
     if (isPaidOff) {
       status = 'quitada';
       statusText = 'Quitada';
+    } else if (isPartial) {
+      status = 'parcial';
+      statusText = isOverdue ? 'Parcial (vencida)' : 'Parcialmente paga';
     } else if (isOverdue) {
       status = 'atrasada';
       statusText = 'Vencida';
-    } else if (isPartial) {
-      status = 'parcial';
-      statusText = 'Parcialmente paga';
     }
 
     // Extrai descrição base limpa removendo prefixos automáticos como [1/3]
@@ -428,9 +428,11 @@ window.AppState = (function() {
   // --- MONETIZAÇÃO, LICENÇAS & GESTÃO CRIPTOGRÁFICA VIP ---
   function getInstallationId() {
     let id = localStorage.getItem(STORAGE_KEY_DEVICE_ID);
-    if (!id) {
-      const num = Math.floor(1000 + Math.random() * 9000);
-      id = `CF-${num}`;
+    if (!id || /^CF-\d{4}$/.test(id)) {
+      // Gera ID curto e seguro de 8 caracteres hexadecimais no formato CF-XXXX-YYYY
+      const p1 = Math.floor(0x1000 + Math.random() * 0xEFFF).toString(16).toUpperCase();
+      const p2 = Math.floor(0x1000 + Math.random() * 0xEFFF).toString(16).toUpperCase();
+      id = `CF-${p1}-${p2}`;
       localStorage.setItem(STORAGE_KEY_DEVICE_ID, id);
     }
     return id;
@@ -471,10 +473,34 @@ window.AppState = (function() {
     return decodeURIComponent(escape(atob(b64)));
   }
 
+  const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
+
+  async function computeCompactChecksum(cleanDeviceId, plan) {
+    const data = `${COMPACT_KEY_SALT}:${cleanDeviceId}:${plan}`;
+    const hashBuf = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+    const hashArray = Array.from(new Uint8Array(hashBuf));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    return hashHex.substring(0, 6);
+  }
+
+  async function generateCompactLicenseKey(targetDeviceId, plan) {
+    let cleanId = (targetDeviceId || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
+    if (cleanId.length < 8) {
+      cleanId = cleanId.padEnd(8, '0');
+    } else if (cleanId.length > 8) {
+      cleanId = cleanId.substring(0, 8);
+    }
+    const planKey = (plan || 'L').toString().toUpperCase().substring(0, 1);
+    const checksum = await computeCompactChecksum(cleanId, planKey);
+    const part1 = cleanId.substring(0, 4);
+    const part2 = cleanId.substring(4, 8);
+    return `VIP-${planKey}-${part1}-${part2}-${checksum}`;
+  }
+
   /**
-   * Ativação de licença via Assinatura Digital ECDSA P-256
-   * Valida matematicamente no dispositivo do usuário com a chave pública embutida.
-   * Não depende de segredo compartilhado no client nem expõe chaves mestres.
+   * Ativação de licença:
+   * 1. Suporta Códigos Compactos Oficiais (ex: VIP-M-C5A6-6A19-9B2F4E, apenas 22 chars)
+   * 2. Suporta Códigos Assimétricos ECDSA legados (formato CFVIP...)
    */
   async function activateLicenseKey(keyInput) {
     if (!keyInput) {
@@ -482,11 +508,78 @@ window.AppState = (function() {
     }
     const raw = keyInput.trim().replace(/\s+/g, '');
 
-    // Formato de chave assimétrica: CFVIP.<payloadB64>.<sigB64>
+    // 1. Suporte a Código de Ativação Compacto (Curto, prático e amigável para celular)
+    if (raw.toUpperCase().startsWith('VIP-')) {
+      const parts = raw.toUpperCase().split('-');
+      if (parts.length !== 5) {
+        return { success: false, message: 'Formato do código incompleto. Exemplo esperado: VIP-M-XXXX-YYYY-ZZZZZZ' };
+      }
+      const planCode = parts[1]; // 'M', 'A' ou 'L'
+      const keyDevId = parts[2] + parts[3]; // 'XXXX' + 'YYYY'
+      const keyChecksum = parts[4];
+
+      let currentDevId = getInstallationId().toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
+      if (currentDevId.length < 8) {
+        currentDevId = currentDevId.padEnd(8, '0');
+      } else if (currentDevId.length > 8) {
+        currentDevId = currentDevId.substring(0, 8);
+      }
+      if (keyDevId !== currentDevId) {
+        return {
+          success: false,
+          message: `Este código de ativação pertence a outro aparelho. O ID deste aparelho é ${getInstallationId()}.`
+        };
+      }
+
+      if (!['M', 'A', 'L'].includes(planCode)) {
+        return { success: false, message: 'Tipo de plano não identificado no código de ativação.' };
+      }
+
+      const expectedChecksum = await computeCompactChecksum(currentDevId, planCode);
+      if (keyChecksum !== expectedChecksum) {
+        return { success: false, message: 'Código de ativação inválido ou incorreto.' };
+      }
+
+      const now = getEffectiveTime();
+      let planName = 'VIP Pro';
+      let planType = 'LIFETIME';
+      let expiresAt = null;
+
+      if (planCode === 'M') {
+        planType = '30D';
+        planName = 'VIP Pro Mensal (30 Dias)';
+        expiresAt = now + 30 * 24 * 60 * 60 * 1000;
+      } else if (planCode === 'A') {
+        planType = '365D';
+        planName = 'VIP Pro Anual (1 Ano)';
+        expiresAt = now + 365 * 24 * 60 * 60 * 1000;
+      } else if (planCode === 'L') {
+        planType = 'LIFETIME';
+        planName = 'VIP Pro Vitalício';
+        expiresAt = null;
+      }
+
+      saveLicense({
+        type: planType,
+        planName,
+        activatedAt: new Date().toISOString(),
+        expiresAt,
+        licenseKey: raw.toUpperCase()
+      });
+
+      return {
+        success: true,
+        message: `${planName} ativado com sucesso! Todos os recursos estão liberados.`,
+        planName,
+        expiresAt
+      };
+    }
+
+    // 2. Formato assimétrico legado: CFVIP.<payloadB64>.<sigB64>
     if (!raw.startsWith('CFVIP.')) {
       return { 
         success: false, 
-        message: 'Código de ativação inválido. O formato oficial deve iniciar com "CFVIP." fornecido pelo suporte.' 
+        message: 'Código de ativação inválido. Digite o código de ativação recebido no WhatsApp.' 
       };
     }
 
@@ -622,6 +715,7 @@ window.AppState = (function() {
 
     return {
       isVip,
+      isLicensed: Boolean(license && !isExpired),
       isVipPermanent: isLifetime,
       isLifetime,
       isExpired,
@@ -873,7 +967,9 @@ window.AppState = (function() {
     activate24hPass,
     getPassRemainingTimeFormatted,
     getInstallationId,
+    getDeviceId: getInstallationId,
     activateLicenseKey,
+    generateCompactLicenseKey,
     getBackupData,
     getBackupJsonString,
     exportBackup,

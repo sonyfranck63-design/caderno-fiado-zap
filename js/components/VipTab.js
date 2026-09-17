@@ -105,15 +105,15 @@ window.VipTab = function VipTab({
             
             {vipInfo.isLifetime ? (
               <p className="text-xs text-amber-600 dark:text-amber-300 mt-1 font-semibold">
-                ✨ Licença Vitalícia Permanente (Acesso Ilimitado)
+                Licença Vitalícia Ativa (Acesso Permanente)
               </p>
             ) : vipInfo.daysRemaining !== null ? (
               <div className="mt-2 space-y-1">
                 <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                  ⏳ Vence em {vipInfo.daysRemaining} dias ({vipInfo.expiresAtDateStr})
+                  Vence em {vipInfo.daysRemaining} dias ({vipInfo.expiresAtDateStr})
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Todas as funções de PIX e PDF estão 100% liberadas.
+                  Todas as funções de PIX e comprovantes estão liberadas.
                 </p>
               </div>
             ) : (
@@ -132,7 +132,7 @@ window.VipTab = function VipTab({
           {/* Renovação se estiver próximo do vencimento */}
           {!vipInfo.isLifetime && vipInfo.daysRemaining !== null && vipInfo.daysRemaining <= 5 && (
             <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-2">
-              <p className="font-semibold">⚠️ Seu plano vence em breve!</p>
+              <p className="font-semibold">Seu plano vence em breve.</p>
               <button
                 onClick={() => handleOrderViaWhatsApp('monthly')}
                 className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all text-xs btn-smooth"

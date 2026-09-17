@@ -296,7 +296,8 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
             {/* Seção de Backup e Segurança dos Dados */}
             <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3 transition-colors">
               <h4 className="text-xs font-bold text-slate-900 dark:text-slate-300 flex items-center gap-1.5">
-                <span>💾</span> Backup e Segurança dos Seus Dados
+                <ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" />
+                Backup e Segurança dos Seus Dados
               </h4>
               <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
                 Seus fiados ficam salvos de forma privada neste aparelho. Faça backup para nunca perder suas anotações mesmo trocando de celular.

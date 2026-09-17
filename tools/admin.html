@@ -190,6 +190,9 @@
       if (clean.startsWith('CF')) {
         clean = clean.slice(2);
       }
+      if (clean.length === 8) {
+        return `CF-${clean.slice(0, 4)}-${clean.slice(4, 8)}`;
+      }
       return clean ? `CF-${clean}` : '';
     }
 
@@ -247,6 +250,43 @@
       };
     }
 
+    const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
+
+    async function computeCompactChecksum(cleanDeviceId, plan) {
+      const data = `${COMPACT_KEY_SALT}:${cleanDeviceId}:${plan}`;
+      const hashBuf = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+      const hashArray = Array.from(new Uint8Array(hashBuf));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      return hashHex.substring(0, 6);
+    }
+
+    async function generateCompactLicense(deviceId, planType) {
+      let cleanId = (deviceId || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
+      if (cleanId.length < 8) {
+        cleanId = cleanId.padEnd(8, '0');
+      } else if (cleanId.length > 8) {
+        cleanId = cleanId.substring(0, 8);
+      }
+      let planKey = 'L';
+      let planName = 'Plano VIP Vitalício';
+      if (planType === '30D') {
+        planKey = 'M';
+        planName = 'Plano VIP Mensal (30 Dias)';
+      } else if (planType === '365D') {
+        planKey = 'A';
+        planName = 'Plano VIP Anual (1 Ano)';
+      }
+      const checksum = await computeCompactChecksum(cleanId, planKey);
+      const part1 = cleanId.substring(0, 4);
+      const part2 = cleanId.substring(4, 8);
+      const compactCode = `VIP-${planKey}-${part1}-${part2}-${checksum}`;
+      return {
+        code: compactCode,
+        planName,
+        deviceId: cleanId
+      };
+    }
+
     // Manipulação do Formulário
     const form = document.getElementById('licenseForm');
     const resultSection = document.getElementById('resultSection');
@@ -270,11 +310,11 @@
       const planType = document.querySelector('input[name="planType"]:checked').value;
 
       try {
-        const license = await generateSignedLicense(deviceId, planType);
+        const license = await generateCompactLicense(deviceId, planType);
         generatedKeyInput.value = license.code;
         planBadge.innerText = license.planName;
 
-        const msg = `Olá! Seu acesso ao *${license.planName}* do CadernoFiado foi liberado com sucesso! 🎉\n\n🔑 *Seu Código de Ativação Exclusivo:*\n${license.code}\n\n📲 *Como ativar no seu aparelho:*\n1. Abra o CadernoFiado no seu celular\n2. Toque na aba inferior *"Plano VIP"*\n3. Cole o código acima no campo *"Código de Ativação"* e toque em Ativar!\n\nSeus recursos de cobrança com PIX e Recibos em PDF já estão disponíveis. Obrigado pela confiança! 🤝`;
+        const msg = `Olá! Seu acesso ao *${license.planName}* do CadernoFiado foi liberado com sucesso! 🎉\n\n🔑 *Seu Código de Ativação:* \`${license.code}\`\n\n📲 *Como ativar no seu aparelho:*\n1. Abra o CadernoFiado no celular\n2. Toque na aba inferior *"Plano VIP"*\n3. Cole o código acima no campo *"Código de Ativação"* e toque em Ativar!\n\nPronto! Seus recursos VIP já estão liberados. Boas vendas! 🤝`;
         
         whatsappMessage.value = msg;
         resultSection.classList.remove('hidden');

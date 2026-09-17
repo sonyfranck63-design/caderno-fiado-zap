@@ -19,10 +19,10 @@ window.ConfirmModal = function ConfirmModal({
   const { AlertTriangle, Trash2, CheckCircle2, Info, X } = window.Icons || {};
 
   const icons = {
-    danger: Trash2 ? <Trash2 size={24} /> : <span>🗑️</span>,
-    warning: AlertTriangle ? <AlertTriangle size={24} /> : <span>⚠️</span>,
-    success: CheckCircle2 ? <CheckCircle2 size={24} /> : <span>✅</span>,
-    info: Info ? <Info size={24} /> : <span>ℹ️</span>
+    danger: Trash2 ? <Trash2 size={24} /> : <span className="font-bold text-lg">!</span>,
+    warning: AlertTriangle ? <AlertTriangle size={24} /> : <span className="font-bold text-lg">!</span>,
+    success: CheckCircle2 ? <CheckCircle2 size={24} /> : <span className="font-bold text-lg">✓</span>,
+    info: Info ? <Info size={24} /> : <span className="font-bold text-lg">i</span>
   };
 
   const badgeClasses = {

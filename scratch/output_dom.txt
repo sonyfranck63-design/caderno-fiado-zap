@@ -1,0 +1,335 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR"><head>
+  <meta charset="UTF-8">
+  <title>Suite de Testes Automatizados - CadernoFiado Zap</title>
+  <script src="../vendor/react.production.min.js"></script>
+  <script src="../vendor/react-dom.production.min.js"></script>
+  <script src="../vendor/babel.min.js"></script>
+  <script src="../vendor/qrcode.min.js"></script>
+  <script src="../vendor/jspdf.umd.min.js"></script>
+</head>
+<body style="font-family: sans-serif; padding: 20px; background: #0f172a; color: #f8fafc;">
+  <h1>Suite de Testes da Auditoria - CadernoFiado Zap</h1>
+  <div id="results" style="white-space: pre-wrap; font-family: monospace; font-size: 13px; line-height: 1.6;"><div style="color:#94a3b8">[-] INICIANDO TESTES DOS 10 CEN├üRIOS DA AUDITORIA...</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 1: Venda ├á vista (1 parcela) ---</div><div style="color:#22c55e">[PASS] Cen├írio 1.1: Saldo total do cliente ├® R$ 50.00</div><div style="color:#22c55e">[PASS] Cen├írio 1.2: Parcela 1/1 identificada com valor R$ 50.00</div><div style="color:#22c55e">[PASS] Cen├írio 1.3: Status em_aberto</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 2: Venda parcelada em 2 vezes (R$ 50.00) ---</div><div style="color:#22c55e">[PASS] Cen├írio 2.1: Criou 2 parcelas para Cal├ºa Jeans</div><div style="color:#22c55e">[PASS] Cen├írio 2.2: Cada parcela ├® R$ 25.00</div><div style="color:#22c55e">[PASS] Cen├írio 2.3: Vencimento preserva mesmo dia no m├¬s seguinte (16/09 e 16/10)</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 3: Venda de R$ 100 em 3 parcelas ---</div><div style="color:#22c55e">[PASS] Cen├írio 3.1: Criou exatamente 3 parcelas</div><div style="color:#22c55e">[PASS] Cen├írio 3.2: Soma exata das parcelas ├® R$ 100.00 (sem perda de centavos)</div><div style="color:#22c55e">[PASS] Cen├írio 3.3: Parcelas distribu├¡das corretamente (33.33, 33.33, 33.34)</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 4: Venda parcelada em 6 vezes (R$ 100.00) ---</div><div style="color:#22c55e">[PASS] Cen├írio 4.1: Criou 6 parcelas</div><div style="color:#22c55e">[PASS] Cen├írio 4.2: Soma exata das 6 parcelas ├® R$ 100.00</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 5: Cobran├ºa de parcela individual ---</div><div style="color:#22c55e">[PASS] Cen├írio 5.1: Parcela atual ├® 1 e total ├® 3</div><div style="color:#22c55e">[PASS] Cen├írio 5.2: Descri├º├úo limpa do produto sem prefixo [1/3]</div><div style="color:#22c55e">[PASS] Cen├írio 5.3: Valor da parcela individual ├® R$ 33.33 (n├úo a d├¡vida total)</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 6: Pagamento parcial de parcela espec├¡fica ---</div><div style="color:#22c55e">[PASS] Cen├írio 6.1: Saldo restante da parcela 1 ├® exatamente R$ 20.00</div><div style="color:#22c55e">[PASS] Cen├írio 6.2: Status da parcela mudou para 'parcial'</div><div style="color:#22c55e">[PASS] Cen├írio 6.3: Valor pago registrado como R$ 13.33</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 7: Quita├º├úo de parcela e status 'quitada' ---</div><div style="color:#22c55e">[PASS] Cen├írio 7.1: Parcela 1 agora tem saldo restante R$ 0.00</div><div style="color:#22c55e">[PASS] Cen├írio 7.2: Status ├® 'quitada'</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 8: Pagamento avulso FIFO ---</div><div style="color:#ef4444">[FAIL] Cen├írio 8.1: Blusa de L├ú recebeu os R$ 30 e tem saldo restante R$ 20.00 - FALHOU!</div><div style="color:#22c55e">[PASS] Cen├írio 8.2: Status da Blusa ├® 'parcial'</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 9: Pagamento vinculado a parcela espec├¡fica (targetSaleId) ---</div><div style="color:#22c55e">[PASS] Cen├írio 9.1: Parcela 2 do T├¬nis quitada diretamente por targetSaleId</div><div style="color:#ef4444">[FAIL] Cen├írio 9.2: Blusa continua com saldo restante R$ 20.00 intocada - FALHOU!</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 10: Isolamento total entre clientes ---</div><div style="color:#22c55e">[PASS] Cen├írio 10.1: Cliente 2 tem saldo isolado de R$ 150.00</div><div style="color:#22c55e">[PASS] Cen├írio 10.2: Cliente 2 quitou R$ 150.00 e tem saldo R$ 0.00</div><div style="color:#22c55e">[PASS] Cen├írio 10.3: Saldo devedor do Cliente 1 permaneceu R$ 203.34 sem interfer├¬ncia</div><div style="color:#94a3b8">[-] 
+--- Teste B├┤nus: Valida├º├úo e Restaura├º├úo Segura de Backup ---</div><div style="color:#22c55e">[PASS] B├┤nus 1: Valida├º├úo de backup gerado ├® v├ílida</div><div style="color:#22c55e">[PASS] B├┤nus 2: Resumo identificou 2 clientes</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 11: Passe 24h e Anti-Time-Tampering ---</div><div style="color:#22c55e">[PASS] Cen├írio 11.1: Passe 24h ativo concede status VIP</div><div style="color:#22c55e">[PASS] Cen├írio 11.2: Passe vencido bloqueia VIP imediatamente e limpa storage</div><div style="color:#22c55e">[PASS] Cen├írio 11.3: Anti-time-tampering detecta rel├│gio atrasado e expira passe adulterado</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 12: PDF In-App Preview Handshake Seguro ---</div><div style="color:#22c55e">[PASS] Cen├írio 12.1: openPdfPreview bloqueia Intent nativa no Android e delega para visualizador interno</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 13: QR Code Resili├¬ncia com Fallback Seguro ---</div><div style="color:#22c55e">[PASS] Cen├írio 13.1: renderQRCode n├úo lan├ºa exce├º├úo n├úo tratada</div><div style="color:#94a3b8">[-] 
+--- Cen├írio 14: Licenciamento Compacto e Retrocompatibilidade ---</div><div style="color:#94a3b8">[-] CHAVE GERADA: VIP-M-E4F7-C829-967060</div><div style="color:#22c55e">[PASS] Cen├írio 14.1: Chave compacta gerada tem formato VIP-M-XXXX-YYYY-ZZZZZZ</div><div style="color:#22c55e">[PASS] Cen├írio 14.2: Ativa├º├úo com chave compacta v├ílida tem sucesso</div><div style="color:#22c55e">[PASS] Cen├írio 14.3: AppState reconhece status VIP vital├¡cio/mensal ativo</div><div style="color:#22c55e">[PASS] Cen├írio 14.4: Chave compacta com checksum adulterado ├® rejeitada</div><div style="color:#22c55e">[PASS] Cen├írio 14.5: Chave gerada para outro DeviceId ├® rejeitada neste aparelho</div><div style="color:#94a3b8">[-] 
+==========================================</div><div style="color:#ef4444">[FAIL] RESULTADO FINAL: 36/38 TESTES PASSARAM COM SUCESSO!</div><div style="color:#94a3b8">[-] ==========================================</div></div>
+
+  <script src="../js/pix.js"></script>
+  <script src="../js/pdf.js"></script>
+  <script src="../js/state.js"></script>
+
+  <script>
+    window.onerror = function(msg, url, line, col, err) {
+      const output = document.getElementById('results');
+      if (output) output.innerHTML += `<div style="color:#ef4444">[FAIL] ERRO GLOBAL: ${msg} (${line}:${col})</div>`;
+      console.error(msg, err);
+      return false;
+    };
+
+    (async function runAllTests() {
+      const output = document.getElementById('results');
+      function log(msg, pass = null) {
+        let color = '#94a3b8';
+        let prefix = '[-] ';
+        if (pass === true) { color = '#22c55e'; prefix = '[PASS] '; }
+        if (pass === false) { color = '#ef4444'; prefix = '[FAIL] '; }
+        output.innerHTML += `<div style="color:${color}">${prefix}${msg}</div>`;
+        console.log(prefix + msg);
+      }
+
+      let totalTests = 0;
+      let passedTests = 0;
+
+      function assert(desc, condition) {
+        totalTests++;
+        if (condition) {
+          passedTests++;
+          log(desc, true);
+        } else {
+          log(desc + ' - FALHOU!', false);
+        }
+      }
+
+      log("INICIANDO TESTES DOS 10 CEN├üRIOS DA AUDITORIA...");
+
+      try {
+        // Limpar localStorage para ambiente isolado
+        localStorage.clear();
+        window.AppState.resetAll();
+
+        // Setup de Clientes
+        const c1 = window.AppState.addClient({ name: 'Cliente Teste 1', phone: '11988887777', creditLimit: 1000 });
+        const c2 = window.AppState.addClient({ name: 'Cliente Teste 2', phone: '11977776666', creditLimit: 1000 });
+
+      // ==========================================
+      // Cen├írio 1: Venda ├á vista (1 parcela / fiado ├á vista)
+      // ==========================================
+      log("\n--- Cen├írio 1: Venda ├á vista (1 parcela) ---");
+      const todayIso = new Date().toISOString().split('T')[0];
+      const s1 = window.AppState.addInstallmentSale(c1.id, {
+        description: 'Blusa de L├ú',
+        amount: 50.00,
+        installments: 1,
+        startDate: todayIso
+      });
+      let client1 = window.AppState.getClient(c1.id);
+      let balance1 = window.AppState.computeBalance(client1);
+      assert("Cen├írio 1.1: Saldo total do cliente ├® R$ 50.00", Math.abs(balance1 - 50.00) < 0.001);
+      
+      let s1Detail = window.AppState.getInstallmentDetails(client1, client1.transactions[0]);
+      assert("Cen├írio 1.2: Parcela 1/1 identificada com valor R$ 50.00", s1Detail.remainingAmount === 50 && s1Detail.isInstallment === false);
+      assert("Cen├írio 1.3: Status em_aberto", s1Detail.status === 'em_aberto');
+
+      // ==========================================
+      // Cen├írio 2: Venda parcelada em 2 vezes
+      // ==========================================
+      log("\n--- Cen├írio 2: Venda parcelada em 2 vezes (R$ 50.00) ---");
+      window.AppState.addInstallmentSale(c1.id, {
+        description: 'Cal├ºa Jeans',
+        amount: 50.00,
+        installments: 2,
+        startDate: '2026-09-16'
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const jeansSales = client1.transactions.filter(t => t.type === 'sale' && t.description.includes('Cal├ºa Jeans'));
+      assert("Cen├írio 2.1: Criou 2 parcelas para Cal├ºa Jeans", jeansSales.length === 2);
+      assert("Cen├írio 2.2: Cada parcela ├® R$ 25.00", jeansSales[0].amount === 25 && jeansSales[1].amount === 25);
+      
+      const p1Due = jeansSales[0].dueDate; // 2026-09-16
+      const p2Due = jeansSales[1].dueDate; // 2026-10-16
+      assert("Cen├írio 2.3: Vencimento preserva mesmo dia no m├¬s seguinte (16/09 e 16/10)", p1Due === '2026-09-16' && p2Due === '2026-10-16');
+
+      // ==========================================
+      // Cen├írio 3: Venda de R$ 100 em 3 parcelas (divis├úo de centavos)
+      // ==========================================
+      log("\n--- Cen├írio 3: Venda de R$ 100 em 3 parcelas ---");
+      window.AppState.addInstallmentSale(c1.id, {
+        description: 'T├¬nis Esportivo',
+        amount: 100.00,
+        installments: 3,
+        startDate: '2026-09-16'
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const tenisSales = client1.transactions.filter(t => t.type === 'sale' && t.description.includes('T├¬nis Esportivo'));
+      assert("Cen├írio 3.1: Criou exatamente 3 parcelas", tenisSales.length === 3);
+      const sumTenis = tenisSales.reduce((acc, s) => acc + s.amount, 0);
+      assert("Cen├írio 3.2: Soma exata das parcelas ├® R$ 100.00 (sem perda de centavos)", Math.abs(sumTenis - 100.00) < 0.001);
+      assert("Cen├írio 3.3: Parcelas distribu├¡das corretamente (33.33, 33.33, 33.34)", 
+        tenisSales[0].amount === 33.33 && tenisSales[1].amount === 33.33 && tenisSales[2].amount === 33.34);
+
+      // ==========================================
+      // Cen├írio 4: Venda parcelada em 6 vezes
+      // ==========================================
+      log("\n--- Cen├írio 4: Venda parcelada em 6 vezes (R$ 100.00) ---");
+      window.AppState.addInstallmentSale(c1.id, {
+        description: 'Kit Perfumaria',
+        amount: 100.00,
+        installments: 6,
+        startDate: '2026-09-16'
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const kitSales = client1.transactions.filter(t => t.type === 'sale' && t.description.includes('Kit Perfumaria'));
+      assert("Cen├írio 4.1: Criou 6 parcelas", kitSales.length === 6);
+      const sumKit = kitSales.reduce((acc, s) => acc + s.amount, 0);
+      assert("Cen├írio 4.2: Soma exata das 6 parcelas ├® R$ 100.00", Math.abs(sumKit - 100.00) < 0.001);
+
+      // ==========================================
+      // Cen├írio 5: Cobran├ºa de parcela individual (detalhes isolados)
+      // ==========================================
+      log("\n--- Cen├írio 5: Cobran├ºa de parcela individual ---");
+      const inst1Tenis = tenisSales[0];
+      const inst1Detail = window.AppState.getInstallmentDetails(client1, inst1Tenis);
+      assert("Cen├írio 5.1: Parcela atual ├® 1 e total ├® 3", inst1Detail.current === 1 && inst1Detail.total === 3);
+      assert("Cen├írio 5.2: Descri├º├úo limpa do produto sem prefixo [1/3]", inst1Detail.baseDescription === 'T├¬nis Esportivo');
+      assert("Cen├írio 5.3: Valor da parcela individual ├® R$ 33.33 (n├úo a d├¡vida total)", inst1Detail.remainingAmount === 33.33);
+
+      // ==========================================
+      // Cen├írio 6: Cobran├ºa com pagamento parcial de parcela
+      // ==========================================
+      log("\n--- Cen├írio 6: Pagamento parcial de parcela espec├¡fica ---");
+      // Abater R$ 13.33 na parcela 1 do T├¬nis
+      window.AppState.addPayment(c1.id, {
+        amount: 13.33,
+        paymentMethod: 'PIX',
+        notes: 'Entrada parcial',
+        targetSaleId: inst1Tenis.id
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const inst1AfterPay = window.AppState.getInstallmentDetails(client1, inst1Tenis);
+      assert("Cen├írio 6.1: Saldo restante da parcela 1 ├® exatamente R$ 20.00", Math.abs(inst1AfterPay.remainingAmount - 20.00) < 0.001);
+      assert("Cen├írio 6.2: Status da parcela mudou para 'parcial'", inst1AfterPay.status === 'parcial');
+      assert("Cen├írio 6.3: Valor pago registrado como R$ 13.33", Math.abs(inst1AfterPay.paidAmount - 13.33) < 0.001);
+
+      // ==========================================
+      // Cen├írio 7: Cobran├ºa de parcela j├í quitada
+      // ==========================================
+      log("\n--- Cen├írio 7: Quita├º├úo de parcela e status 'quitada' ---");
+      // Pagar os R$ 20 restantes da parcela 1 do T├¬nis
+      window.AppState.addPayment(c1.id, {
+        amount: 20.00,
+        paymentMethod: 'Dinheiro',
+        notes: 'Restante da parcela 1',
+        targetSaleId: inst1Tenis.id
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const inst1Quitada = window.AppState.getInstallmentDetails(client1, inst1Tenis);
+      assert("Cen├írio 7.1: Parcela 1 agora tem saldo restante R$ 0.00", inst1Quitada.remainingAmount === 0);
+      assert("Cen├írio 7.2: Status ├® 'quitada'", inst1Quitada.status === 'quitada');
+
+      // ==========================================
+      // Cen├írio 8: Baixa de pagamento avulso (ordem cronol├│gica FIFO)
+      // ==========================================
+      log("\n--- Cen├írio 8: Pagamento avulso FIFO ---");
+      window.AppState.addPayment(c1.id, {
+        amount: 30.00,
+        paymentMethod: 'Dinheiro',
+        notes: 'Pagamento avulso'
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const blusaSale = client1.transactions.find(t => t.type === 'sale' && t.description === 'Blusa de L├ú');
+      const blusaDetails = window.AppState.getInstallmentDetails(client1, blusaSale);
+      assert("Cen├írio 8.1: Blusa de L├ú recebeu os R$ 30 e tem saldo restante R$ 20.00", Math.abs(blusaDetails.remainingAmount - 20.00) < 0.001);
+      assert("Cen├írio 8.2: Status da Blusa ├® 'parcial'", blusaDetails.status === 'parcial');
+
+      // ==========================================
+      // Cen├írio 9: Baixa de pagamento vinculado a parcela espec├¡fica
+      // ==========================================
+      log("\n--- Cen├írio 9: Pagamento vinculado a parcela espec├¡fica (targetSaleId) ---");
+      const inst2Tenis = tenisSales[1];
+      window.AppState.addPayment(c1.id, {
+        amount: 33.33,
+        paymentMethod: 'PIX',
+        targetSaleId: inst2Tenis.id
+      });
+      client1 = window.AppState.getClient(c1.id);
+      const inst2Details = window.AppState.getInstallmentDetails(client1, inst2Tenis);
+      assert("Cen├írio 9.1: Parcela 2 do T├¬nis quitada diretamente por targetSaleId", inst2Details.status === 'quitada' && inst2Details.remainingAmount === 0);
+      const blusaCheck = window.AppState.getInstallmentDetails(client1, blusaSale);
+      assert("Cen├írio 9.2: Blusa continua com saldo restante R$ 20.00 intocada", Math.abs(blusaCheck.remainingAmount - 20.00) < 0.001);
+
+      // ==========================================
+      // Cen├írio 10: Isolamento de dados entre clientes
+      // ==========================================
+      log("\n--- Cen├írio 10: Isolamento total entre clientes ---");
+      window.AppState.addInstallmentSale(c2.id, {
+        description: 'Bolsa de Couro',
+        amount: 150.00,
+        installments: 1,
+        startDate: '2026-09-16'
+      });
+      let client2 = window.AppState.getClient(c2.id);
+      let balance2 = window.AppState.computeBalance(client2);
+      assert("Cen├írio 10.1: Cliente 2 tem saldo isolado de R$ 150.00", Math.abs(balance2 - 150.00) < 0.001);
+      
+      window.AppState.addPayment(c2.id, { amount: 150.00, paymentMethod: 'Dinheiro' });
+      client2 = window.AppState.getClient(c2.id);
+      assert("Cen├írio 10.2: Cliente 2 quitou R$ 150.00 e tem saldo R$ 0.00", window.AppState.computeBalance(client2) === 0);
+      
+      client1 = window.AppState.getClient(c1.id);
+      const actualBalance1 = window.AppState.computeBalance(client1);
+      assert("Cen├írio 10.3: Saldo devedor do Cliente 1 permaneceu R$ 203.34 sem interfer├¬ncia", Math.abs(actualBalance1 - 203.34) < 0.01);
+
+      // ==========================================
+      // Teste B├┤nus: Valida├º├úo e Restaura├º├úo de Backup
+      // ==========================================
+      log("\n--- Teste B├┤nus: Valida├º├úo e Restaura├º├úo Segura de Backup ---");
+      const backupJson = window.AppState.getBackupJsonString();
+      const validation = window.AppState.validateBackup(backupJson);
+      assert("B├┤nus 1: Valida├º├úo de backup gerado ├® v├ílida", validation.valid === true);
+      assert("B├┤nus 2: Resumo identificou 2 clientes", validation.summary.clientsCount === 2);
+      
+      // ==========================================
+      // Cen├írio 11: Prote├º├úo Anti-Time-Tampering e Expira├º├úo Estrita do Passe 24h
+      // ==========================================
+      log("\n--- Cen├írio 11: Passe 24h e Anti-Time-Tampering ---");
+      const passExpires = window.AppState.activate24hPass();
+      let vipInfo = window.AppState.getVipInfo();
+      assert("Cen├írio 11.1: Passe 24h ativo concede status VIP", vipInfo.isVip === true && vipInfo.isPassActive === true);
+
+      // Simula├º├úo de passe vencido
+      localStorage.setItem('cadernofiado_rewarded_pass_v1', (Date.now() - 1000).toString());
+      vipInfo = window.AppState.getVipInfo();
+      assert("Cen├írio 11.2: Passe vencido bloqueia VIP imediatamente e limpa storage", vipInfo.isVip === false && localStorage.getItem('cadernofiado_rewarded_pass_v1') === null);
+
+      // Simula├º├úo de atraso no rel├│gio do aparelho (Anti-time-tampering)
+      const futureStamp = Date.now() + 1000000;
+      localStorage.setItem('cadernofiado_last_seen_time_v1', futureStamp.toString());
+      localStorage.setItem('cadernofiado_rewarded_pass_v1', (futureStamp - 100).toString());
+      vipInfo = window.AppState.getVipInfo();
+      assert("Cen├írio 11.3: Anti-time-tampering detecta rel├│gio atrasado e expira passe adulterado", vipInfo.isVip === false);
+
+      // ==========================================
+      // Cen├írio 12: PDF Service In-App Preview Handshake Seguro (Sem Crash no Android)
+      // ==========================================
+      log("\n--- Cen├írio 12: PDF In-App Preview Handshake Seguro ---");
+      const previewRes = window.PdfService.openPdfPreview('blob:http://localhost:3000/test-blob');
+      assert("Cen├írio 12.1: openPdfPreview bloqueia Intent nativa no Android e delega para visualizador interno", previewRes.success === false && previewRes.reason === 'use_internal_viewer');
+
+      // ==========================================
+      // Cen├írio 13: QR Code Resili├¬ncia com Fallback Seguro
+      // ==========================================
+      log("\n--- Cen├írio 13: QR Code Resili├¬ncia com Fallback Seguro ---");
+      const testQrContainer = document.createElement('div');
+      let qrError = false;
+      try {
+        window.PixService.renderQRCode(testQrContainer, '00020126360014BR.GOV.BCB.PIX011411999998888520400005303986540510.005802BR5909MERCADO6009SAOPAULO62070503***6304ABCD', 150);
+      } catch(e) {
+        qrError = true;
+      }
+      assert("Cen├írio 13.1: renderQRCode n├úo lan├ºa exce├º├úo n├úo tratada", qrError === false);
+      // ==========================================
+      // Cen├írio 14: C├│digos de Ativa├º├úo Compactos e Retrocompatibilidade
+      // ==========================================
+      log("\n--- Cen├írio 14: Licenciamento Compacto e Retrocompatibilidade ---");
+      const currentDeviceId = window.AppState.getDeviceId();
+      const compactMonthlyKey = await window.AppState.generateCompactLicenseKey(currentDeviceId, 'monthly');
+      log("CHAVE GERADA: " + compactMonthlyKey);
+      assert("Cen├írio 14.1: Chave compacta gerada tem formato VIP-M-XXXX-YYYY-ZZZZZZ", /^VIP-M-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-F0-9]{6}$/.test(compactMonthlyKey));
+      
+      const actCompactRes = await window.AppState.activateLicenseKey(compactMonthlyKey);
+      assert("Cen├írio 14.2: Ativa├º├úo com chave compacta v├ílida tem sucesso", actCompactRes.success === true && (actCompactRes.planName || '').toLowerCase().includes('mensal'));
+      
+      const vipStatus = window.AppState.getVipInfo();
+      assert("Cen├írio 14.3: AppState reconhece status VIP vital├¡cio/mensal ativo", vipStatus.isVip === true && vipStatus.isLicensed === true);
+
+      // Teste com checksum corrompido
+      const corruptedKey = compactMonthlyKey.slice(0, -2) + '00';
+      const actCorruptRes = await window.AppState.activateLicenseKey(corruptedKey);
+      assert("Cen├írio 14.4: Chave compacta com checksum adulterado ├® rejeitada", actCorruptRes.success === false);
+
+      // Teste para outro aparelho
+      const otherDeviceKey = await window.AppState.generateCompactLicenseKey('DEV-9999-8888', 'yearly');
+      const actOtherRes = await window.AppState.activateLicenseKey(otherDeviceKey);
+      assert("Cen├írio 14.5: Chave gerada para outro DeviceId ├® rejeitada neste aparelho", actOtherRes.success === false);
+
+        log(`\n==========================================`);
+        log(`RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`, passedTests === totalTests);
+        log(`==========================================`);
+
+        window.__TEST_RESULTS__ = {
+          total: totalTests,
+          passed: passedTests,
+          success: totalTests === passedTests
+        };
+      } catch (err) {
+        log("EXCE├ç├âO INESPERADA NO TESTE: " + err.message + "\n" + err.stack, false);
+      }
+    })();
+  </script>
+
+
+</body></html>

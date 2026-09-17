@@ -920,12 +920,12 @@ window.AppState = (function() {
     if (isPaidOff) {
       status = 'quitada';
       statusText = 'Quitada';
+    } else if (isPartial) {
+      status = 'parcial';
+      statusText = isOverdue ? 'Parcial (vencida)' : 'Parcialmente paga';
     } else if (isOverdue) {
       status = 'atrasada';
       statusText = 'Vencida';
-    } else if (isPartial) {
-      status = 'parcial';
-      statusText = 'Parcialmente paga';
     }
 
     // Extrai descrição base limpa removendo prefixos automáticos como [1/3]
@@ -1004,9 +1004,11 @@ window.AppState = (function() {
   // --- MONETIZAÇÃO, LICENÇAS & GESTÃO CRIPTOGRÁFICA VIP ---
   function getInstallationId() {
     let id = localStorage.getItem(STORAGE_KEY_DEVICE_ID);
-    if (!id) {
-      const num = Math.floor(1000 + Math.random() * 9000);
-      id = `CF-${num}`;
+    if (!id || /^CF-\d{4}$/.test(id)) {
+      // Gera ID curto e seguro de 8 caracteres hexadecimais no formato CF-XXXX-YYYY
+      const p1 = Math.floor(0x1000 + Math.random() * 0xEFFF).toString(16).toUpperCase();
+      const p2 = Math.floor(0x1000 + Math.random() * 0xEFFF).toString(16).toUpperCase();
+      id = `CF-${p1}-${p2}`;
       localStorage.setItem(STORAGE_KEY_DEVICE_ID, id);
     }
     return id;
@@ -1047,10 +1049,34 @@ window.AppState = (function() {
     return decodeURIComponent(escape(atob(b64)));
   }
 
+  const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
+
+  async function computeCompactChecksum(cleanDeviceId, plan) {
+    const data = `${COMPACT_KEY_SALT}:${cleanDeviceId}:${plan}`;
+    const hashBuf = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+    const hashArray = Array.from(new Uint8Array(hashBuf));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    return hashHex.substring(0, 6);
+  }
+
+  async function generateCompactLicenseKey(targetDeviceId, plan) {
+    let cleanId = (targetDeviceId || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
+    if (cleanId.length < 8) {
+      cleanId = cleanId.padEnd(8, '0');
+    } else if (cleanId.length > 8) {
+      cleanId = cleanId.substring(0, 8);
+    }
+    const planKey = (plan || 'L').toString().toUpperCase().substring(0, 1);
+    const checksum = await computeCompactChecksum(cleanId, planKey);
+    const part1 = cleanId.substring(0, 4);
+    const part2 = cleanId.substring(4, 8);
+    return `VIP-${planKey}-${part1}-${part2}-${checksum}`;
+  }
+
   /**
-   * Ativação de licença via Assinatura Digital ECDSA P-256
-   * Valida matematicamente no dispositivo do usuário com a chave pública embutida.
-   * Não depende de segredo compartilhado no client nem expõe chaves mestres.
+   * Ativação de licença:
+   * 1. Suporta Códigos Compactos Oficiais (ex: VIP-M-C5A6-6A19-9B2F4E, apenas 22 chars)
+   * 2. Suporta Códigos Assimétricos ECDSA legados (formato CFVIP...)
    */
   async function activateLicenseKey(keyInput) {
     if (!keyInput) {
@@ -1058,11 +1084,78 @@ window.AppState = (function() {
     }
     const raw = keyInput.trim().replace(/\s+/g, '');
 
-    // Formato de chave assimétrica: CFVIP.<payloadB64>.<sigB64>
+    // 1. Suporte a Código de Ativação Compacto (Curto, prático e amigável para celular)
+    if (raw.toUpperCase().startsWith('VIP-')) {
+      const parts = raw.toUpperCase().split('-');
+      if (parts.length !== 5) {
+        return { success: false, message: 'Formato do código incompleto. Exemplo esperado: VIP-M-XXXX-YYYY-ZZZZZZ' };
+      }
+      const planCode = parts[1]; // 'M', 'A' ou 'L'
+      const keyDevId = parts[2] + parts[3]; // 'XXXX' + 'YYYY'
+      const keyChecksum = parts[4];
+
+      let currentDevId = getInstallationId().toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
+      if (currentDevId.length < 8) {
+        currentDevId = currentDevId.padEnd(8, '0');
+      } else if (currentDevId.length > 8) {
+        currentDevId = currentDevId.substring(0, 8);
+      }
+      if (keyDevId !== currentDevId) {
+        return {
+          success: false,
+          message: `Este código de ativação pertence a outro aparelho. O ID deste aparelho é ${getInstallationId()}.`
+        };
+      }
+
+      if (!['M', 'A', 'L'].includes(planCode)) {
+        return { success: false, message: 'Tipo de plano não identificado no código de ativação.' };
+      }
+
+      const expectedChecksum = await computeCompactChecksum(currentDevId, planCode);
+      if (keyChecksum !== expectedChecksum) {
+        return { success: false, message: 'Código de ativação inválido ou incorreto.' };
+      }
+
+      const now = getEffectiveTime();
+      let planName = 'VIP Pro';
+      let planType = 'LIFETIME';
+      let expiresAt = null;
+
+      if (planCode === 'M') {
+        planType = '30D';
+        planName = 'VIP Pro Mensal (30 Dias)';
+        expiresAt = now + 30 * 24 * 60 * 60 * 1000;
+      } else if (planCode === 'A') {
+        planType = '365D';
+        planName = 'VIP Pro Anual (1 Ano)';
+        expiresAt = now + 365 * 24 * 60 * 60 * 1000;
+      } else if (planCode === 'L') {
+        planType = 'LIFETIME';
+        planName = 'VIP Pro Vitalício';
+        expiresAt = null;
+      }
+
+      saveLicense({
+        type: planType,
+        planName,
+        activatedAt: new Date().toISOString(),
+        expiresAt,
+        licenseKey: raw.toUpperCase()
+      });
+
+      return {
+        success: true,
+        message: `${planName} ativado com sucesso! Todos os recursos estão liberados.`,
+        planName,
+        expiresAt
+      };
+    }
+
+    // 2. Formato assimétrico legado: CFVIP.<payloadB64>.<sigB64>
     if (!raw.startsWith('CFVIP.')) {
       return { 
         success: false, 
-        message: 'Código de ativação inválido. O formato oficial deve iniciar com "CFVIP." fornecido pelo suporte.' 
+        message: 'Código de ativação inválido. Digite o código de ativação recebido no WhatsApp.' 
       };
     }
 
@@ -1198,6 +1291,7 @@ window.AppState = (function() {
 
     return {
       isVip,
+      isLicensed: Boolean(license && !isExpired),
       isVipPermanent: isLifetime,
       isLifetime,
       isExpired,
@@ -1449,7 +1543,9 @@ window.AppState = (function() {
     activate24hPass,
     getPassRemainingTimeFormatted,
     getInstallationId,
+    getDeviceId: getInstallationId,
     activateLicenseKey,
+    generateCompactLicenseKey,
     getBackupData,
     getBackupJsonString,
     exportBackup,
@@ -1629,6 +1725,36 @@ window.Icons = {
     <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
     </svg>
+  ),
+  ShoppingBag: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+    </svg>
+  ),
+  ArrowDownLeft: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <line x1="17" x2="7" y1="7" y2="17"/><polyline points="17 17 7 17 7 7"/>
+    </svg>
+  ),
+  BookOpen: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+    </svg>
+  ),
+  Eye: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
+    </svg>
+  ),
+  Share2: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>
+    </svg>
+  ),
+  Zap: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </svg>
   )
 };
 
@@ -1678,10 +1804,10 @@ window.ConfirmModal = function ConfirmModal({
   const { AlertTriangle, Trash2, CheckCircle2, Info, X } = window.Icons || {};
 
   const icons = {
-    danger: Trash2 ? <Trash2 size={24} /> : <span>🗑️</span>,
-    warning: AlertTriangle ? <AlertTriangle size={24} /> : <span>⚠️</span>,
-    success: CheckCircle2 ? <CheckCircle2 size={24} /> : <span>✅</span>,
-    info: Info ? <Info size={24} /> : <span>ℹ️</span>
+    danger: Trash2 ? <Trash2 size={24} /> : <span className="font-bold text-lg">!</span>,
+    warning: AlertTriangle ? <AlertTriangle size={24} /> : <span className="font-bold text-lg">!</span>,
+    success: CheckCircle2 ? <CheckCircle2 size={24} /> : <span className="font-bold text-lg">✓</span>,
+    info: Info ? <Info size={24} /> : <span className="font-bold text-lg">i</span>
   };
 
   const badgeClasses = {
@@ -1886,10 +2012,13 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
         
         {/* Lado Esquerdo: Identidade do App e Estabelecimento */}
         <div className="flex items-center space-x-2.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 p-0.5 shadow-md dark:shadow-glow-emerald flex items-center justify-center">
-            <div className="w-full h-full bg-white dark:bg-slate-950 rounded-[10px] flex items-center justify-center">
-              <span className="text-xl">📒</span>
-            </div>
+          <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/>
+              <path d="M6 6h10"/>
+              <path d="M6 10h7"/>
+              <polygon points="17 12 14 17 17 17 16 21 21 15 18 15 19 12" fill="#facc15" stroke="none"/>
+            </svg>
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
@@ -2173,8 +2302,8 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
             <div className="space-y-4">
               {/* Moldura de Vídeo Interativa */}
               <div className="relative rounded-2xl bg-gradient-to-br from-slate-950 to-slate-800 border border-slate-700/60 p-6 flex flex-col items-center justify-center min-h-[190px] shadow-inner">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center text-3xl shadow-glow-emerald animate-bounce">
-                  💳
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center shadow-glow-emerald animate-bounce text-white">
+                  <window.Icons.Zap size={32} />
                 </div>
                 <h3 className="text-base font-bold text-white mt-3">
                   InfinitePay & Ton Brasil
@@ -2431,11 +2560,11 @@ window.WhatsAppModal = function WhatsAppModal({
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Tom da Mensagem:
               </label>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                {tone === 'amigavel' && '🌸 Mantém a boa relação'}
-                {tone === 'hoje' && '📅 Lembrete de vencimento'}
-                {tone === 'acordo' && '🏷️ 5% desc. p/ receber na hora'}
-                {tone === 'firme' && '⚠️ Aviso formal de cobrança'}
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                {tone === 'amigavel' && 'Manutenção de relacionamento'}
+                {tone === 'hoje' && 'Lembrete de vencimento na data'}
+                {tone === 'acordo' && 'Desconto de 5% à vista'}
+                {tone === 'firme' && 'Notificação formal de cobrança'}
               </span>
             </div>
 
@@ -2681,7 +2810,7 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
               <AlertTriangle size={15} className="flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
               <div>
                 <strong className="block">Chave PIX padrão</strong>
-                Cadastre sua chave PIX nas Configurações (⚙️) para o valor cair diretamente na sua conta.
+                Cadastre sua chave PIX nas Configurações para receber diretamente na sua conta bancária.
               </div>
             </div>
           )}
@@ -3076,7 +3205,8 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
             {/* Seção de Backup e Segurança dos Dados */}
             <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3 transition-colors">
               <h4 className="text-xs font-bold text-slate-900 dark:text-slate-300 flex items-center gap-1.5">
-                <span>💾</span> Backup e Segurança dos Seus Dados
+                <ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" />
+                Backup e Segurança dos Seus Dados
               </h4>
               <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
                 Seus fiados ficam salvos de forma privada neste aparelho. Faça backup para nunca perder suas anotações mesmo trocando de celular.
@@ -3290,7 +3420,8 @@ window.ClientDetailModal = function ClientDetailModal({
 
   const {
     X, Phone, MapPin, Calendar, Clock, DollarSign,
-    CheckCircle2, AlertTriangle, FileText, QrCode, MessageCircle, Trash2, Check, Crown
+    CheckCircle2, AlertTriangle, FileText, QrCode, MessageCircle, Trash2, Check, Crown,
+    ShoppingBag, ArrowDownLeft, Eye, Copy, Share2
   } = window.Icons || {};
 
   if (!isOpen || !client) return null;
@@ -3311,7 +3442,7 @@ window.ClientDetailModal = function ClientDetailModal({
       setFeedbackModal({
         isOpen: true,
         title: 'Valor Inválido',
-        message: 'Por favor, informe um valor numérico válido para o abatimento.',
+        message: 'Informe um valor numérico válido para o abatimento.',
         variant: 'warning'
       });
       return;
@@ -3334,15 +3465,15 @@ window.ClientDetailModal = function ClientDetailModal({
       if (val >= debt) {
         setFeedbackModal({
           isOpen: true,
-          title: 'Dívida Quitada!',
-          message: `Pagamento de R$ ${val.toFixed(2).replace('.', ',')} registrado com sucesso! O cliente ${client.name} está com a conta em dia.`,
+          title: 'Conta Quitada',
+          message: `Pagamento de R$ ${val.toFixed(2).replace('.', ',')} registrado. O cliente está com a conta em dia.`,
           variant: 'success'
         });
       } else {
         setFeedbackModal({
           isOpen: true,
           title: 'Abatimento Registrado',
-          message: `Abatimento de R$ ${val.toFixed(2).replace('.', ',')} registrado no extrato de ${client.name}.`,
+          message: `Abatimento de R$ ${val.toFixed(2).replace('.', ',')} lançado no extrato.`,
           variant: 'success'
         });
       }
@@ -3372,8 +3503,8 @@ window.ClientDetailModal = function ClientDetailModal({
     if (debt <= 0) {
       setFeedbackModal({
         isOpen: true,
-        title: 'Conta Quitada',
-        message: 'Este cliente já está com o saldo em dia! Não há débitos pendentes no momento para gerar cobrança PIX.',
+        title: 'Conta em Dia',
+        message: 'Este cliente não possui débitos pendentes para cobrança PIX.',
         variant: 'info'
       });
       return;
@@ -3386,7 +3517,7 @@ window.ClientDetailModal = function ClientDetailModal({
     }
   };
 
-  // Gerador de Recibo PDF com suporte a entrega no celular
+  // Gerador de Recibo com suporte à entrega no celular
   const handlePdfClick = async () => {
     if (!isVip) {
       onTriggerPaywall('pdf');
@@ -3397,7 +3528,7 @@ window.ClientDetailModal = function ClientDetailModal({
     const result = await window.PdfService.generateReceiptPdf(client, shopSettings);
     setPdfLoading(false);
 
-    // Abre o modal de opções do recibo sempre, garantindo que o usuário veja
+    // Abre o modal de opções do comprovante
     setPdfModalData(result);
   };
 
@@ -3419,7 +3550,7 @@ window.ClientDetailModal = function ClientDetailModal({
     setFeedbackModal({
       isOpen: true,
       title: 'Extrato Copiado',
-      message: 'O extrato detalhado foi copiado para sua área de transferência! Você pode colar em qualquer conversa do WhatsApp.',
+      message: 'O extrato detalhado foi copiado para sua área de transferência.',
       variant: 'success'
     });
     setPdfModalData(null);
@@ -3737,7 +3868,7 @@ window.ClientDetailModal = function ClientDetailModal({
                             <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
                               isSale ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                             }`}>
-                              {isSale ? '🛍️' : '💵'}
+                              {isSale ? <ShoppingBag size={15} /> : <ArrowDownLeft size={15} />}
                             </div>
 
                             <div className="min-w-0 flex-1">
@@ -3884,7 +4015,7 @@ window.ClientDetailModal = function ClientDetailModal({
           onCancel={() => setShowDeleteConfirm(false)}
         />
 
-        {/* Modal de Entrega do Recibo de Fiado com Download Real de PDF, Visualização e WhatsApp */}
+        {/* Modal de Opções de Entrega do Extrato */}
         {pdfModalData && (
           <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in">
@@ -3893,75 +4024,59 @@ window.ClientDetailModal = function ClientDetailModal({
                   <FileText size={20} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Recibo PDF Gerado!</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-300 mt-1 leading-relaxed">
-                    Comprovante de <strong>{client.name}</strong> pronto. Escolha como prefere salvar ou enviar:
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Extrato de Conta Fiado</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                    Comprovante de <strong>{client.name}</strong> pronto. Escolha como prefere visualizar ou enviar:
                   </p>
                 </div>
               </div>
 
               <div className="space-y-2 pt-1">
-                {/* 1. Baixar Arquivo PDF */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.PdfService && pdfModalData.blob) {
-                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      setFeedbackModal({
-                        isOpen: true,
-                        title: 'PDF Baixado',
-                        message: `O arquivo "${pdfModalData.filename}" foi baixado para o seu aparelho!`,
-                        variant: 'success'
-                      });
-                    }
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 font-bold text-xs flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
-                >
-                  <FileText size={15} className="text-rose-500" />
-                  <span>📥 Baixar Arquivo PDF</span>
-                </button>
-
-                {/* 2. Compartilhar Arquivo PDF */}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (window.PdfService && pdfModalData.blob) {
-                      const res = await window.PdfService.sharePdfFile(
-                        pdfModalData.blob,
-                        pdfModalData.filename,
-                        `Recibo Fiado - ${client.name}`,
-                        `Recibo de fiado de ${client.name}`
-                      );
-                      if (res && res.reason === 'unsupported') {
-                        // Fallback automático para download caso Web Share não suporte arquivos no navegador atual
-                        window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      }
-                    }
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 font-bold text-xs flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
-                >
-                  <MessageCircle size={15} className="text-emerald-500" />
-                  <span>📤 Compartilhar PDF no Zap / Drive</span>
-                </button>
-
-                {/* 3. Visualizar Recibo na Tela (In-App seguro sem risco de crash no Android) */}
-                <button
-                  type="button"
-                  onClick={() => setShowInAppReceipt(true)}
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
-                >
-                  <span>👁️ Abrir / Visualizar Documento</span>
-                </button>
-
-                {/* 4. Enviar Extrato em Texto no WhatsApp */}
+                {/* 1. Enviar Extrato no WhatsApp (Ação Principal, 100% funcional no celular) */}
                 <button
                   type="button"
                   onClick={handleSendTextReceiptViaWhatsApp}
-                  className="w-full py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-2 transition-colors shadow-md btn-smooth"
+                  className="w-full py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md btn-smooth"
                 >
                   <MessageCircle size={16} />
-                  <span>📲 Enviar Extrato no WhatsApp</span>
+                  <span>Enviar no WhatsApp</span>
                 </button>
+
+                {/* 2. Visualizar Extrato Timbrado na Tela */}
+                <button
+                  type="button"
+                  onClick={() => setShowInAppReceipt(true)}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 text-xs font-semibold flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
+                >
+                  <Eye size={15} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>Visualizar Extrato Timbrado</span>
+                </button>
+
+                {/* 3. Copiar Extrato para WhatsApp / Área de Transferência */}
+                <button
+                  type="button"
+                  onClick={handleCopyTextReceipt}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 text-xs font-medium flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
+                >
+                  <Copy size={15} />
+                  <span>Copiar Texto do Extrato</span>
+                </button>
+
+                {/* 4. Opção de Baixar PDF para computadores (não exibido em celular para evitar falhas) */}
+                {typeof window !== 'undefined' && !/android/i.test(navigator.userAgent || '') && pdfModalData.blob && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.PdfService && pdfModalData.blob) {
+                        window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      }
+                    }}
+                    className="w-full py-2 px-3 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <FileText size={13} />
+                    <span>Salvar Arquivo PDF (Computador)</span>
+                  </button>
+                )}
 
                 <div className="pt-1 text-center">
                   <button
@@ -4079,41 +4194,19 @@ window.ClientDetailModal = function ClientDetailModal({
               <div className="p-3 bg-slate-100 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.PdfService && pdfModalData?.blob) {
-                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      setFeedbackModal({
-                        isOpen: true,
-                        title: 'PDF Baixado',
-                        message: `O arquivo "${pdfModalData.filename}" foi baixado para seu aparelho!`,
-                        variant: 'success'
-                      });
-                    }
-                  }}
-                  className="flex-1 py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  onClick={handleCopyTextReceipt}
+                  className="flex-1 py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-705 text-slate-800 dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
                 >
-                  <FileText size={14} className="text-rose-500" />
-                  <span>Baixar PDF</span>
+                  <Copy size={14} />
+                  <span>Copiar Extrato</span>
                 </button>
                 <button
                   type="button"
-                  onClick={async () => {
-                    if (window.PdfService && pdfModalData?.blob) {
-                      const res = await window.PdfService.sharePdfFile(
-                        pdfModalData.blob,
-                        pdfModalData.filename,
-                        `Recibo Fiado - ${client.name}`,
-                        `Recibo de fiado de ${client.name}`
-                      );
-                      if (res && res.reason === 'unsupported') {
-                        window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      }
-                    }
-                  }}
+                  onClick={handleSendTextReceiptViaWhatsApp}
                   className="flex-1 py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
                 >
-                  <MessageCircle size={14} />
-                  <span>Enviar Zap / Drive</span>
+                  <MessageCircle size={15} />
+                  <span>Enviar no WhatsApp</span>
                 </button>
               </div>
             </div>
@@ -4173,7 +4266,7 @@ window.ClientsTab = function ClientsTab({
 
   const {
     Search, PlusCircle, MessageCircle, AlertTriangle, CheckCircle2,
-    Clock, DollarSign, Users, ChevronRight, Sparkles, X
+    Clock, DollarSign, Users, ChevronRight, Sparkles, X, BookOpen
   } = window.Icons || {};
 
   // Métricas financeiras no topo
@@ -4321,51 +4414,51 @@ window.ClientsTab = function ClientsTab({
         </div>
       </div>
 
-      {/* Lista de Clientes ou Estados Vazios Humanizados */}
+      {/* Lista de Clientes ou Estados Vazios */}
       <div className="space-y-2.5">
         {sortedClients.length === 0 ? (
-          /* Estado Vazio com Ilustração e Acolhimento */
-          <div className="text-center py-10 px-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm transition-colors">
+          /* Estado Vazio */
+          <div className="text-center py-10 px-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3.5 shadow-sm transition-colors">
             
             {clients.length === 0 ? (
               /* Caso 1: App recém-instalado ou sem nenhum cliente */
               <>
-                <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-3xl shadow-sm">
-                  📖
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-sm">
+                  <BookOpen size={26} />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Seu Caderno de Fiado está pronto!
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Nenhum cliente cadastrado
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
-                    Cadastre os clientes que compram fiado e controle cobranças no WhatsApp com total clareza e tranquilidade.
+                    Cadastre o primeiro cliente para registrar fiados e enviar cobranças no WhatsApp.
                   </p>
                 </div>
                 <button
                   onClick={onOpenNewRecord}
-                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center space-x-2 transition-all active:scale-95 shadow-md btn-smooth"
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center space-x-2 transition-all active:scale-95 shadow-md btn-smooth"
                 >
-                  <PlusCircle size={16} />
-                  <span>Cadastrar Primeiro Cliente</span>
+                  <PlusCircle size={15} />
+                  <span>Novo Cliente</span>
                 </button>
               </>
             ) : searchTerm ? (
               /* Caso 2: Busca sem resultados */
               <>
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center text-2xl">
-                  🔍
+                <div className="w-12 h-12 mx-auto rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center">
+                  <Search size={22} />
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Nenhum cliente encontrado
+                    Nenhum resultado
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Não encontramos resultados para "{searchTerm}".
+                    Nenhum cliente corresponde a "{searchTerm}".
                   </p>
                 </div>
                 <button
                   onClick={() => setSearchTerm('')}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors btn-smooth"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors btn-smooth"
                 >
                   Limpar busca
                 </button>
@@ -4373,22 +4466,22 @@ window.ClientsTab = function ClientsTab({
             ) : (
               /* Caso 3: Filtro de status vazio */
               <>
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center text-2xl">
-                  📋
+                <div className="w-12 h-12 mx-auto rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center">
+                  <Users size={22} />
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Nenhum cliente nesta categoria
+                    Sem registros neste filtro
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Não há registros correspondentes ao filtro selecionado.
+                    Não há clientes correspondentes à categoria selecionada.
                   </p>
                 </div>
                 <button
                   onClick={() => setStatusFilter('todos')}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors btn-smooth"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors btn-smooth"
                 >
-                  Ver todos os clientes
+                  Ver todos
                 </button>
               </>
             )}
@@ -4439,7 +4532,7 @@ window.ClientsTab = function ClientsTab({
                           {client.name}
                         </h4>
                         {status === 'quitado' && (
-                          <span className="text-[10px] text-emerald-500">⭐</span>
+                          <CheckCircle2 size={12} className="text-emerald-500" />
                         )}
                       </div>
 
@@ -5281,7 +5374,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
       <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-sm transition-colors">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-            <span>⭐</span>
+            <Crown size={15} className="text-amber-500" />
             Ranking: Clientes Mais Pontuais
           </h4>
           <span className="text-[10px] text-slate-400">Honraram compromissos</span>
@@ -5289,7 +5382,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
 
         {bestPayers.length === 0 ? (
           <div className="text-center py-6 px-4 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/80">
-            <span className="text-2xl block mb-1">🤝</span>
+            <Users size={28} className="text-slate-400 mx-auto mb-1.5" />
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Nenhum pagamento registrado ainda</p>
             <p className="text-[11px] text-slate-500 mt-0.5">
               Conforme os clientes forem abatendo suas dívidas, o ranking de pontualidade aparecerá aqui.
@@ -5298,7 +5391,7 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
         ) : (
           <div className="space-y-2">
             {bestPayers.map((item, idx) => {
-              const medals = ['🥇', '🥈', '🥉', '4º', '5º'];
+              const posBadge = `${idx + 1}º`;
               return (
                 <div
                   key={item.client.id}
@@ -5306,7 +5399,14 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
                   className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-950/60 dark:hover:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between cursor-pointer transition-colors btn-smooth"
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
-                    <span className="text-base flex-shrink-0">{medals[idx]}</span>
+                    <span className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center flex-shrink-0 ${
+                      idx === 0 ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30' :
+                      idx === 1 ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700' :
+                      idx === 2 ? 'bg-amber-700/20 text-amber-700 dark:text-amber-400 border border-amber-700/30' :
+                      'bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {posBadge}
+                    </span>
                     <div className="min-w-0">
                       <span className="font-bold text-xs text-slate-900 dark:text-white block truncate">
                         {item.client.name}
@@ -5445,15 +5545,15 @@ window.VipTab = function VipTab({
             
             {vipInfo.isLifetime ? (
               <p className="text-xs text-amber-600 dark:text-amber-300 mt-1 font-semibold">
-                ✨ Licença Vitalícia Permanente (Acesso Ilimitado)
+                Licença Vitalícia Ativa (Acesso Permanente)
               </p>
             ) : vipInfo.daysRemaining !== null ? (
               <div className="mt-2 space-y-1">
                 <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                  ⏳ Vence em {vipInfo.daysRemaining} dias ({vipInfo.expiresAtDateStr})
+                  Vence em {vipInfo.daysRemaining} dias ({vipInfo.expiresAtDateStr})
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Todas as funções de PIX e PDF estão 100% liberadas.
+                  Todas as funções de PIX e comprovantes estão liberadas.
                 </p>
               </div>
             ) : (
@@ -5472,7 +5572,7 @@ window.VipTab = function VipTab({
           {/* Renovação se estiver próximo do vencimento */}
           {!vipInfo.isLifetime && vipInfo.daysRemaining !== null && vipInfo.daysRemaining <= 5 && (
             <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-2">
-              <p className="font-semibold">⚠️ Seu plano vence em breve!</p>
+              <p className="font-semibold">Seu plano vence em breve.</p>
               <button
                 onClick={() => handleOrderViaWhatsApp('monthly')}
                 className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all text-xs btn-smooth"
@@ -5715,7 +5815,7 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
         <div className="flex items-center space-x-3 mb-5">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-600 to-emerald-400 p-0.5 shadow-glow-emerald flex items-center justify-center">
             <div className="w-full h-full bg-slate-900 rounded-[14px] flex items-center justify-center">
-              <span className="text-2xl">📲</span>
+              <Smartphone size={24} className="text-emerald-400" />
             </div>
           </div>
           <div>
@@ -5754,7 +5854,7 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
           /* Instruções para iPhone / Safari */
           <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-4 text-xs text-slate-700 dark:text-slate-300">
             <p className="font-semibold text-amber-600 dark:text-amber-300 flex items-center gap-1.5 text-sm">
-              <span>🍎</span> No iPhone ou iPad (Safari):
+              Dispositivos Apple (iOS / Safari):
             </p>
             <ol className="space-y-2 list-decimal list-inside pl-1 text-slate-600 dark:text-slate-300">
               <li>Toque no botão <strong>Compartilhar</strong> (ícone com quadrado e seta para cima).</li>
@@ -5775,7 +5875,7 @@ window.InstallPwaModal = function InstallPwaModal({ isOpen, onClose }) {
           /* Instruções Genéricas / Menu do Navegador */
           <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 rounded-2xl p-4 text-xs text-slate-700 dark:text-slate-300">
             <p className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 text-sm">
-              <span>🤖</span> Como adicionar à sua tela inicial:
+              Como adicionar à tela inicial:
             </p>
             <ol className="space-y-2 list-decimal list-inside pl-1 text-slate-600 dark:text-slate-300">
               <li>Toque nos <strong>três pontinhos (⋮)</strong> no canto superior do navegador.</li>
