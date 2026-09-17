@@ -107,8 +107,8 @@ $appSettings = @{
     other = ""
     match = @()
     skip = @()
-    remote_debug = $false
-    console_log = $false
+    remote_debug = $true
+    console_log = $true
     js_interface = $true # Habilita interface AppJavaScriptProxy (window.androidAppProxy)
     context_menu = $false
     not_matching = $true # Garante que links https://wa.me/... abram o app nativo do WhatsApp no celular!
@@ -119,6 +119,7 @@ $appSettings = @{
         DomStorageEnabled = $true
         DatabaseEnabled = $true
     }
+
     source = "assets"
     timestamp = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
 }

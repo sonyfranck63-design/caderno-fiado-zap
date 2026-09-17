@@ -315,6 +315,29 @@
       const actOtherRes = await window.AppState.activateLicenseKey(otherDeviceKey);
       assert("Cenário 14.5: Chave gerada para outro DeviceId é rejeitada neste aparelho", actOtherRes.success === false);
 
+      // Cenário 15: Validação de Integridade e Compilação do Bundle da Aplicação
+      try {
+        const bundleResp = await fetch('../js/bundle.js');
+
+        if (bundleResp.ok) {
+          const bundleCode = await bundleResp.text();
+          let parseSuccess = false;
+          let parseError = null;
+          try {
+            Babel.transform(bundleCode, { presets: ['react'] });
+            parseSuccess = true;
+          } catch (e) {
+            parseError = e.message;
+          }
+          assert(`Cenário 15.1: bundle.js é transpilável pelo Babel sem erros de JSX/sintaxe (Tamanho: ${bundleCode.length} bytes)`, parseSuccess);
+          if (!parseSuccess) {
+            log(`Detalhe do erro de compilação do bundle.js: ${parseError}`, false);
+          }
+        }
+      } catch (bundleErr) {
+        log("Aviso: Não foi possível carregar bundle.js no teste: " + bundleErr.message);
+      }
+
         log(`\n==========================================`);
         log(`RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`, passedTests === totalTests);
         log(`==========================================`);

@@ -2677,12 +2677,11 @@ window.WhatsAppModal = function WhatsAppModal({
 
         </div>
 
-        </div>
-
       </div>
     </div>
   );
 };
+
 
 
 // ==========================================

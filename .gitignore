@@ -1,0 +1,17 @@
+# Diretórios e arquivos temporários de build Android
+apk_build_tmp/
+tools/decompiled_template/
+tools/tmp_*/
+tools/tmp*
+*.apk
+*.log
+*.tmp
+
+# Scripts de inspeção pontual
+inspect_*.ps1
+tools/dex_urls.txt
+tools/smali_out.txt
+
+# Arquivos de sistema e SO
+.DS_Store
+Thumbs.db
