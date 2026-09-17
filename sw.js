@@ -3,7 +3,7 @@
  * Garante funcionamento 100% offline, cache inteligente e suporte a PWA instalável.
  */
 
-const CACHE_NAME = 'cadernofiado-v1.0.0';
+const CACHE_NAME = 'cadernofiado-v1.0.1';
 
 const PRECACHE_ASSETS = [
   './',
