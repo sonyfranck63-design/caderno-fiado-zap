@@ -25,12 +25,23 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
         throw new Error('PixService não disponível.');
       }
 
+      // Tratamento de formatação obrigatória para chaves do tipo Telefone (Exigência do BACEN/EMVCo: +55)
+      let finalPixKey = shopSettings?.pixKey || '11987650000';
+      const pixType = shopSettings?.pixType || 'telefone';
+      
+      if (pixType === 'telefone') {
+        let cleanPhone = finalPixKey.replace(/\D/g, '');
+        if (cleanPhone.length >= 10 && !finalPixKey.startsWith('+')) {
+          finalPixKey = '+55' + cleanPhone;
+        }
+      }
+
       payload = window.PixService.generatePayload({
-        pixKey: shopSettings?.pixKey || '11987650000',
+        pixKey: finalPixKey,
         merchantName: shopSettings?.shopName || 'MEU COMERCIO',
         merchantCity: shopSettings?.city || 'BRASIL',
         amount: debt,
-        txid: `F${client.id ? client.id.replace(/\D/g, '').slice(-6) || '000001' : '000001'}`
+        txid: '***' // Padrão genérico OBRIGATÓRIO. txid dinâmico gera "ordem rejeitada" em contas físicas (DS04).
       });
 
       setPixPayload(payload);
