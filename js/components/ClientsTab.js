@@ -8,6 +8,7 @@ window.ClientsTab = function ClientsTab({
   onSelectClient,
   onOpenNewRecord,
   onOpenWhatsApp,
+  onOpenMassBilling,
   isVip
 }) {
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -101,6 +102,29 @@ window.ClientsTab = function ClientsTab({
           </div>
         </div>
       </div>
+
+      {/* Ação Estratégica VIP: Cobrança em Massa */}
+      {overdueClientsCount > 0 && (
+        <button
+          onClick={onOpenMassBilling}
+          className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 shadow-md transition-all active:scale-95 btn-smooth border border-amber-400/50"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white backdrop-blur-sm">
+              <Sparkles size={20} />
+            </div>
+            <div className="text-left">
+              <strong className="block text-sm font-black text-white leading-tight">
+                Recuperador de Dívidas VIP
+              </strong>
+              <span className="block text-[11px] text-amber-50 font-medium leading-tight mt-0.5">
+                Cobrar {overdueClientsCount} clientes de uma vez no WhatsApp
+              </span>
+            </div>
+          </div>
+          <ChevronRight size={20} className="text-white/80" />
+        </button>
+      )}
 
       {/* Barra de Pesquisa e Filtros */}
       <div className="space-y-2">

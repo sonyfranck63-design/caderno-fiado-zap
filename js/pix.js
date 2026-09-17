@@ -59,7 +59,14 @@ window.PixService = (function() {
 
     // 26: Merchant Account Information (PIX)
     const gui = formatField('00', 'br.gov.bcb.pix');
-    const key = formatField('01', pixKey.trim());
+    let cleanKey = pixKey.trim();
+    
+    // Remove formatação de CPF/CNPJ (hífens e pontos são proibidos pelo BACEN no payload)
+    if (cleanKey.match(/^[0-9.-]+$/) && !cleanKey.startsWith('+')) {
+      cleanKey = cleanKey.replace(/[^0-9]/g, '');
+    }
+    
+    const key = formatField('01', cleanKey);
     const merchantAccountInfo = formatField('26', `${gui}${key}`);
 
     // 52: Merchant Category Code

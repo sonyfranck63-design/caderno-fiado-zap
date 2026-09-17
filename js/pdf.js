@@ -503,6 +503,17 @@ window.PdfService = (function() {
       }
 
       if (isAndroidWebView) {
+        // WebView bloqueia downloads diretos. Tenta forçar o envio nativo pelo Web Share API.
+        if (canSharePdf(blob)) {
+          const shareRes = await sharePdfFile(blob, safeFilename, 'Recibo Fiado', 'Aqui está o seu recibo em PDF.');
+          if (shareRes.success) {
+            return {
+              success: true,
+              method: 'webview_share_fallback',
+              message: 'Arquivo aberto para envio no Android.'
+            };
+          }
+        }
         return {
           success: false,
           method: 'webview_no_bridge',

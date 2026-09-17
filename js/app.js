@@ -20,6 +20,7 @@ function App() {
   const [settingsModalOpen, setSettingsModalOpen] = React.useState(false);
   const [rewardedModalOpen, setRewardedModalOpen] = React.useState(false);
   const [installModalOpen, setInstallModalOpen] = React.useState(false);
+  const [massBillingModalOpen, setMassBillingModalOpen] = React.useState(false);
   const [paywallReason, setPaywallReason] = React.useState(null);
 
   // Controle de histórico do botão/gesto Voltar do Android (BUG 2)
@@ -29,6 +30,7 @@ function App() {
   window.useModalHistory(settingsModalOpen, () => setSettingsModalOpen(false), 'SettingsModal');
   window.useModalHistory(rewardedModalOpen, () => setRewardedModalOpen(false), 'RewardedAdModal');
   window.useModalHistory(installModalOpen, () => setInstallModalOpen(false), 'InstallPwaModal');
+  window.useModalHistory(massBillingModalOpen, () => setMassBillingModalOpen(false), 'MassBillingModal');
 
   // Aplica classe de tema inicial no documento
   React.useEffect(() => {
@@ -118,6 +120,13 @@ function App() {
               onSelectClient={(id) => setSelectedClientId(id)}
               onOpenNewRecord={() => setActiveTab('new_record')}
               onOpenWhatsApp={(client) => setWhatsAppModalData({ open: true, client, pixPayload: null })}
+              onOpenMassBilling={() => {
+                if (vipInfo.isVip) {
+                  setMassBillingModalOpen(true);
+                } else {
+                  handleTriggerPaywall('mass_billing');
+                }
+              }}
               isVip={vipInfo.isVip}
             />
           )}
@@ -234,6 +243,14 @@ function App() {
         <window.InstallPwaModal
           isOpen={installModalOpen}
           onClose={() => setInstallModalOpen(false)}
+        />
+
+        {/* Modal VIP de Cobrança em Massa */}
+        <window.MassBillingModal
+          isOpen={massBillingModalOpen}
+          onClose={() => setMassBillingModalOpen(false)}
+          clients={clients}
+          shopSettings={shopSettings}
         />
 
       </div>
