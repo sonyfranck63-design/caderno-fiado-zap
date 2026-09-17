@@ -214,5 +214,16 @@ window.Icons = {
       return undefined;
     }
   });
+
+  // Proteção Defensiva: expor ícones também no window global
+  // Previne ReferenceError caso algum componente utilize o ícone sem desestruturar de window.Icons
+  try {
+    Object.keys(raw).forEach(key => {
+      if (typeof window[key] === 'undefined') {
+        window[key] = raw[key];
+      }
+    });
+  } catch(e) {}
 })();
+
 

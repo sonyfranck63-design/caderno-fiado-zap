@@ -1776,7 +1776,18 @@ window.Icons = {
       return undefined;
     }
   });
+
+  // Proteção Defensiva: expor ícones também no window global
+  // Previne ReferenceError caso algum componente utilize o ícone sem desestruturar de window.Icons
+  try {
+    Object.keys(raw).forEach(key => {
+      if (typeof window[key] === 'undefined') {
+        window[key] = raw[key];
+      }
+    });
+  } catch(e) {}
 })();
+
 
 
 
@@ -1998,99 +2009,85 @@ window.AdMobBanner = function AdMobBanner({ isVip, onOpenVip, onWatchRewarded })
 // Arquivo: js\components\Header.js
 // ==========================================
 /**
- * Componente de Cabeçalho (Top Bar)
- * Exibe nome do estabelecimento, badge dinâmico de status VIP/Passe e atalhos rápidos.
- * Suporte completo a tema Claro e Escuro com transição suave.
+ * Componente de Cabeçalho: Identidade do Estabelecimento e Ações Rápidas
+ * Visual limpo e despoluído inspirado em interfaces nativas.
  */
 
 window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpenVip, isDark, onToggleTheme, shopSettings, onOpenInstall }) {
-  const { Crown, Sparkles, Settings, Moon, Sun, Clock, Download } = window.Icons;
+  const { Crown, Settings, Moon, Sun, Clock } = window.Icons || {};
 
   return (
-    <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 px-4 py-3 transition-colors duration-200">
+    <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0e141f]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/70 px-4 py-3 transition-colors duration-200">
       <div className="flex items-center justify-between">
         
         {/* Lado Esquerdo: Identidade do App e Estabelecimento */}
-        <div className="flex items-center space-x-2.5">
-          <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="flex items-center space-x-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/>
               <path d="M6 6h10"/>
               <path d="M6 10h7"/>
-              <polygon points="17 12 14 17 17 17 16 21 21 15 18 15 19 12" fill="#facc15" stroke="none"/>
+              <polygon points="17 12 14 17 17 17 16 21 21 15 18 15 19 12" fill="#34d399" stroke="none"/>
             </svg>
           </div>
-          <div>
-            <div className="flex items-center space-x-1.5">
-              <h1 className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white flex items-center gap-1">
-                CadernoFiado <span className="text-emerald-600 dark:text-brand-400 font-black">Zap</span>
-              </h1>
-            </div>
-            <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold truncate max-w-[140px] sm:max-w-[200px]">
-              {shopSettings?.shopName || 'Meu Estabelecimento'}
+          <div className="min-w-0">
+            <h1 className="font-bold text-sm tracking-tight text-slate-900 dark:text-white leading-tight truncate">
+              {shopSettings?.shopName || 'CadernoFiado Zap'}
+            </h1>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+              Gestão de Fiados & Cobrança
             </p>
           </div>
         </div>
 
-        {/* Lado Direito: Badge VIP + Configurações + Tema */}
-        <div className="flex items-center space-x-2">
+        {/* Lado Direito: Badge VIP + Alternador de Tema + Configurações */}
+        <div className="flex items-center space-x-1.5 flex-shrink-0">
           
-          {/* Badge de Status VIP Dinâmico */}
+          {/* Badge de Status VIP */}
           {vipInfo.isVipPermanent ? (
             <button
               onClick={onOpenVip}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-semibold shadow-sm hover:opacity-90 transition-opacity btn-smooth"
-              title="Assinante VIP Pro Permanente"
+              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-colors btn-smooth"
+              title="Plano VIP Pro Ativo"
             >
-              <Crown size={13} className="text-amber-500 dark:text-amber-400" />
-              <span>VIP PRO</span>
+              <Crown size={12} className="text-emerald-600 dark:text-emerald-400" />
+              <span>PRO</span>
             </button>
           ) : vipInfo.isPassActive ? (
             <button
               onClick={onOpenVip}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold shadow-sm hover:opacity-90 transition-opacity btn-smooth"
-              title="Passe VIP Temporário Ativo"
+              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-colors btn-smooth"
+              title="Passe 24h Ativo"
             >
-              <Clock size={12} className="text-emerald-600 dark:text-emerald-400 animate-pulse" />
-              <span className="text-[11px] font-bold">{remainingTime || 'VIP 24h'}</span>
+              <Clock size={11} className="text-emerald-600 dark:text-emerald-400" />
+              <span className="text-[10px] font-bold">{remainingTime || 'VIP 24h'}</span>
             </button>
           ) : (
             <button
               onClick={onOpenVip}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors btn-smooth"
+              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors btn-smooth"
             >
-              <Sparkles size={12} className="text-amber-500 dark:text-amber-400" />
-              <span className="hidden sm:inline">Virar</span> <span>VIP</span>
+              <Crown size={12} className="text-amber-500" />
+              <span>VIP</span>
             </button>
           )}
-
-          {/* Botão de Instalar App */}
-          <button
-            onClick={onOpenInstall}
-            className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 transition-colors flex items-center gap-1.5 text-xs font-semibold btn-smooth"
-            aria-label="Instalar Aplicativo no Celular"
-            title="Instalar App no Celular / Computador"
-          >
-            <Download size={16} />
-            <span className="hidden md:inline">Instalar</span>
-          </button>
 
           {/* Alternador de Tema Escuro / Claro */}
           <button
             onClick={onToggleTheme}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-300 dark:border-slate-800 transition-all btn-smooth"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors btn-smooth"
             aria-label="Alternar Tema"
-            title="Alternar Modo Escuro / Claro"
+            title="Alternar Tema"
           >
-            {isDark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-slate-700" />}
+            {isDark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-slate-600" />}
           </button>
 
           {/* Botão de Configurações */}
           <button
             onClick={onOpenSettings}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-300 dark:border-slate-800 transition-all btn-smooth"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors btn-smooth"
             aria-label="Configurações do Negócio"
-            title="Configurações & Backup"
+            title="Configurações"
           >
             <Settings size={17} />
           </button>
@@ -2103,105 +2100,77 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
 };
 
 
+
 // ==========================================
 // Arquivo: js\components\BottomNav.js
 // ==========================================
 /**
- * Barra de Navegação Inferior Estilo Android / Mobile App Nativo
- * 4 Atalhos Fixos: 'Clientes & Fiados', 'Novo Registro', 'Relatórios de Caixa' e 'Plano VIP Pro'
- * Suporte a tema Claro e Escuro com micro-interações táteis.
+ * Barra de Navegação Inferior: Design Nativo e Limpo (Estilo Nubank / iOS)
+ * 4 Atalhos Organizados: Clientes, Nova Venda, Relatórios e Assinatura VIP
  */
 
 window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, isVip }) {
-  const { Users, PlusCircle, BarChart3, Crown } = window.Icons;
+  const { Users, PlusCircle, BarChart3, Crown } = window.Icons || {};
 
   const tabs = [
     {
       id: 'clients',
-      label: 'Clientes & Fiados',
+      label: 'Clientes',
       icon: Users,
       badge: overdueCount > 0 ? overdueCount : null,
-      badgeColor: 'bg-rose-500'
+      badgeColor: 'bg-rose-500 text-white'
     },
     {
       id: 'new_record',
-      label: 'Novo Registro',
-      icon: PlusCircle,
-      isPrimary: true
+      label: 'Nova Venda',
+      icon: PlusCircle
     },
     {
       id: 'reports',
-      label: 'Relatórios Caixa',
+      label: 'Relatórios',
       icon: BarChart3
     },
     {
       id: 'vip',
-      label: 'Plano VIP Pro',
+      label: isVip ? 'VIP Ativo' : 'Plano VIP',
       icon: Crown,
-      badge: isVip ? 'ATIVO' : 'PRO',
-      badgeColor: isVip ? 'bg-emerald-500' : 'bg-amber-500'
+      badge: isVip ? 'PRO' : null,
+      badgeColor: 'bg-emerald-600 text-white'
     }
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800/90 max-w-md mx-auto transition-colors duration-200">
-      <div className="flex items-center justify-around px-2 py-1.5 safe-area-bottom">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0e141f]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/80 max-w-md mx-auto transition-colors duration-200">
+      <div className="grid grid-cols-4 px-1 py-2 safe-area-bottom">
         {tabs.map(tab => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
-
-          if (tab.isPrimary) {
-            return (
-              <button
-                key={tab.id}
-                onClick={() => onSelectTab(tab.id)}
-                className="flex flex-col items-center justify-center -mt-5 group focus:outline-none btn-smooth"
-                aria-label={tab.label}
-              >
-                <div className={`w-13 h-13 p-3 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200 group-active:scale-95 ${
-                  isActive
-                    ? 'bg-gradient-to-tr from-brand-600 to-emerald-400 text-slate-950 shadow-md dark:shadow-glow-emerald'
-                    : 'bg-brand-500 hover:bg-brand-400 text-slate-950 shadow-brand-500/30'
-                }`}>
-                  <Icon size={24} strokeWidth={2.4} />
-                </div>
-                <span className={`text-[10px] font-bold mt-1 tracking-tight ${
-                  isActive ? 'text-emerald-600 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
-                }`}>
-                  {tab.label}
-                </span>
-              </button>
-            );
-          }
 
           return (
             <button
               key={tab.id}
               onClick={() => onSelectTab(tab.id)}
-              className={`relative flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all duration-200 focus:outline-none btn-smooth ${
+              className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-all duration-150 focus:outline-none btn-smooth ${
                 isActive 
-                  ? 'text-emerald-600 dark:text-brand-400 font-bold' 
+                  ? 'text-emerald-600 dark:text-emerald-400 font-semibold' 
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
-              {/* Ícone com badge se houver */}
               <div className="relative">
-                <Icon size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'scale-105 transition-transform' : ''} />
+                <Icon size={20} strokeWidth={isActive ? 2.3 : 1.8} />
                 {tab.badge && (
-                  <span className={`absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold text-white shadow-sm ${tab.badgeColor}`}>
+                  <span className={`absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center leading-none ${tab.badgeColor}`}>
                     {tab.badge}
                   </span>
                 )}
               </div>
 
-              {/* Rótulo */}
-              <span className={`text-[10px] tracking-tight mt-1 ${isActive ? 'text-emerald-600 dark:text-brand-400 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
+              <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 font-medium'}`}>
                 {tab.label}
               </span>
 
-              {/* Indicador de aba ativa */}
               {isActive && (
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-brand-400 mt-0.5 shadow-sm"></div>
+                <div className="w-1 h-1 rounded-full bg-emerald-600 dark:bg-emerald-400 mt-0.5"></div>
               )}
             </button>
           );
@@ -2210,6 +2179,7 @@ window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, is
     </nav>
   );
 };
+
 
 
 // ==========================================
@@ -3398,8 +3368,9 @@ window.ClientDetailModal = function ClientDetailModal({
   const {
     X, Phone, MapPin, Calendar, Clock, DollarSign,
     CheckCircle2, AlertTriangle, FileText, QrCode, MessageCircle, Trash2, Check, Crown,
-    ShoppingBag, ArrowDownLeft, Eye, Copy, Share2
+    ShoppingBag, ArrowDownLeft, Eye, Copy, Share2, Download, ChevronRight
   } = window.Icons || {};
+
 
   if (!isOpen || !client) return null;
 
@@ -3578,25 +3549,25 @@ window.ClientDetailModal = function ClientDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-fadeIn">
-      <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-pop-in transition-colors">
+      <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-[#0e141f] border border-slate-200/80 dark:border-slate-800/80 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-pop-in transition-colors">
         
         {/* Cabeçalho */}
-        <div className="p-4 bg-slate-50 dark:bg-slate-950/90 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors">
+        <div className="p-4 bg-slate-50/80 dark:bg-[#121926]/90 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between transition-colors">
           <div className="min-w-0 flex-1">
             <div className="flex items-center space-x-2">
               <h2 className="font-bold text-base text-slate-900 dark:text-white truncate">{client.name}</h2>
               {status === 'quitado' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
                   <Check size={11} /> Quitado
                 </span>
               )}
               {status === 'atrasado' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 flex items-center gap-1">
                   <AlertTriangle size={11} /> Atrasado
                 </span>
               )}
               {status === 'em_dia' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
                   Em Aberto
                 </span>
               )}
@@ -3615,14 +3586,14 @@ window.ClientDetailModal = function ClientDetailModal({
         </div>
 
         {/* Card de Saldo e Barra de Limite */}
-        <div className="p-4 bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-200 dark:border-slate-800/80 transition-colors">
+        <div className="p-4 bg-slate-50/40 dark:bg-[#121926]/50 border-b border-slate-200/80 dark:border-slate-800/80 transition-colors">
           <div className="flex items-center justify-between mb-2">
             <div>
               <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">
                 Saldo Devedor Atual
               </span>
-              <span className={`text-2xl font-extrabold font-mono ${
-                debt > 0 ? (status === 'atrasado' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400') : 'text-emerald-600 dark:text-emerald-400'
+              <span className={`text-2xl font-extrabold ${
+                debt > 0 ? (status === 'atrasado' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white') : 'text-emerald-600 dark:text-emerald-400'
               }`}>
                 {formattedDebt}
               </span>
@@ -3638,7 +3609,7 @@ window.ClientDetailModal = function ClientDetailModal({
               </button>
             ) : (
               <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                ⭐ Em Dia
+                <Check size={12} /> Em Dia
               </span>
             )}
           </div>
@@ -3647,6 +3618,7 @@ window.ClientDetailModal = function ClientDetailModal({
           <div>
             <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
               <span>Limite Usado: {limitUsagePct}%</span>
+
               <span>Limite Total: R$ {creditLimit.toFixed(2).replace('.', ',')}</span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -4037,15 +4009,15 @@ window.ClientDetailModal = function ClientDetailModal({
 
         {/* Modal de Opções de Entrega do Extrato */}
         {pdfModalData && (
-          <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
-            <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in">
+          <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/80 animate-fadeIn">
+            <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-[#121926] border border-slate-200/80 dark:border-slate-800/80 p-5 space-y-4 shadow-2xl animate-pop-in">
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="font-bold text-sm text-slate-900 dark:text-white">
                     Extrato de {client.name}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Saldo atual: <strong className="text-slate-900 dark:text-white">{formattedDebt}</strong>
+                    Saldo pendente: <strong className="text-slate-900 dark:text-white">{formattedDebt}</strong>
                   </p>
                 </div>
                 <button
@@ -4070,7 +4042,7 @@ window.ClientDetailModal = function ClientDetailModal({
                     </div>
                     <div className="min-w-0">
                       <span className="block font-bold text-xs truncate">Enviar Arquivo PDF</span>
-                      <span className="block text-[10px] text-emerald-100/90 truncate">Documento oficial timbrado para WhatsApp</span>
+                      <span className="block text-[10px] text-emerald-100/90 truncate">Documento timbrado para WhatsApp</span>
                     </div>
                   </div>
                   <ChevronRight size={16} className="text-white/70 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
@@ -4080,7 +4052,7 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={handleSendTextReceiptViaWhatsApp}
-                  className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-semibold text-xs flex items-center justify-between transition-all border border-slate-200 dark:border-slate-700/80 btn-smooth group"
+                  className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-[#161f30] dark:hover:bg-[#1a2538] text-slate-800 dark:text-slate-100 font-semibold text-xs flex items-center justify-between transition-all border border-slate-200/80 dark:border-slate-700/60 btn-smooth group"
                 >
                   <div className="flex items-center gap-2.5 text-left min-w-0">
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
@@ -4088,11 +4060,12 @@ window.ClientDetailModal = function ClientDetailModal({
                     </div>
                     <div className="min-w-0">
                       <span className="block font-bold text-xs truncate">Enviar Extrato em Texto</span>
-                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">Mensagem rápida escrita no WhatsApp</span>
+                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">Mensagem resumida no WhatsApp</span>
                     </div>
                   </div>
                   <ChevronRight size={16} className="text-slate-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
                 </button>
+
 
                 {/* 3. Baixar / Salvar Arquivo PDF no Dispositivo (Celular ou Computador) */}
                 <button
@@ -4360,50 +4333,57 @@ window.ClientsTab = function ClientsTab({
   });
 
   return (
-    <div className="space-y-4 pb-24 tab-enter">
+    <div className="space-y-3.5 pb-24 tab-enter">
       
-      {/* 3 Cards de Resumo Financeiro no Topo */}
-      <div className="grid grid-cols-3 gap-2">
-        
-        {/* Total a Receber */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-            A Receber
-          </span>
-          <span className="text-base font-black text-emerald-600 dark:text-emerald-400 font-mono block mt-0.5 truncate">
-            R$ {totalReceivables.toFixed(2).replace('.', ',')}
-          </span>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 block">
-            {inDebtClientsCount} {inDebtClientsCount === 1 ? 'com saldo' : 'com saldo'}
-          </span>
+      {/* Painel Financeiro Integrado (Estilo Fintech) */}
+      <div className="rounded-2xl bg-white dark:bg-[#121926] border border-slate-200/80 dark:border-slate-800/80 p-4 shadow-sm transition-colors">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/60">
+          <div>
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+              Total em Aberto no Fiado
+            </span>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight block mt-0.5">
+              R$ {totalReceivables.toFixed(2).replace('.', ',')}
+            </span>
+          </div>
+          <button
+            onClick={onOpenNewRecord}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm btn-smooth"
+          >
+            <PlusCircle size={15} />
+            <span>Nova Venda</span>
+          </button>
         </div>
 
-        {/* Em Atraso */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/40 shadow-sm transition-colors">
-          <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider block flex items-center gap-1">
-            <AlertTriangle size={11} /> Atrasados
-          </span>
-          <span className="text-base font-black text-rose-600 dark:text-rose-400 font-mono block mt-0.5 truncate">
-            {overdueClientsCount}
-          </span>
-          <span className="text-[10px] text-rose-500/80 dark:text-rose-300/70 mt-0.5 block">
-            {overdueClientsCount === 1 ? 'Cobrança urgente' : 'Cobranças urgentes'}
-          </span>
-        </div>
+        <div className="grid grid-cols-2 gap-3 pt-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={15} />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                {overdueClientsCount} {overdueClientsCount === 1 ? 'cliente' : 'clientes'}
+              </span>
+              <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium block">
+                Cobrança pendente
+              </span>
+            </div>
+          </div>
 
-        {/* Total Cadastrado */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block flex items-center gap-1">
-            <Users size={11} /> Clientes
-          </span>
-          <span className="text-base font-black text-slate-800 dark:text-slate-200 font-mono block mt-0.5 truncate">
-            {clients.length}
-          </span>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 block">
-            Cadastrados
-          </span>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center flex-shrink-0">
+              <Users size={15} />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                {clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">
+                Cadastrados
+              </span>
+            </div>
+          </div>
         </div>
-
       </div>
 
       {/* Barra de Pesquisa e Filtros */}
@@ -4415,7 +4395,7 @@ window.ClientsTab = function ClientsTab({
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="Buscar por nome ou WhatsApp..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-sm transition-colors"
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-[#121926] border border-slate-200/80 dark:border-slate-800/80 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition-colors shadow-sm"
           />
           {searchTerm && (
             <button
@@ -4431,10 +4411,10 @@ window.ClientsTab = function ClientsTab({
         <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5">
           <button
             onClick={() => setStatusFilter('todos')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all btn-smooth ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all btn-smooth ${
               statusFilter === 'todos'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 font-semibold'
+                : 'bg-white dark:bg-[#121926] text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800/80'
             }`}
           >
             Todos ({clients.length})
@@ -4442,10 +4422,10 @@ window.ClientsTab = function ClientsTab({
 
           <button
             onClick={() => setStatusFilter('atrasado')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
               statusFilter === 'atrasado'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-rose-600 text-white font-semibold'
+                : 'bg-white dark:bg-[#121926] text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800/80'
             }`}
           >
             <AlertTriangle size={12} /> Atrasados ({overdueClientsCount})
@@ -4453,10 +4433,10 @@ window.ClientsTab = function ClientsTab({
 
           <button
             onClick={() => setStatusFilter('em_dia')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all btn-smooth ${
               statusFilter === 'em_dia'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-emerald-600 text-white font-semibold'
+                : 'bg-white dark:bg-[#121926] text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800/80'
             }`}
           >
             Em Aberto
@@ -4464,16 +4444,17 @@ window.ClientsTab = function ClientsTab({
 
           <button
             onClick={() => setStatusFilter('quitado')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
               statusFilter === 'quitado'
-                ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 font-bold'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-emerald-600 text-white font-semibold'
+                : 'bg-white dark:bg-[#121926] text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800/80'
             }`}
           >
             <CheckCircle2 size={12} /> Quitados
           </button>
         </div>
       </div>
+
 
       {/* Lista de Clientes ou Estados Vazios */}
       <div className="space-y-2.5">
@@ -4571,7 +4552,7 @@ window.ClientsTab = function ClientsTab({
               <div
                 key={client.id}
                 onClick={() => onSelectClient(client.id)}
-                className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all cursor-pointer shadow-sm group active:scale-[0.99] btn-smooth"
+                className="p-3.5 rounded-2xl bg-white dark:bg-[#121926] hover:bg-slate-50 dark:hover:bg-[#161f30] border border-slate-200/80 dark:border-slate-800/80 transition-all cursor-pointer shadow-sm group active:scale-[0.99] btn-smooth"
               >
                 <div className="flex items-center justify-between gap-3">
                   
@@ -4579,10 +4560,10 @@ window.ClientsTab = function ClientsTab({
                   <div className="flex items-center space-x-3 min-w-0 flex-1">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 ${
                       status === 'atrasado'
-                        ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                         : status === 'quitado'
-                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60'
                     }`}>
                       {initials}
                     </div>
@@ -4593,40 +4574,47 @@ window.ClientsTab = function ClientsTab({
                           {client.name}
                         </h4>
                         {status === 'quitado' && (
-                          <CheckCircle2 size={12} className="text-emerald-500" />
+                          <CheckCircle2 size={13} className="text-emerald-500" />
                         )}
                       </div>
 
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        {client.phone ? client.phone : (client.address || 'Sem telefone')}
+                        {client.phone ? client.phone : (client.address || 'Sem telefone cadastrado')}
                       </p>
                     </div>
                   </div>
 
                   {/* Saldo Devedor e Status */}
                   <div className="text-right flex-shrink-0">
-                    <span className={`font-mono font-bold text-sm block ${
+                    <span className={`font-bold text-sm block ${
                       debt > 0 
-                        ? (status === 'atrasado' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400') 
+                        ? (status === 'atrasado' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white') 
                         : 'text-emerald-600 dark:text-emerald-400'
                     }`}>
                       {debt > 0 ? formattedDebt : 'Quitado'}
                     </span>
 
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 block">
+                    <span className={`text-[10px] font-medium mt-0.5 block ${
+                      status === 'atrasado' 
+                        ? 'text-rose-600 dark:text-rose-400' 
+                        : status === 'em_dia' 
+                        ? 'text-slate-500 dark:text-slate-400' 
+                        : 'text-emerald-600 dark:text-emerald-400'
+                    }`}>
                       {status === 'atrasado' 
-                        ? (nearestDue ? `Venceu ${nearestDue}` : 'Atrasado') 
+                        ? (nearestDue ? `Venceu ${nearestDue}` : 'Em atraso') 
                         : status === 'em_dia' 
                         ? (nearestDue ? `Vence ${nearestDue}` : 'Em dia') 
-                        : 'Sem pendências'}
+                        : 'Sem débito'}
                     </span>
                   </div>
 
-                  <ChevronRight size={16} className="text-slate-400 dark:text-slate-600 group-hover:text-slate-700 dark:group-hover:text-slate-400 flex-shrink-0 ml-1 transition-colors" />
+                  <ChevronRight size={16} className="text-slate-400 dark:text-slate-600 group-hover:text-slate-600 dark:group-hover:text-slate-300 flex-shrink-0 ml-0.5 transition-colors" />
 
                 </div>
               </div>
             );
+
           })
         )}
       </div>

@@ -33,8 +33,9 @@ window.ClientDetailModal = function ClientDetailModal({
   const {
     X, Phone, MapPin, Calendar, Clock, DollarSign,
     CheckCircle2, AlertTriangle, FileText, QrCode, MessageCircle, Trash2, Check, Crown,
-    ShoppingBag, ArrowDownLeft, Eye, Copy, Share2
+    ShoppingBag, ArrowDownLeft, Eye, Copy, Share2, Download, ChevronRight
   } = window.Icons || {};
+
 
   if (!isOpen || !client) return null;
 
@@ -213,25 +214,25 @@ window.ClientDetailModal = function ClientDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-fadeIn">
-      <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-pop-in transition-colors">
+      <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-[#0e141f] border border-slate-200/80 dark:border-slate-800/80 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-pop-in transition-colors">
         
         {/* Cabeçalho */}
-        <div className="p-4 bg-slate-50 dark:bg-slate-950/90 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors">
+        <div className="p-4 bg-slate-50/80 dark:bg-[#121926]/90 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between transition-colors">
           <div className="min-w-0 flex-1">
             <div className="flex items-center space-x-2">
               <h2 className="font-bold text-base text-slate-900 dark:text-white truncate">{client.name}</h2>
               {status === 'quitado' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
                   <Check size={11} /> Quitado
                 </span>
               )}
               {status === 'atrasado' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 flex items-center gap-1">
                   <AlertTriangle size={11} /> Atrasado
                 </span>
               )}
               {status === 'em_dia' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
                   Em Aberto
                 </span>
               )}
@@ -250,14 +251,14 @@ window.ClientDetailModal = function ClientDetailModal({
         </div>
 
         {/* Card de Saldo e Barra de Limite */}
-        <div className="p-4 bg-slate-50/50 dark:bg-slate-950/40 border-b border-slate-200 dark:border-slate-800/80 transition-colors">
+        <div className="p-4 bg-slate-50/40 dark:bg-[#121926]/50 border-b border-slate-200/80 dark:border-slate-800/80 transition-colors">
           <div className="flex items-center justify-between mb-2">
             <div>
               <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">
                 Saldo Devedor Atual
               </span>
-              <span className={`text-2xl font-extrabold font-mono ${
-                debt > 0 ? (status === 'atrasado' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400') : 'text-emerald-600 dark:text-emerald-400'
+              <span className={`text-2xl font-extrabold ${
+                debt > 0 ? (status === 'atrasado' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white') : 'text-emerald-600 dark:text-emerald-400'
               }`}>
                 {formattedDebt}
               </span>
@@ -273,7 +274,7 @@ window.ClientDetailModal = function ClientDetailModal({
               </button>
             ) : (
               <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                ⭐ Em Dia
+                <Check size={12} /> Em Dia
               </span>
             )}
           </div>
@@ -282,6 +283,7 @@ window.ClientDetailModal = function ClientDetailModal({
           <div>
             <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
               <span>Limite Usado: {limitUsagePct}%</span>
+
               <span>Limite Total: R$ {creditLimit.toFixed(2).replace('.', ',')}</span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -672,15 +674,15 @@ window.ClientDetailModal = function ClientDetailModal({
 
         {/* Modal de Opções de Entrega do Extrato */}
         {pdfModalData && (
-          <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
-            <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in">
+          <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/80 animate-fadeIn">
+            <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-[#121926] border border-slate-200/80 dark:border-slate-800/80 p-5 space-y-4 shadow-2xl animate-pop-in">
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="font-bold text-sm text-slate-900 dark:text-white">
                     Extrato de {client.name}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Saldo atual: <strong className="text-slate-900 dark:text-white">{formattedDebt}</strong>
+                    Saldo pendente: <strong className="text-slate-900 dark:text-white">{formattedDebt}</strong>
                   </p>
                 </div>
                 <button
@@ -705,7 +707,7 @@ window.ClientDetailModal = function ClientDetailModal({
                     </div>
                     <div className="min-w-0">
                       <span className="block font-bold text-xs truncate">Enviar Arquivo PDF</span>
-                      <span className="block text-[10px] text-emerald-100/90 truncate">Documento oficial timbrado para WhatsApp</span>
+                      <span className="block text-[10px] text-emerald-100/90 truncate">Documento timbrado para WhatsApp</span>
                     </div>
                   </div>
                   <ChevronRight size={16} className="text-white/70 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
@@ -715,7 +717,7 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={handleSendTextReceiptViaWhatsApp}
-                  className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-semibold text-xs flex items-center justify-between transition-all border border-slate-200 dark:border-slate-700/80 btn-smooth group"
+                  className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-[#161f30] dark:hover:bg-[#1a2538] text-slate-800 dark:text-slate-100 font-semibold text-xs flex items-center justify-between transition-all border border-slate-200/80 dark:border-slate-700/60 btn-smooth group"
                 >
                   <div className="flex items-center gap-2.5 text-left min-w-0">
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
@@ -723,11 +725,12 @@ window.ClientDetailModal = function ClientDetailModal({
                     </div>
                     <div className="min-w-0">
                       <span className="block font-bold text-xs truncate">Enviar Extrato em Texto</span>
-                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">Mensagem rápida escrita no WhatsApp</span>
+                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">Mensagem resumida no WhatsApp</span>
                     </div>
                   </div>
                   <ChevronRight size={16} className="text-slate-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
                 </button>
+
 
                 {/* 3. Baixar / Salvar Arquivo PDF no Dispositivo (Celular ou Computador) */}
                 <button

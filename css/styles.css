@@ -1,23 +1,13 @@
-/* Estilos Customizados e Acabamento Comercial para CadernoFiado & Cobrança Zap */
+/* Estilos Customizados e Acabamento Fintech Comercial: CadernoFiado & Cobrança Zap */
 
 html {
   scroll-behavior: smooth;
 }
 
-@keyframes pulse-subtle {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.88; transform: scale(1.008); }
-}
-
-@keyframes float-badge {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-3px); }
-}
-
 @keyframes tabSlideUp {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -28,7 +18,7 @@ html {
 @keyframes modalPopIn {
   from {
     opacity: 0;
-    transform: scale(0.96) translateY(6px);
+    transform: scale(0.97) translateY(4px);
   }
   to {
     opacity: 1;
@@ -36,30 +26,22 @@ html {
   }
 }
 
-.animate-pulse-subtle {
-  animation: pulse-subtle 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-.animate-float {
-  animation: float-badge 3s ease-in-out infinite;
-}
-
 .animate-pop-in {
-  animation: modalPopIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: modalPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Transições Fluidas para Abas */
 .tab-enter {
-  animation: tabSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: tabSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Micro-interação tátil e suave em botões */
+/* Micro-interação tátil e suave em botões (estilo iOS/Linear) */
 .btn-smooth {
-  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+  transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
   will-change: transform;
 }
 .btn-smooth:active {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 /* Ocultar barra de rolagem mantendo scroll nativo */
@@ -71,46 +53,36 @@ html {
   scrollbar-width: none;
 }
 
-/* Tipografia e Fundo Dinâmico (Tema Escuro e Claro) */
+/* Tipografia e Fundo Dinâmico (Tema Escuro Profundo e Claro Suave) */
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #0b0f19;
+  background-color: #0b0f17;
   color: #f1f5f9;
-  background-image: radial-gradient(circle at 50% 0%, rgba(22, 163, 74, 0.08) 0%, transparent 60%);
-  background-attachment: fixed;
-  transition: background-color 0.25s ease, color 0.25s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* Suporte Automático a Tema Claro quando a classe .dark não estiver presente */
+/* Tema Claro */
 html:not(.dark) body,
 html.light body {
   background-color: #f8fafc;
   color: #0f172a;
-  background-image: radial-gradient(circle at 50% 0%, rgba(22, 163, 74, 0.05) 0%, transparent 60%);
 }
 
 /* Scrollbar Sutil */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.2);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
-}
-
-/* Efeito Dourado Nobre para Ações VIP */
-.vip-gradient-text {
-  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  background: rgba(148, 163, 184, 0.35);
 }
 
 /* Balão Autêntico de Conversa WhatsApp */
@@ -123,18 +95,18 @@ html.light body {
 .wa-bubble-sent {
   background: #005c4b;
   position: relative;
-  border-radius: 14px 14px 2px 14px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  border-radius: 12px 12px 2px 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .wa-bubble-sent::after {
   content: '';
   position: absolute;
   top: 0;
-  right: -8px;
+  right: -7px;
   width: 0;
   height: 0;
-  border: 8px solid transparent;
+  border: 7px solid transparent;
   border-top-color: #005c4b;
   border-right: 0;
 }
@@ -146,9 +118,9 @@ html.light body {
     margin-left: auto;
     margin-right: auto;
     box-shadow: 
-      0 25px 50px -12px rgba(0, 0, 0, 0.7),
-      0 0 0 1px rgba(255, 255, 255, 0.08);
-    border-radius: 28px;
+      0 20px 40px -15px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.06);
+    border-radius: 24px;
     overflow: hidden;
     min-height: calc(100vh - 40px);
     margin-top: 20px;
@@ -158,7 +130,8 @@ html.light body {
   html:not(.dark) .app-container,
   html.light .app-container {
     box-shadow: 
-      0 20px 45px -10px rgba(0, 0, 0, 0.12),
-      0 0 0 1px rgba(0, 0, 0, 0.08);
+      0 20px 40px -15px rgba(0, 0, 0, 0.08),
+      0 0 0 1px rgba(0, 0, 0, 0.06);
   }
 }
+

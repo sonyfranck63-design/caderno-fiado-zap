@@ -49,50 +49,57 @@ window.ClientsTab = function ClientsTab({
   });
 
   return (
-    <div className="space-y-4 pb-24 tab-enter">
+    <div className="space-y-3.5 pb-24 tab-enter">
       
-      {/* 3 Cards de Resumo Financeiro no Topo */}
-      <div className="grid grid-cols-3 gap-2">
-        
-        {/* Total a Receber */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-            A Receber
-          </span>
-          <span className="text-base font-black text-emerald-600 dark:text-emerald-400 font-mono block mt-0.5 truncate">
-            R$ {totalReceivables.toFixed(2).replace('.', ',')}
-          </span>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 block">
-            {inDebtClientsCount} {inDebtClientsCount === 1 ? 'com saldo' : 'com saldo'}
-          </span>
+      {/* Painel Financeiro Integrado (Estilo Fintech) */}
+      <div className="rounded-2xl bg-white dark:bg-[#121926] border border-slate-200/80 dark:border-slate-800/80 p-4 shadow-sm transition-colors">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/60">
+          <div>
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+              Total em Aberto no Fiado
+            </span>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight block mt-0.5">
+              R$ {totalReceivables.toFixed(2).replace('.', ',')}
+            </span>
+          </div>
+          <button
+            onClick={onOpenNewRecord}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm btn-smooth"
+          >
+            <PlusCircle size={15} />
+            <span>Nova Venda</span>
+          </button>
         </div>
 
-        {/* Em Atraso */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/40 shadow-sm transition-colors">
-          <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider block flex items-center gap-1">
-            <AlertTriangle size={11} /> Atrasados
-          </span>
-          <span className="text-base font-black text-rose-600 dark:text-rose-400 font-mono block mt-0.5 truncate">
-            {overdueClientsCount}
-          </span>
-          <span className="text-[10px] text-rose-500/80 dark:text-rose-300/70 mt-0.5 block">
-            {overdueClientsCount === 1 ? 'Cobrança urgente' : 'Cobranças urgentes'}
-          </span>
-        </div>
+        <div className="grid grid-cols-2 gap-3 pt-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={15} />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                {overdueClientsCount} {overdueClientsCount === 1 ? 'cliente' : 'clientes'}
+              </span>
+              <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium block">
+                Cobrança pendente
+              </span>
+            </div>
+          </div>
 
-        {/* Total Cadastrado */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block flex items-center gap-1">
-            <Users size={11} /> Clientes
-          </span>
-          <span className="text-base font-black text-slate-800 dark:text-slate-200 font-mono block mt-0.5 truncate">
-            {clients.length}
-          </span>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 block">
-            Cadastrados
-          </span>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center flex-shrink-0">
+              <Users size={15} />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                {clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">
+                Cadastrados
+              </span>
+            </div>
+          </div>
         </div>
-
       </div>
 
       {/* Barra de Pesquisa e Filtros */}
@@ -104,7 +111,7 @@ window.ClientsTab = function ClientsTab({
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="Buscar por nome ou WhatsApp..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-sm transition-colors"
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-[#121926] border border-slate-200/80 dark:border-slate-800/80 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition-colors shadow-sm"
           />
           {searchTerm && (
             <button
@@ -120,10 +127,10 @@ window.ClientsTab = function ClientsTab({
         <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5">
           <button
             onClick={() => setStatusFilter('todos')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all btn-smooth ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all btn-smooth ${
               statusFilter === 'todos'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 font-semibold'
+                : 'bg-white dark:bg-[#121926] text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800/80'
             }`}
           >
             Todos ({clients.length})
@@ -131,10 +138,10 @@ window.ClientsTab = function ClientsTab({
 
           <button
             onClick={() => setStatusFilter('atrasado')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
               statusFilter === 'atrasado'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-rose-600 text-white font-semibold'
+                : 'bg-white dark:bg-[#121926] text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800/80'
             }`}
           >
             <AlertTriangle size={12} /> Atrasados ({overdueClientsCount})
@@ -142,10 +149,10 @@ window.ClientsTab = function ClientsTab({
 
           <button
             onClick={() => setStatusFilter('em_dia')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all btn-smooth ${
               statusFilter === 'em_dia'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-emerald-600 text-white font-semibold'
+                : 'bg-white dark:bg-[#121926] text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800/80'
             }`}
           >
             Em Aberto
@@ -153,16 +160,17 @@ window.ClientsTab = function ClientsTab({
 
           <button
             onClick={() => setStatusFilter('quitado')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1 btn-smooth ${
               statusFilter === 'quitado'
-                ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 font-bold'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-emerald-600 text-white font-semibold'
+                : 'bg-white dark:bg-[#121926] text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800/80'
             }`}
           >
             <CheckCircle2 size={12} /> Quitados
           </button>
         </div>
       </div>
+
 
       {/* Lista de Clientes ou Estados Vazios */}
       <div className="space-y-2.5">
@@ -260,7 +268,7 @@ window.ClientsTab = function ClientsTab({
               <div
                 key={client.id}
                 onClick={() => onSelectClient(client.id)}
-                className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all cursor-pointer shadow-sm group active:scale-[0.99] btn-smooth"
+                className="p-3.5 rounded-2xl bg-white dark:bg-[#121926] hover:bg-slate-50 dark:hover:bg-[#161f30] border border-slate-200/80 dark:border-slate-800/80 transition-all cursor-pointer shadow-sm group active:scale-[0.99] btn-smooth"
               >
                 <div className="flex items-center justify-between gap-3">
                   
@@ -268,10 +276,10 @@ window.ClientsTab = function ClientsTab({
                   <div className="flex items-center space-x-3 min-w-0 flex-1">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 ${
                       status === 'atrasado'
-                        ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                         : status === 'quitado'
-                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60'
                     }`}>
                       {initials}
                     </div>
@@ -282,40 +290,47 @@ window.ClientsTab = function ClientsTab({
                           {client.name}
                         </h4>
                         {status === 'quitado' && (
-                          <CheckCircle2 size={12} className="text-emerald-500" />
+                          <CheckCircle2 size={13} className="text-emerald-500" />
                         )}
                       </div>
 
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        {client.phone ? client.phone : (client.address || 'Sem telefone')}
+                        {client.phone ? client.phone : (client.address || 'Sem telefone cadastrado')}
                       </p>
                     </div>
                   </div>
 
                   {/* Saldo Devedor e Status */}
                   <div className="text-right flex-shrink-0">
-                    <span className={`font-mono font-bold text-sm block ${
+                    <span className={`font-bold text-sm block ${
                       debt > 0 
-                        ? (status === 'atrasado' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400') 
+                        ? (status === 'atrasado' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white') 
                         : 'text-emerald-600 dark:text-emerald-400'
                     }`}>
                       {debt > 0 ? formattedDebt : 'Quitado'}
                     </span>
 
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 block">
+                    <span className={`text-[10px] font-medium mt-0.5 block ${
+                      status === 'atrasado' 
+                        ? 'text-rose-600 dark:text-rose-400' 
+                        : status === 'em_dia' 
+                        ? 'text-slate-500 dark:text-slate-400' 
+                        : 'text-emerald-600 dark:text-emerald-400'
+                    }`}>
                       {status === 'atrasado' 
-                        ? (nearestDue ? `Venceu ${nearestDue}` : 'Atrasado') 
+                        ? (nearestDue ? `Venceu ${nearestDue}` : 'Em atraso') 
                         : status === 'em_dia' 
                         ? (nearestDue ? `Vence ${nearestDue}` : 'Em dia') 
-                        : 'Sem pendências'}
+                        : 'Sem débito'}
                     </span>
                   </div>
 
-                  <ChevronRight size={16} className="text-slate-400 dark:text-slate-600 group-hover:text-slate-700 dark:group-hover:text-slate-400 flex-shrink-0 ml-1 transition-colors" />
+                  <ChevronRight size={16} className="text-slate-400 dark:text-slate-600 group-hover:text-slate-600 dark:group-hover:text-slate-300 flex-shrink-0 ml-0.5 transition-colors" />
 
                 </div>
               </div>
             );
+
           })
         )}
       </div>

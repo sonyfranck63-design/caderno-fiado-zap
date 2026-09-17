@@ -1,99 +1,70 @@
 /**
- * Barra de Navegação Inferior Estilo Android / Mobile App Nativo
- * 4 Atalhos Fixos: 'Clientes & Fiados', 'Novo Registro', 'Relatórios de Caixa' e 'Plano VIP Pro'
- * Suporte a tema Claro e Escuro com micro-interações táteis.
+ * Barra de Navegação Inferior: Design Nativo e Limpo (Estilo Nubank / iOS)
+ * 4 Atalhos Organizados: Clientes, Nova Venda, Relatórios e Assinatura VIP
  */
 
 window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, isVip }) {
-  const { Users, PlusCircle, BarChart3, Crown } = window.Icons;
+  const { Users, PlusCircle, BarChart3, Crown } = window.Icons || {};
 
   const tabs = [
     {
       id: 'clients',
-      label: 'Clientes & Fiados',
+      label: 'Clientes',
       icon: Users,
       badge: overdueCount > 0 ? overdueCount : null,
-      badgeColor: 'bg-rose-500'
+      badgeColor: 'bg-rose-500 text-white'
     },
     {
       id: 'new_record',
-      label: 'Novo Registro',
-      icon: PlusCircle,
-      isPrimary: true
+      label: 'Nova Venda',
+      icon: PlusCircle
     },
     {
       id: 'reports',
-      label: 'Relatórios Caixa',
+      label: 'Relatórios',
       icon: BarChart3
     },
     {
       id: 'vip',
-      label: 'Plano VIP Pro',
+      label: isVip ? 'VIP Ativo' : 'Plano VIP',
       icon: Crown,
-      badge: isVip ? 'ATIVO' : 'PRO',
-      badgeColor: isVip ? 'bg-emerald-500' : 'bg-amber-500'
+      badge: isVip ? 'PRO' : null,
+      badgeColor: 'bg-emerald-600 text-white'
     }
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800/90 max-w-md mx-auto transition-colors duration-200">
-      <div className="flex items-center justify-around px-2 py-1.5 safe-area-bottom">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#0e141f]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/80 max-w-md mx-auto transition-colors duration-200">
+      <div className="grid grid-cols-4 px-1 py-2 safe-area-bottom">
         {tabs.map(tab => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
-
-          if (tab.isPrimary) {
-            return (
-              <button
-                key={tab.id}
-                onClick={() => onSelectTab(tab.id)}
-                className="flex flex-col items-center justify-center -mt-5 group focus:outline-none btn-smooth"
-                aria-label={tab.label}
-              >
-                <div className={`w-13 h-13 p-3 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200 group-active:scale-95 ${
-                  isActive
-                    ? 'bg-gradient-to-tr from-brand-600 to-emerald-400 text-slate-950 shadow-md dark:shadow-glow-emerald'
-                    : 'bg-brand-500 hover:bg-brand-400 text-slate-950 shadow-brand-500/30'
-                }`}>
-                  <Icon size={24} strokeWidth={2.4} />
-                </div>
-                <span className={`text-[10px] font-bold mt-1 tracking-tight ${
-                  isActive ? 'text-emerald-600 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'
-                }`}>
-                  {tab.label}
-                </span>
-              </button>
-            );
-          }
 
           return (
             <button
               key={tab.id}
               onClick={() => onSelectTab(tab.id)}
-              className={`relative flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all duration-200 focus:outline-none btn-smooth ${
+              className={`relative flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-all duration-150 focus:outline-none btn-smooth ${
                 isActive 
-                  ? 'text-emerald-600 dark:text-brand-400 font-bold' 
+                  ? 'text-emerald-600 dark:text-emerald-400 font-semibold' 
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
-              {/* Ícone com badge se houver */}
               <div className="relative">
-                <Icon size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'scale-105 transition-transform' : ''} />
+                <Icon size={20} strokeWidth={isActive ? 2.3 : 1.8} />
                 {tab.badge && (
-                  <span className={`absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold text-white shadow-sm ${tab.badgeColor}`}>
+                  <span className={`absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center leading-none ${tab.badgeColor}`}>
                     {tab.badge}
                   </span>
                 )}
               </div>
 
-              {/* Rótulo */}
-              <span className={`text-[10px] tracking-tight mt-1 ${isActive ? 'text-emerald-600 dark:text-brand-400 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
+              <span className={`text-[10px] tracking-tight mt-1 truncate ${isActive ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 font-medium'}`}>
                 {tab.label}
               </span>
 
-              {/* Indicador de aba ativa */}
               {isActive && (
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-brand-400 mt-0.5 shadow-sm"></div>
+                <div className="w-1 h-1 rounded-full bg-emerald-600 dark:bg-emerald-400 mt-0.5"></div>
               )}
             </button>
           );
@@ -102,3 +73,4 @@ window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, is
     </nav>
   );
 };
+

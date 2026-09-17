@@ -108,8 +108,9 @@ $appSettings = @{
     match = @()
     skip = @()
     remote_debug = $true
-    console_log = $true
+    console_log = $false
     js_interface = $true # Habilita interface AppJavaScriptProxy (window.androidAppProxy)
+
     context_menu = $false
     not_matching = $true # Garante que links https://wa.me/... abram o app nativo do WhatsApp no celular!
     local_sites = $true
