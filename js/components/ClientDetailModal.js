@@ -144,7 +144,50 @@ window.ClientDetailModal = function ClientDetailModal({
     setPdfModalData(result);
   };
 
-  // Envio do comprovante pelo WhatsApp
+  // Compartilhamento e Envio Direto do Arquivo PDF (WhatsApp / Apps)
+  const handleSharePdfFile = async () => {
+    if (!pdfModalData || !pdfModalData.blob) return;
+
+    // 1. Tenta compartilhamento nativo de arquivo (Android / iOS)
+    const shareResult = await window.PdfService.sharePdfFile(
+      pdfModalData.blob,
+      pdfModalData.filename,
+      `Extrato de Fiado - ${client.name}`,
+      `Olá, ${client.name}! Segue o seu extrato de compras e fiado em anexo.`
+    );
+
+    if (shareResult && shareResult.success) {
+      setPdfModalData(null);
+      return;
+    }
+
+    // 2. Se o dispositivo ou WebView não suportar compartilhamento direto de arquivos:
+    // Salva o PDF no aparelho e prepara WhatsApp
+    window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+
+    const phone = (client.phone || '').replace(/\D/g, '');
+    const cleanPhone = phone.startsWith('55') ? phone : (phone ? '55' + phone : '');
+    const initialText = `Olá, ${client.name}! Estou te enviando o seu extrato de conta em PDF emitido agora.`;
+    const url = cleanPhone 
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(initialText)}`
+      : `https://wa.me/?text=${encodeURIComponent(initialText)}`;
+
+    setPdfModalData(null);
+    setFeedbackModal({
+      isOpen: true,
+      title: 'PDF Salvo no Aparelho',
+      message: `O arquivo "${pdfModalData.filename}" foi baixado nos seus Downloads.\n\nPara enviar ao cliente, abra a conversa no WhatsApp e anexe o documento tocando no clipe 📎.`,
+      confirmText: 'Abrir WhatsApp',
+      showCancel: true,
+      cancelText: 'Fechar',
+      onConfirm: () => {
+        window.open(url, '_blank');
+      },
+      variant: 'success'
+    });
+  };
+
+  // Envio do comprovante em texto pelo WhatsApp
   const handleSendTextReceiptViaWhatsApp = () => {
     if (!pdfModalData || !pdfModalData.receiptText) return;
     const phone = (client.phone || '').replace(/\D/g, '');
@@ -631,74 +674,97 @@ window.ClientDetailModal = function ClientDetailModal({
         {pdfModalData && (
           <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
-                  <FileText size={20} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Extrato de Conta Fiado</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                    Comprovante de <strong>{client.name}</strong> pronto. Escolha como prefere visualizar ou enviar:
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                    Extrato de {client.name}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Saldo atual: <strong className="text-slate-900 dark:text-white">{formattedDebt}</strong>
                   </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setPdfModalData(null)}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg transition-colors"
+                >
+                  <X size={18} />
+                </button>
               </div>
 
               <div className="space-y-2 pt-1">
-                {/* 1. Enviar Extrato no WhatsApp (Ação Principal, 100% funcional no celular) */}
+                {/* 1. Enviar Arquivo PDF Oficial (Destaque Principal) */}
+                <button
+                  type="button"
+                  onClick={handleSharePdfFile}
+                  className="w-full p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-between transition-all shadow-sm btn-smooth group"
+                >
+                  <div className="flex items-center gap-2.5 text-left min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
+                      <FileText size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="block font-bold text-xs truncate">Enviar Arquivo PDF</span>
+                      <span className="block text-[10px] text-emerald-100/90 truncate">Documento oficial timbrado para WhatsApp</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="text-white/70 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+                </button>
+
+                {/* 2. Enviar Extrato em Texto no WhatsApp */}
                 <button
                   type="button"
                   onClick={handleSendTextReceiptViaWhatsApp}
-                  className="w-full py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md btn-smooth"
+                  className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-semibold text-xs flex items-center justify-between transition-all border border-slate-200 dark:border-slate-700/80 btn-smooth group"
                 >
-                  <MessageCircle size={16} />
-                  <span>Enviar no WhatsApp</span>
+                  <div className="flex items-center gap-2.5 text-left min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
+                      <MessageCircle size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="block font-bold text-xs truncate">Enviar Extrato em Texto</span>
+                      <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">Mensagem rápida escrita no WhatsApp</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
                 </button>
 
-                {/* 2. Visualizar Extrato Timbrado na Tela */}
+                {/* 3. Baixar / Salvar Arquivo PDF no Dispositivo (Celular ou Computador) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.PdfService && pdfModalData.blob) {
+                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      setFeedbackModal({
+                        isOpen: true,
+                        title: 'PDF Salvo',
+                        message: `O arquivo "${pdfModalData.filename}" foi baixado no seu dispositivo.`,
+                        variant: 'success'
+                      });
+                      setPdfModalData(null);
+                    }
+                  }}
+                  className="w-full p-2.5 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium flex items-center justify-between transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                >
+                  <div className="flex items-center gap-2">
+                    <Download size={15} className="text-slate-400" />
+                    <span>Baixar Arquivo PDF</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">Salvar no aparelho</span>
+                </button>
+
+                {/* 4. Visualizar Extrato na Tela */}
                 <button
                   type="button"
                   onClick={() => setShowInAppReceipt(true)}
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 text-xs font-semibold flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
+                  className="w-full p-2.5 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium flex items-center justify-between transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
                 >
-                  <Eye size={15} className="text-emerald-600 dark:text-emerald-400" />
-                  <span>Visualizar Extrato Timbrado</span>
+                  <div className="flex items-center gap-2">
+                    <Eye size={15} className="text-slate-400" />
+                    <span>Visualizar na Tela</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">Ver documento</span>
                 </button>
-
-                {/* 3. Copiar Extrato para WhatsApp / Área de Transferência */}
-                <button
-                  type="button"
-                  onClick={handleCopyTextReceipt}
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 text-xs font-medium flex items-center justify-center gap-2 transition-colors border border-slate-300 dark:border-slate-700 btn-smooth"
-                >
-                  <Copy size={15} />
-                  <span>Copiar Texto do Extrato</span>
-                </button>
-
-                {/* 4. Opção de Baixar PDF para computadores (não exibido em celular para evitar falhas) */}
-                {typeof window !== 'undefined' && !/android/i.test(navigator.userAgent || '') && pdfModalData.blob && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.PdfService && pdfModalData.blob) {
-                        window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      }
-                    }}
-                    className="w-full py-2 px-3 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors"
-                  >
-                    <FileText size={13} />
-                    <span>Salvar Arquivo PDF (Computador)</span>
-                  </button>
-                )}
-
-                <div className="pt-1 text-center">
-                  <button
-                    type="button"
-                    onClick={() => setPdfModalData(null)}
-                    className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors font-medium"
-                  >
-                    Fechar
-                  </button>
-                </div>
               </div>
             </div>
           </div>
@@ -802,23 +868,41 @@ window.ClientDetailModal = function ClientDetailModal({
                 </div>
               </div>
 
-              {/* Botões de Ação */}
-              <div className="p-3 bg-slate-100 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2">
+              {/* Botões de Ação do Extrato */}
+              <div className="p-3 bg-slate-100 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={handleCopyTextReceipt}
-                  className="flex-1 py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-705 text-slate-800 dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  className="py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <Copy size={14} />
-                  <span>Copiar Extrato</span>
+                  <span className="truncate">Copiar Texto</span>
                 </button>
                 <button
                   type="button"
-                  onClick={handleSendTextReceiptViaWhatsApp}
-                  className="flex-1 py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                  onClick={() => {
+                    if (window.PdfService && pdfModalData?.blob) {
+                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      setFeedbackModal({
+                        isOpen: true,
+                        title: 'PDF Salvo',
+                        message: `O arquivo "${pdfModalData.filename}" foi baixado no seu aparelho.`,
+                        variant: 'success'
+                      });
+                    }
+                  }}
+                  className="py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download size={14} />
+                  <span className="truncate">Baixar PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSharePdfFile}
+                  className="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
                 >
                   <MessageCircle size={15} />
-                  <span>Enviar no WhatsApp</span>
+                  <span className="truncate">Enviar PDF</span>
                 </button>
               </div>
             </div>

@@ -149,33 +149,33 @@ window.VipTab = function VipTab({
         <div className="space-y-4">
           
           {/* Card Principal de Apresentação */}
-          <div className="relative p-5 rounded-2xl bg-white dark:bg-slate-900 border border-amber-500/30 shadow-lg text-center space-y-3 overflow-hidden transition-colors">
-            <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-500 dark:text-amber-400">
-              <Crown size={26} strokeWidth={2.5} />
+          <div className="relative p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm text-center space-y-3 transition-colors">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+              <Crown size={24} strokeWidth={2} />
             </div>
 
             <div>
-              <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 inline-flex items-center gap-1">
-                <Sparkles size={12} /> Recursos Profissionais
+              <span className="px-3 py-1 rounded-full text-[10px] font-semibold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 inline-block">
+                Recursos Profissionais
               </span>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-2 leading-tight">
-                CadernoFiado <span className="text-amber-500 dark:text-amber-400 font-extrabold">VIP PRO</span>
+                CadernoFiado <span className="text-emerald-600 dark:text-emerald-400">PRO</span>
               </h2>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5 max-w-xs mx-auto leading-relaxed">
-                Cobrança com QR Code PIX automático no WhatsApp e recibos em PDF timbrados para seus clientes.
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">
+                Cobrança com QR Code PIX automático no WhatsApp e extratos timbrados em PDF para seus clientes.
               </p>
             </div>
 
             {/* Caixa do ID do Celular */}
             <div className="p-3 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs transition-colors">
               <div className="text-left">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 block">Seu ID de Aparelho:</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 block">ID deste Celular:</span>
                 <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">{installationId}</span>
               </div>
               <button
                 type="button"
                 onClick={handleCopyId}
-                className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-[11px] font-medium flex items-center gap-1 border border-slate-200 dark:border-slate-700 btn-smooth"
+                className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-medium flex items-center gap-1 border border-slate-200 dark:border-slate-700 btn-smooth"
               >
                 {copiedId ? <Check size={13} className="text-emerald-600 dark:text-emerald-400" /> : <Copy size={13} />}
                 <span>{copiedId ? 'Copiado' : 'Copiar ID'}</span>
@@ -185,8 +185,8 @@ window.VipTab = function VipTab({
 
           {/* Seleção de Planos de Preço */}
           <div className="space-y-2">
-            <p className="text-xs font-bold text-slate-700 dark:text-slate-300 px-1">
-              Escolha seu plano de acesso:
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 px-1">
+              Selecione o plano desejado:
             </p>
 
             <div className="grid grid-cols-3 gap-2">
@@ -197,11 +197,11 @@ window.VipTab = function VipTab({
                 className={`p-3 rounded-2xl border cursor-pointer transition-all text-center relative btn-smooth ${
                   selectedPlan === 'monthly'
                     ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-500 shadow-sm'
-                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-750'
                 }`}
               >
-                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">Mensal</span>
-                <span className="text-base font-extrabold text-slate-900 dark:text-white block mt-0.5">R$ 9,90</span>
+                <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase block">Mensal</span>
+                <span className="text-base font-bold text-slate-900 dark:text-white block mt-0.5">R$ 9,90</span>
                 <span className="text-[10px] text-slate-400">30 dias</span>
               </div>
 
@@ -210,16 +210,16 @@ window.VipTab = function VipTab({
                 onClick={() => setSelectedPlan('annual')}
                 className={`p-3 rounded-2xl border cursor-pointer transition-all text-center relative btn-smooth ${
                   selectedPlan === 'annual'
-                    ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-500 shadow-sm'
-                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-500 shadow-sm'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-750'
                 }`}
               >
-                <span className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.2 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] uppercase shadow-sm">
-                  Mais Popular
+                <span className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.2 rounded-full bg-emerald-600 text-white font-bold text-[9px] uppercase shadow-sm">
+                  Recomendado
                 </span>
-                <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase block mt-0.5">Anual</span>
-                <span className="text-base font-extrabold text-amber-700 dark:text-amber-300 block mt-0.5">R$ 59,90</span>
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">R$ 4,99/mês</span>
+                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase block mt-0.5">Anual</span>
+                <span className="text-base font-bold text-slate-900 dark:text-white block mt-0.5">R$ 59,90</span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">R$ 4,99/mês</span>
               </div>
 
               {/* Vitalício */}
@@ -227,43 +227,43 @@ window.VipTab = function VipTab({
                 onClick={() => setSelectedPlan('lifetime')}
                 className={`p-3 rounded-2xl border cursor-pointer transition-all text-center relative btn-smooth ${
                   selectedPlan === 'lifetime'
-                    ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-500 shadow-sm'
-                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-500 shadow-sm'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-750'
                 }`}
               >
-                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">Vitalício</span>
-                <span className="text-base font-extrabold text-slate-900 dark:text-white block mt-0.5">R$ 97,00</span>
-                <span className="text-[10px] text-slate-400">Paga 1x só</span>
+                <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase block">Vitalício</span>
+                <span className="text-base font-bold text-slate-900 dark:text-white block mt-0.5">R$ 97,00</span>
+                <span className="text-[10px] text-slate-400">Permanente</span>
               </div>
 
             </div>
           </div>
 
-          {/* Botão de Pagamento pelo WhatsApp */}
+          {/* Botão de Solicitação no WhatsApp */}
           <button
             onClick={() => handleOrderViaWhatsApp()}
-            className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-[0.99] shadow-md btn-smooth"
+            className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-[0.99] shadow-sm btn-smooth"
           >
             <MessageCircle size={18} />
-            <span>Pagar via PIX e Liberar Código</span>
+            <span>Solicitar Código de Ativação</span>
           </button>
 
           {/* Formulário de Ativação de Código do Cliente */}
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-md transition-colors">
+          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-sm transition-colors">
             <div className="flex items-center space-x-2">
               <div className="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                 <Check size={16} />
               </div>
-              <h4 className="font-bold text-xs text-slate-900 dark:text-white">Já recebeu seu código? Ative aqui:</h4>
+              <h4 className="font-bold text-xs text-slate-900 dark:text-white">Ativar com Código Recebido</h4>
             </div>
 
             <form onSubmit={handleActivateCode} className="space-y-2.5">
               <input
                 type="text"
                 value={licenseCode}
-                onChange={(e) => setLicenseCode(e.target.value.trim())}
-                placeholder="Cole o código fornecido (ex: CFVIP...)"
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl py-2.5 px-3.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-emerald-500"
+                onChange={(e) => setLicenseCode(e.target.value.trim().toUpperCase())}
+                placeholder="Ex: VIP-M-C5A6-6A19-9B2F4E"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl py-2.5 px-3.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-emerald-500 uppercase"
               />
 
               {activationMessage && (
@@ -280,9 +280,9 @@ window.VipTab = function VipTab({
               <button
                 type="submit"
                 disabled={activating}
-                className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-800 dark:text-white font-bold text-xs border border-slate-300 dark:border-slate-700 transition-all btn-smooth"
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-semibold text-xs border border-slate-300 dark:border-slate-700 transition-all btn-smooth"
               >
-                {activating ? 'Validando chave...' : 'Validar e Ativar Acesso'}
+                {activating ? 'Validando código...' : 'Ativar Código'}
               </button>
             </form>
           </div>

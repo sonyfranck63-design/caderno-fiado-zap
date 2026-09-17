@@ -31,14 +31,15 @@
     <!-- Cabeçalho -->
     <div class="border-b border-slate-800 pb-5 flex items-start justify-between gap-4">
       <div>
-        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold mb-2">
-          <span>🛡️ Painel Privado do Dono</span>
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>Painel Administrativo</span>
         </div>
-        <h1 class="text-xl sm:text-2xl font-black text-white">Gerador Oficial de Licenças</h1>
-        <p class="text-xs text-slate-400 mt-1">Gere chaves assinadas criptograficamente (ECDSA P-256) impossíveis de forjar.</p>
+        <h1 class="text-xl sm:text-2xl font-bold text-white tracking-tight">Gerador de Licenças</h1>
+        <p class="text-xs text-slate-400 mt-1">Geração de códigos de ativação compactos vinculados ao dispositivo do cliente.</p>
       </div>
-      <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-xl flex-shrink-0">
-        👑
+      <div class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 text-emerald-400 flex items-center justify-center flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-1.5 1.5L16 7m-1.5 1.5L13 10m-1.5 1.5L10 13m-1.5 1.5L7 16m-1.5 1.5L4 19m-2 2h4l10.5-10.5a2.121 2.121 0 0 0 0-3l-1.5-1.5a2.121 2.121 0 0 0-3 0L1.5 16.5V21h4z"/><circle cx="16.5" cy="7.5" r=".5"/></svg>
       </div>
     </div>
 
@@ -47,23 +48,23 @@
       
       <!-- ID do Aparelho do Cliente -->
       <div>
-        <label class="block text-xs font-bold text-slate-300 mb-1.5 uppercase tracking-wider">
-          ID do Aparelho do Cliente (enviado no WhatsApp):
+        <label class="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+          ID do Aparelho (enviado pelo lojista)
         </label>
         <input
           type="text"
           id="deviceId"
           required
-          placeholder="Ex: CF-7482"
+          placeholder="Ex: CF-C5A6-6A19"
           class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono text-sm uppercase focus:outline-none focus:border-emerald-500 transition-colors"
         />
-        <p class="text-[11px] text-slate-500 mt-1">O cliente visualiza esse ID na aba "Plano VIP" ou "Configurações" do app dele.</p>
+        <p class="text-[11px] text-slate-500 mt-1.5">O lojista localiza este código na aba "Plano VIP" do aplicativo.</p>
       </div>
 
       <!-- Tipo de Plano -->
       <div>
-        <label class="block text-xs font-bold text-slate-300 mb-1.5 uppercase tracking-wider">
-          Tempo de Acesso / Plano Pago:
+        <label class="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+          Plano Contratado
         </label>
         <div class="grid grid-cols-3 gap-2.5">
           <label class="cursor-pointer">
@@ -84,9 +85,9 @@
 
           <label class="cursor-pointer">
             <input type="radio" name="planType" value="LIFETIME" class="peer sr-only">
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 peer-checked:border-amber-500 peer-checked:bg-amber-500/10 text-center transition-all">
-              <span class="block text-xs font-bold text-amber-300">Vitalício</span>
-              <span class="block text-[11px] text-slate-400 mt-0.5">Sem Expiração</span>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 peer-checked:border-emerald-500 peer-checked:bg-emerald-500/10 text-center transition-all">
+              <span class="block text-xs font-bold text-emerald-400">Vitalício</span>
+              <span class="block text-[11px] text-slate-400 mt-0.5">Permanente</span>
             </div>
           </label>
         </div>
@@ -95,9 +96,9 @@
       <!-- Botão Gerar -->
       <button
         type="submit"
-        class="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg"
+        class="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md"
       >
-        <span>⚡ Gerar Código de Ativação Assinado</span>
+        <span>Gerar Código de Ativação</span>
       </button>
 
     </form>
@@ -108,7 +109,8 @@
       <div class="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 space-y-3">
         <div class="flex items-center justify-between">
           <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-            <span>✅</span> Código Gerado com Sucesso
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            Código Gerado
           </span>
           <span id="planBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300"></span>
         </div>
@@ -314,7 +316,7 @@
         generatedKeyInput.value = license.code;
         planBadge.innerText = license.planName;
 
-        const msg = `Olá! Seu acesso ao *${license.planName}* do CadernoFiado foi liberado com sucesso! 🎉\n\n🔑 *Seu Código de Ativação:* \`${license.code}\`\n\n📲 *Como ativar no seu aparelho:*\n1. Abra o CadernoFiado no celular\n2. Toque na aba inferior *"Plano VIP"*\n3. Cole o código acima no campo *"Código de Ativação"* e toque em Ativar!\n\nPronto! Seus recursos VIP já estão liberados. Boas vendas! 🤝`;
+        const msg = `Olá! Seu acesso ao *${license.planName}* do CadernoFiado foi liberado.\n\nCódigo de Ativação:\n${license.code}\n\nComo ativar no celular:\n1. Abra o CadernoFiado\n2. Toque na aba inferior "Plano VIP"\n3. Digite ou cole o código acima e toque em "Ativar Código"\n\nPronto! Os recursos de cobrança com PIX e extrato em PDF já estão liberados. Boas vendas!`;
         
         whatsappMessage.value = msg;
         resultSection.classList.remove('hidden');
@@ -332,9 +334,9 @@
 
     btnCopyMessage.addEventListener('click', () => {
       navigator.clipboard.writeText(whatsappMessage.value);
-      btnCopyMessage.innerHTML = '<span>✅ Mensagem Copiada!</span>';
+      btnCopyMessage.innerHTML = '<span>Mensagem Copiada!</span>';
       setTimeout(() => {
-        btnCopyMessage.innerHTML = '<span>📲 Copiar Mensagem Completa para o WhatsApp</span>';
+        btnCopyMessage.innerHTML = '<span>Copiar Mensagem para WhatsApp</span>';
       }, 2000);
     });
   </script>
