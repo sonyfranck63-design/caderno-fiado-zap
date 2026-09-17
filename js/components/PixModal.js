@@ -12,19 +12,20 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
   const timerRef = React.useRef(null);
   const { X, QrCode, Copy, Check, MessageCircle, Crown, ShieldCheck, Sparkles, AlertTriangle } = window.Icons || {};
 
-  if (!isOpen || !client) return null;
+  const debt = (isOpen && client && window.AppState) ? window.AppState.computeBalance(client) : 0;
 
-  const debt = window.AppState ? window.AppState.computeBalance(client) : 0;
-  const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
-  const hasCustomPixKey = !!shopSettings?.pixKey;
-
-  // Gera o payload oficial do PIX e renderiza o QR Code
+  // Gera o payload oficial do PIX e renderiza o QR Code (executado incondicionalmente em ordem de hooks)
   React.useEffect(() => {
     if (!isOpen || !client) return;
     setErrorMsg(null);
 
+    let payload = '';
     try {
-      const payload = window.PixService.generatePayload({
+      if (!window.PixService || typeof window.PixService.generatePayload !== 'function') {
+        throw new Error('PixService não disponível.');
+      }
+
+      payload = window.PixService.generatePayload({
         pixKey: shopSettings?.pixKey || '11987650000',
         merchantName: shopSettings?.shopName || 'MEU COMERCIO',
         merchantCity: shopSettings?.city || 'BRASIL',
@@ -33,24 +34,38 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
       });
 
       setPixPayload(payload);
-
-      // Renderiza o QR Code com cleanup seguro
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
-        if (qrRef.current) {
-          qrRef.current.innerHTML = '';
-          window.PixService.renderQRCode(qrRef.current, payload, 190);
-        }
-      }, 60);
     } catch(err) {
       console.error('Erro ao gerar payload PIX:', err);
       setErrorMsg('Não foi possível gerar o QR Code. Utilize os dados manuais abaixo.');
     }
 
+    // Renderiza o QR Code com cleanup seguro e proteção try/catch dentro do setTimeout
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      try {
+        if (qrRef.current) {
+          qrRef.current.innerHTML = '';
+          if (window.PixService && typeof window.PixService.renderQRCode === 'function') {
+            window.PixService.renderQRCode(qrRef.current, payload, 190);
+          } else {
+            throw new Error('Serviço PixService não disponível para renderização.');
+          }
+        }
+      } catch (renderErr) {
+        console.warn('Erro ao renderizar QR Code no timer:', renderErr);
+        setErrorMsg('Não foi possível renderizar o QR Code visual. Utilize o código Copia e Cola abaixo.');
+      }
+    }, 60);
+
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [isOpen, client, debt, shopSettings]);
+
+  if (!isOpen || !client) return null;
+
+  const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
+  const hasCustomPixKey = !!shopSettings?.pixKey;
 
   const handleCopy = () => {
     if (!pixPayload) return;

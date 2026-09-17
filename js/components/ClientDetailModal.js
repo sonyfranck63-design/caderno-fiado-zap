@@ -30,6 +30,21 @@ window.ClientDetailModal = function ClientDetailModal({
   const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false);
   const [showInAppReceipt, setShowInAppReceipt] = React.useState(false);
 
+  // Controle de histórico do botão/gesto Voltar do Android para submodais (BUG 2)
+  window.useModalHistory(!!showDeleteConfirm, () => setShowDeleteConfirm(false), 'showDeleteConfirm');
+  window.useModalHistory(feedbackModal.isOpen, () => setFeedbackModal(prev => ({ ...prev, isOpen: false })), 'feedbackModal');
+  window.useModalHistory(!!pdfModalData, () => setPdfModalData(null), 'pdfModalData');
+  window.useModalHistory(showInAppReceipt, () => setShowInAppReceipt(false), 'showInAppReceipt');
+  window.useModalHistory(!!showPhotoModal, () => setShowPhotoModal(null), 'showPhotoModal');
+
+  // Verifica se o compartilhamento de arquivos PDF é suportado neste ambiente (BUG 1b)
+  const canSharePdf = React.useMemo(() => {
+    if (!pdfModalData || !pdfModalData.blob || !window.PdfService || typeof window.PdfService.canSharePdf !== 'function') {
+      return false;
+    }
+    return window.PdfService.canSharePdf(pdfModalData.blob);
+  }, [pdfModalData]);
+
   const {
     X, Phone, MapPin, Calendar, Clock, DollarSign,
     CheckCircle2, AlertTriangle, FileText, QrCode, MessageCircle, Trash2, Check, Crown,
@@ -149,7 +164,17 @@ window.ClientDetailModal = function ClientDetailModal({
   const handleSharePdfFile = async () => {
     if (!pdfModalData || !pdfModalData.blob) return;
 
-    // 1. Tenta compartilhamento nativo de arquivo (Android / iOS)
+    if (!canSharePdf) {
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Recurso Indisponível',
+        message: 'O compartilhamento direto de arquivos não é suportado pelo seu navegador atual. Utilize a opção "Enviar Extrato em Texto" ou "Baixar Arquivo PDF".',
+        variant: 'warning'
+      });
+      return;
+    }
+
+    // 1. Tenta compartilhamento nativo de arquivo via Web Share API
     const shareResult = await window.PdfService.sharePdfFile(
       pdfModalData.blob,
       pdfModalData.filename,
@@ -158,33 +183,24 @@ window.ClientDetailModal = function ClientDetailModal({
     );
 
     if (shareResult && shareResult.success) {
-      setPdfModalData(null);
+      if (!shareResult.cancelled) {
+        setPdfModalData(null);
+      }
       return;
     }
 
-    // 2. Se o dispositivo ou WebView não suportar compartilhamento direto de arquivos:
-    // Salva o PDF no aparelho e prepara WhatsApp
-    window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+    if (shareResult && shareResult.cancelled) {
+      return;
+    }
 
-    const phone = (client.phone || '').replace(/\D/g, '');
-    const cleanPhone = phone.startsWith('55') ? phone : (phone ? '55' + phone : '');
-    const initialText = `Olá, ${client.name}! Estou te enviando o seu extrato de conta em PDF emitido agora.`;
-    const url = cleanPhone 
-      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(initialText)}`
-      : `https://wa.me/?text=${encodeURIComponent(initialText)}`;
-
-    setPdfModalData(null);
+    // 2. Se falhar, exibe feedback visual amigável sem cair silenciosamente
     setFeedbackModal({
       isOpen: true,
-      title: 'PDF Salvo no Aparelho',
-      message: `O arquivo "${pdfModalData.filename}" foi baixado nos seus Downloads.\n\nPara enviar ao cliente, abra a conversa no WhatsApp e anexe o documento tocando no clipe 📎.`,
-      confirmText: 'Abrir WhatsApp',
-      showCancel: true,
-      cancelText: 'Fechar',
-      onConfirm: () => {
-        window.open(url, '_blank');
-      },
-      variant: 'success'
+      title: 'Não foi possível enviar o arquivo',
+      message: (shareResult && shareResult.error) 
+        ? shareResult.error 
+        : 'O dispositivo não concluiu o envio do documento. Tente a opção "Enviar Extrato em Texto" ou baixe o PDF.',
+      variant: 'warning'
     });
   };
 
@@ -699,18 +715,28 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={handleSharePdfFile}
-                  className="w-full p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-between transition-all shadow-sm btn-smooth group"
+                  disabled={!canSharePdf}
+                  className={`w-full p-3 rounded-xl font-semibold text-xs flex items-center justify-between transition-all shadow-sm btn-smooth group ${
+                    canSharePdf
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                      : 'bg-slate-200 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+                  }`}
+                  title={canSharePdf ? 'Enviar Arquivo PDF via WhatsApp' : 'Compartilhamento de arquivos não suportado neste navegador'}
                 >
                   <div className="flex items-center gap-2.5 text-left min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${canSharePdf ? 'bg-white/15' : 'bg-slate-300 dark:bg-slate-700'}`}>
                       <FileText size={16} />
                     </div>
                     <div className="min-w-0">
-                      <span className="block font-bold text-xs truncate">Enviar Arquivo PDF</span>
-                      <span className="block text-[10px] text-emerald-100/90 truncate">Documento timbrado para WhatsApp</span>
+                      <span className="block font-bold text-xs truncate">
+                        Enviar Arquivo PDF {canSharePdf ? '' : '(Indisponível)'}
+                      </span>
+                      <span className="block text-[10px] truncate opacity-90">
+                        {canSharePdf ? 'Documento timbrado para WhatsApp' : 'Navegador sem suporte a envio de arquivos'}
+                      </span>
                     </div>
                   </div>
-                  <ChevronRight size={16} className="text-white/70 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+                  <ChevronRight size={16} className="opacity-70 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
                 </button>
 
                 {/* 2. Enviar Extrato em Texto no WhatsApp */}
@@ -735,16 +761,25 @@ window.ClientDetailModal = function ClientDetailModal({
                 {/* 3. Baixar / Salvar Arquivo PDF no Dispositivo (Celular ou Computador) */}
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.PdfService && pdfModalData.blob) {
-                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      setFeedbackModal({
-                        isOpen: true,
-                        title: 'PDF Salvo',
-                        message: `O arquivo "${pdfModalData.filename}" foi baixado no seu dispositivo.`,
-                        variant: 'success'
-                      });
-                      setPdfModalData(null);
+                  onClick={async () => {
+                    if (window.PdfService && pdfModalData?.blob) {
+                      const res = await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      if (res && res.success) {
+                        setFeedbackModal({
+                          isOpen: true,
+                          title: 'PDF Salvo',
+                          message: res.message || `O arquivo "${pdfModalData.filename}" foi baixado no seu dispositivo.`,
+                          variant: 'success'
+                        });
+                        setPdfModalData(null);
+                      } else {
+                        setFeedbackModal({
+                          isOpen: true,
+                          title: 'Falha no Download',
+                          message: (res && res.error) ? res.error : 'Não foi possível salvar o arquivo diretamente no dispositivo.',
+                          variant: 'warning'
+                        });
+                      }
                     }
                   }}
                   className="w-full p-2.5 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium flex items-center justify-between transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
@@ -883,15 +918,24 @@ window.ClientDetailModal = function ClientDetailModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (window.PdfService && pdfModalData?.blob) {
-                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      setFeedbackModal({
-                        isOpen: true,
-                        title: 'PDF Salvo',
-                        message: `O arquivo "${pdfModalData.filename}" foi baixado no seu aparelho.`,
-                        variant: 'success'
-                      });
+                      const res = await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      if (res && res.success) {
+                        setFeedbackModal({
+                          isOpen: true,
+                          title: 'PDF Salvo',
+                          message: res.message || `O arquivo "${pdfModalData.filename}" foi baixado no seu aparelho.`,
+                          variant: 'success'
+                        });
+                      } else {
+                        setFeedbackModal({
+                          isOpen: true,
+                          title: 'Falha no Download',
+                          message: (res && res.error) ? res.error : 'Não foi possível salvar o arquivo diretamente no dispositivo.',
+                          variant: 'warning'
+                        });
+                      }
                     }
                   }}
                   className="py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
@@ -902,7 +946,13 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={handleSharePdfFile}
-                  className="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                  disabled={!canSharePdf}
+                  className={`py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm ${
+                    canSharePdf
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                      : 'bg-slate-300 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+                  }`}
+                  title={canSharePdf ? 'Enviar PDF via WhatsApp' : 'Compartilhamento não suportado neste navegador'}
                 >
                   <MessageCircle size={15} />
                   <span className="truncate">Enviar PDF</span>

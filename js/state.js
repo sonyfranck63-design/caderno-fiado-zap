@@ -3,6 +3,115 @@
  * CadernoFiado & Cobrança Zap
  */
 
+/**
+ * Gerenciador de Histórico de Navegação e Modais (Android Back Button / Popstate)
+ * Controla a pilha de modais para que o botão/gesto "Voltar" do Android feche o modal mais de cima
+ * e só feche o app quando nenhum modal estiver aberto.
+ */
+window.ModalHistory = (function() {
+  const stack = [];
+  let isBackTriggeredByUi = false;
+
+  // Limpa estados residuais de histórico no carregamento inicial
+  try {
+    if (window.history && window.history.state && window.history.state.__cfModal) {
+      window.history.replaceState(null, '');
+    }
+  } catch(e) {}
+
+  window.addEventListener('popstate', function(event) {
+    if (isBackTriggeredByUi) {
+      isBackTriggeredByUi = false;
+      return;
+    }
+
+    if (stack.length > 0) {
+      const top = stack.pop();
+      if (top && typeof top.close === 'function') {
+        top.isPoppedByPopstate = true;
+        try {
+          top.close();
+        } catch(err) {
+          console.error('[ModalHistory] Erro ao fechar modal via popstate:', err);
+        }
+      }
+    }
+  });
+
+  function push(id, closeFn) {
+    if (!id || typeof closeFn !== 'function') return null;
+
+    const existingIndex = stack.findIndex(item => item.id === id);
+    if (existingIndex !== -1) {
+      return stack[existingIndex];
+    }
+
+    const item = {
+      id: id,
+      close: closeFn,
+      isPoppedByPopstate: false
+    };
+    stack.push(item);
+
+    try {
+      window.history.pushState({ __cfModal: true, modalId: id, depth: stack.length }, '');
+    } catch(e) {
+      console.warn('[ModalHistory] pushState não suportado ou falhou:', e);
+    }
+
+    return item;
+  }
+
+  function pop(id) {
+    const index = stack.findIndex(item => item.id === id);
+    if (index === -1) return;
+
+    const item = stack[index];
+    stack.splice(index, 1);
+
+    // Se o fechamento foi disparado pela interface do app (ex: clique no X),
+    // retrocedemos o histórico correspondente para manter o navegador em sincronia.
+    if (!item.isPoppedByPopstate) {
+      isBackTriggeredByUi = true;
+      try {
+        window.history.back();
+      } catch(e) {
+        isBackTriggeredByUi = false;
+      }
+    }
+  }
+
+  function getStack() {
+    return [...stack];
+  }
+
+  return {
+    push,
+    pop,
+    getStack
+  };
+})();
+
+/**
+ * Hook React para registrar e desregistrar modais na pilha de histórico automaticamente
+ */
+window.useModalHistory = function useModalHistory(isOpen, onClose, modalId) {
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const id = modalId || 'modal_' + Math.random().toString(36).substring(2, 9);
+    window.ModalHistory.push(id, () => {
+      if (onCloseRef.current) onCloseRef.current();
+    });
+
+    return () => {
+      window.ModalHistory.pop(id);
+    };
+  }, [isOpen, modalId]);
+};
+
 window.AppState = (function() {
   const STORAGE_KEY_CLIENTS = 'cadernofiado_clients_v1';
   const STORAGE_KEY_SETTINGS = 'cadernofiado_settings_v1';
@@ -283,14 +392,23 @@ window.AppState = (function() {
     const todayStr = new Date().toISOString().split('T')[0];
     const transactions = Array.isArray(client.transactions) ? client.transactions : [];
 
-    // Clona e ordena todas as vendas cronologicamente (FIFO) para abatimento de pagamentos genéricos
+    // Clona e ordena todas as vendas cronologicamente pela data de CRIAÇÃO (FIFO) para abatimento de pagamentos genéricos.
+    // O date é o critério primário imutável da dívida (o dueDate é editável e não reflete a ordem real da tomada da dívida).
     const allSales = transactions
       .filter(t => t.type === 'sale')
       .slice()
       .sort((a, b) => {
-        const dateA = a.dueDate || a.date || '';
-        const dateB = b.dueDate || b.date || '';
-        return dateA.localeCompare(dateB) || a.id.localeCompare(b.id);
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateA !== dateB) {
+          return dateA.localeCompare(dateB);
+        }
+        // Desempate quando a data de criação for idêntica (ex: parcelas da mesma venda ou mesmo milissegundo)
+        if (a.installment?.groupId && b.installment?.groupId && a.installment.groupId === b.installment.groupId) {
+          return (a.installment.current || 1) - (b.installment.current || 1);
+        }
+        // Entre vendas com timestamp idêntico, a criada anteriormente fica no final do array transactions (unshift)
+        return transactions.indexOf(b) - transactions.indexOf(a);
       });
 
     const allPayments = transactions.filter(t => t.type === 'payment');

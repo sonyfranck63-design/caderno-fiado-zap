@@ -351,24 +351,173 @@ window.PdfService = (function() {
   }
 
   /**
-   * Baixa diretamente o arquivo PDF com segurança
+   * DOCUMENTAÇÃO DE INTEGRAÇÃO NATIVA ANDROID (Kotlin / Java)
+   * =========================================================
+   * Para salvar arquivos PDF gerados em Base64 na pasta de Downloads do dispositivo
+   * através do WebView sem depender de DownloadListener, a classe registrada via
+   * webView.addJavascriptInterface(...) precisa expor o seguinte método:
+   *
+   * Em Java (ex: AppJavaScriptProxy.java ou AndroidBridge.java):
+   * -------------------------------------------------------------
+   * @JavascriptInterface
+   * public void saveBase64File(String base64Data, String fileName, String mimeType) {
+   *     try {
+   *         byte[] pdfAsBytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+   *         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+   *             android.content.ContentValues values = new android.content.ContentValues();
+   *             values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+   *             values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mimeType != null ? mimeType : "application/pdf");
+   *             values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS);
+   *             android.net.Uri uri = this.activity.getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+   *             if (uri != null) {
+   *                 try (java.io.OutputStream out = this.activity.getContentResolver().openOutputStream(uri)) {
+   *                     if (out != null) out.write(pdfAsBytes);
+   *                 }
+   *             }
+   *         } else {
+   *             java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+   *             if (!downloadDir.exists()) downloadDir.mkdirs();
+   *             java.io.File targetFile = new java.io.File(downloadDir, fileName);
+   *             try (java.io.FileOutputStream fos = new java.io.FileOutputStream(targetFile)) {
+   *                 fos.write(pdfAsBytes);
+   *             }
+   *         }
+   *         this.activity.runOnUiThread(() ->
+   *             android.widget.Toast.makeText(this.activity, "Arquivo salvo em Downloads: " + fileName, android.widget.Toast.LENGTH_LONG).show()
+   *         );
+   *     } catch (Exception e) {
+   *         android.util.Log.e("WebViewBridge", "Erro ao salvar arquivo base64: " + e.getMessage(), e);
+   *     }
+   * }
+   *
+   * Em Kotlin:
+   * ----------
+   * @JavascriptInterface
+   * fun saveBase64File(base64Data: String, fileName: String, mimeType: String = "application/pdf") {
+   *     try {
+   *         val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+   *         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+   *             val values = android.content.ContentValues().apply {
+   *                 put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+   *                 put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mimeType)
+   *                 put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+   *             }
+   *             val uri = activity.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+   *             uri?.let { activity.contentResolver.openOutputStream(it)?.use { out -> out.write(bytes) } }
+   *         } else {
+   *             val file = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), fileName)
+   *             file.writeBytes(bytes)
+   *         }
+   *         activity.runOnUiThread {
+   *             android.widget.Toast.makeText(activity, "Arquivo salvo em Downloads: $fileName", android.widget.Toast.LENGTH_LONG).show()
+   *         }
+   *     } catch (e: Exception) {
+   *         android.util.Log.e("WebViewBridge", "Erro ao salvar: ${e.message}", e)
+   *     }
+   * }
    */
-  function downloadPdf(blob, filename) {
+
+  /**
+   * Converte um Blob ou File para string Base64 pura
+   */
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      if (typeof blob === 'string') {
+        if (blob.startsWith('data:')) {
+          const parts = blob.split(',');
+          return resolve(parts[1] || parts[0]);
+        }
+        return resolve(blob);
+      }
+      if (typeof FileReader === 'undefined') {
+        return reject(new Error('FileReader não suportado no ambiente.'));
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result || '';
+        const base64 = typeof dataUrl === 'string' && dataUrl.indexOf(',') !== -1 
+          ? dataUrl.split(',')[1] 
+          : dataUrl;
+        resolve(base64);
+      };
+      reader.onerror = (e) => reject(e || new Error('Falha ao converter arquivo em Base64'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * Verifica se o navegador/dispositivo atual realmente suporta compartilhamento de arquivos PDF
+   */
+  function canSharePdf(blob) {
+    if (typeof navigator === 'undefined' || !navigator.canShare || typeof File === 'undefined') {
+      return false;
+    }
     try {
+      const file = (blob instanceof File)
+        ? blob
+        : new File([blob || ''], 'recibo_teste.pdf', { type: 'application/pdf' });
+      return !!navigator.canShare({ files: [file] });
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Baixa diretamente o arquivo PDF com segurança
+   * Suporta ponte JS nativa Android (saveBase64File), fallback Web e detecção de WebView
+   */
+  async function downloadPdf(blob, filename) {
+    const safeFilename = filename || 'recibo-fiado.pdf';
+    try {
+      // 1. Detecção de ponte JS nativa no Android WebView (ex: window.AndroidBridge ou window.androidAppProxy)
+      const bridge = (typeof window.AndroidBridge !== 'undefined' && typeof window.AndroidBridge.saveBase64File === 'function')
+        ? window.AndroidBridge
+        : (typeof window.androidAppProxy !== 'undefined' && typeof window.androidAppProxy.saveBase64File === 'function')
+        ? window.androidAppProxy
+        : null;
+
+      if (bridge) {
+        const base64Data = await blobToBase64(blob);
+        bridge.saveBase64File(base64Data, safeFilename, 'application/pdf');
+        return {
+          success: true,
+          method: 'native_bridge',
+          message: `Arquivo "${safeFilename}" salvo na pasta Downloads do seu aparelho.`
+        };
+      }
+
+      // 2. Detecção de WebView Android sem ponte e sem suporte nativo a download
+      const isAndroidWebView = /android/i.test(navigator.userAgent || '') && 
+        (typeof window.androidAppProxy !== 'undefined' || /; wv\)/.test(navigator.userAgent || '') || !window.chrome);
+
+      // 3. Fallback para navegador web tradicional ou desktop via <a download>
       const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename || 'recibo-fiado.pdf';
+      a.download = safeFilename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       if (typeof blob !== 'string') {
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       }
-      return { success: true };
+
+      if (isAndroidWebView) {
+        return {
+          success: false,
+          method: 'webview_no_bridge',
+          error: 'O download direto neste aplicativo requer suporte nativo do WebView. Utilize a opção "Enviar Arquivo PDF" ou visualize na tela.'
+        };
+      }
+
+      return {
+        success: true,
+        method: 'browser_download',
+        message: `Download do arquivo "${safeFilename}" iniciado.`
+      };
     } catch(err) {
       console.error('Falha no download direto do PDF:', err);
-      return { success: false, error: err.message };
+      return { success: false, error: err.message || 'Erro ao realizar download do arquivo.' };
     }
   }
 
@@ -420,6 +569,8 @@ window.PdfService = (function() {
     generateReceiptText,
     downloadPdf,
     sharePdfFile,
-    openPdfPreview
+    openPdfPreview,
+    canSharePdf,
+    blobToBase64
   };
 })();

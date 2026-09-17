@@ -22,6 +22,14 @@ function App() {
   const [installModalOpen, setInstallModalOpen] = React.useState(false);
   const [paywallReason, setPaywallReason] = React.useState(null);
 
+  // Controle de histórico do botão/gesto Voltar do Android (BUG 2)
+  window.useModalHistory(!!selectedClientId, () => setSelectedClientId(null), 'ClientDetailModal');
+  window.useModalHistory(whatsAppModalData.open, () => setWhatsAppModalData({ open: false, client: null, pixPayload: null, targetInstallment: null }), 'WhatsAppModal');
+  window.useModalHistory(pixModalData.open, () => setPixModalData({ open: false, client: null }), 'PixModal');
+  window.useModalHistory(settingsModalOpen, () => setSettingsModalOpen(false), 'SettingsModal');
+  window.useModalHistory(rewardedModalOpen, () => setRewardedModalOpen(false), 'RewardedAdModal');
+  window.useModalHistory(installModalOpen, () => setInstallModalOpen(false), 'InstallPwaModal');
+
   // Aplica classe de tema inicial no documento
   React.useEffect(() => {
     const savedTheme = localStorage.getItem('cf_theme');
@@ -233,9 +241,95 @@ function App() {
   );
 }
 
+/**
+ * ErrorBoundary React: Captura erros não tratados na árvore de componentes e exibe interface
+ * amigável de recuperação em vez de tela preta silenciosa (BUG 4a).
+ */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error: error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('[CadernoFiado ErrorBoundary]', error, errorInfo);
+    try {
+      if (window.__appErrors) {
+        window.__appErrors.push(`[React Error] ${error?.message || error}`);
+      }
+    } catch(e) {}
+  }
+
+  handleReload = () => {
+    window.location.reload();
+  };
+
+  handleReset = () => {
+    if (window.confirm('Deseja restaurar as configurações padrão do aplicativo? Os dados locais serão redefinidos.')) {
+      try {
+        localStorage.clear();
+      } catch(e) {}
+      window.location.reload();
+    }
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 selection:bg-rose-500 selection:text-white font-sans">
+          <div className="w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-center space-y-4">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center text-2xl font-bold shadow-sm">
+              ⚠️
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white tracking-tight">Ops! Algo deu errado</h2>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Ocorreu uma falha inesperada no aplicativo, mas seus dados continuam seguros.
+              </p>
+            </div>
+
+            {this.state.error && (
+              <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80 text-left overflow-x-auto text-[11px] font-mono text-rose-300/90 max-h-28">
+                {this.state.error.message || String(this.state.error)}
+              </div>
+            )}
+
+            <div className="pt-2 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={this.handleReload}
+                className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all active:scale-95"
+              >
+                Recarregar Aplicativo
+              </button>
+              <button
+                type="button"
+                onClick={this.handleReset}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
+              >
+                Restaurar Padrões
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 // Renderiza a aplicação React no DOM
 const rootElement = document.getElementById('root');
 if (rootElement) {
   const root = ReactDOM.createRoot(rootElement);
-  root.render(<App />);
+  root.render(
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
 }

@@ -338,6 +338,57 @@
         log("Aviso: Não foi possível carregar bundle.js no teste: " + bundleErr.message);
       }
 
+      // ==========================================
+      // Cenário 16: Validação do BUG 3 — FIFO por Data de Criação (Imutável)
+      // Cliente com venda A de R$ 100 totalmente paga -> adicionar venda B de R$ 50
+      // com dueDate anterior ao de A -> venda A deve continuar "quitada" e venda B deve
+      // aparecer "em aberto" (não o contrário).
+      // ==========================================
+      log("\n--- Cenário 16: Validação do BUG 3 (FIFO por Data de Criação) ---");
+      const cFifo = window.AppState.addClient({ name: 'Cliente FIFO Teste', phone: '11999990000', creditLimit: 1000 });
+      
+      // 1. Cria venda A de R$ 100 com vencimento em 2026-10-15
+      window.AppState.addSale(cFifo.id, {
+        description: 'Venda A (Antiga)',
+        amount: 100.00,
+        dueDate: '2026-10-15'
+      });
+
+      // 2. Abate integralmente R$ 100 com pagamento genérico
+      window.AppState.addPayment(cFifo.id, {
+        amount: 100.00,
+        paymentMethod: 'Dinheiro',
+        notes: 'Pagamento total da Venda A'
+      });
+
+      let clientFifo = window.AppState.getClient(cFifo.id);
+      let saleA = clientFifo.transactions.find(t => t.type === 'sale' && t.description.includes('Venda A'));
+      let detailA1 = window.AppState.getInstallmentDetails(clientFifo, saleA);
+      assert("Cenário 16.1: Venda A após pagamento de R$ 100 está 'quitada'", detailA1.status === 'quitada' && detailA1.remainingAmount === 0);
+
+      // Simula passagem de tempo para garantir que a venda B tenha date cronologicamente posterior
+      currentMockTime += 10000;
+
+      // 3. Adiciona venda B de R$ 50 com dueDate '2026-09-25' (anterior ao dueDate da venda A '2026-10-15'!)
+      window.AppState.addSale(cFifo.id, {
+        description: 'Venda B (Nova com dueDate anterior)',
+        amount: 50.00,
+        dueDate: '2026-09-25'
+      });
+
+      clientFifo = window.AppState.getClient(cFifo.id);
+      saleA = clientFifo.transactions.find(t => t.type === 'sale' && t.description.includes('Venda A'));
+      let saleB = clientFifo.transactions.find(t => t.type === 'sale' && t.description.includes('Venda B'));
+
+      let detailA2 = window.AppState.getInstallmentDetails(clientFifo, saleA);
+      let detailB = window.AppState.getInstallmentDetails(clientFifo, saleB);
+
+      assert("Cenário 16.2: Venda A continua 'quitada' após inclusão da Venda B", detailA2.status === 'quitada' && detailA2.remainingAmount === 0);
+      assert("Cenário 16.3: Venda B aparece 'em_aberto' (saldo R$ 50.00)", detailB.status === 'em_aberto' && detailB.remainingAmount === 50.00);
+
+      const balanceFifo = window.AppState.computeBalance(clientFifo);
+      assert("Cenário 16.4: computeBalance reflete saldo devedor exato de R$ 50.00", Math.abs(balanceFifo - 50.00) < 0.001);
+
         log(`\n==========================================`);
         log(`RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`, passedTests === totalTests);
         log(`==========================================`);

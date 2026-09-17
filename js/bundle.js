@@ -497,24 +497,173 @@ window.PdfService = (function() {
   }
 
   /**
-   * Baixa diretamente o arquivo PDF com segurança
+   * DOCUMENTAÇÃO DE INTEGRAÇÃO NATIVA ANDROID (Kotlin / Java)
+   * =========================================================
+   * Para salvar arquivos PDF gerados em Base64 na pasta de Downloads do dispositivo
+   * através do WebView sem depender de DownloadListener, a classe registrada via
+   * webView.addJavascriptInterface(...) precisa expor o seguinte método:
+   *
+   * Em Java (ex: AppJavaScriptProxy.java ou AndroidBridge.java):
+   * -------------------------------------------------------------
+   * @JavascriptInterface
+   * public void saveBase64File(String base64Data, String fileName, String mimeType) {
+   *     try {
+   *         byte[] pdfAsBytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+   *         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+   *             android.content.ContentValues values = new android.content.ContentValues();
+   *             values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+   *             values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mimeType != null ? mimeType : "application/pdf");
+   *             values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS);
+   *             android.net.Uri uri = this.activity.getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+   *             if (uri != null) {
+   *                 try (java.io.OutputStream out = this.activity.getContentResolver().openOutputStream(uri)) {
+   *                     if (out != null) out.write(pdfAsBytes);
+   *                 }
+   *             }
+   *         } else {
+   *             java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+   *             if (!downloadDir.exists()) downloadDir.mkdirs();
+   *             java.io.File targetFile = new java.io.File(downloadDir, fileName);
+   *             try (java.io.FileOutputStream fos = new java.io.FileOutputStream(targetFile)) {
+   *                 fos.write(pdfAsBytes);
+   *             }
+   *         }
+   *         this.activity.runOnUiThread(() ->
+   *             android.widget.Toast.makeText(this.activity, "Arquivo salvo em Downloads: " + fileName, android.widget.Toast.LENGTH_LONG).show()
+   *         );
+   *     } catch (Exception e) {
+   *         android.util.Log.e("WebViewBridge", "Erro ao salvar arquivo base64: " + e.getMessage(), e);
+   *     }
+   * }
+   *
+   * Em Kotlin:
+   * ----------
+   * @JavascriptInterface
+   * fun saveBase64File(base64Data: String, fileName: String, mimeType: String = "application/pdf") {
+   *     try {
+   *         val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+   *         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+   *             val values = android.content.ContentValues().apply {
+   *                 put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+   *                 put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mimeType)
+   *                 put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+   *             }
+   *             val uri = activity.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+   *             uri?.let { activity.contentResolver.openOutputStream(it)?.use { out -> out.write(bytes) } }
+   *         } else {
+   *             val file = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), fileName)
+   *             file.writeBytes(bytes)
+   *         }
+   *         activity.runOnUiThread {
+   *             android.widget.Toast.makeText(activity, "Arquivo salvo em Downloads: $fileName", android.widget.Toast.LENGTH_LONG).show()
+   *         }
+   *     } catch (e: Exception) {
+   *         android.util.Log.e("WebViewBridge", "Erro ao salvar: ${e.message}", e)
+   *     }
+   * }
    */
-  function downloadPdf(blob, filename) {
+
+  /**
+   * Converte um Blob ou File para string Base64 pura
+   */
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      if (typeof blob === 'string') {
+        if (blob.startsWith('data:')) {
+          const parts = blob.split(',');
+          return resolve(parts[1] || parts[0]);
+        }
+        return resolve(blob);
+      }
+      if (typeof FileReader === 'undefined') {
+        return reject(new Error('FileReader não suportado no ambiente.'));
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result || '';
+        const base64 = typeof dataUrl === 'string' && dataUrl.indexOf(',') !== -1 
+          ? dataUrl.split(',')[1] 
+          : dataUrl;
+        resolve(base64);
+      };
+      reader.onerror = (e) => reject(e || new Error('Falha ao converter arquivo em Base64'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * Verifica se o navegador/dispositivo atual realmente suporta compartilhamento de arquivos PDF
+   */
+  function canSharePdf(blob) {
+    if (typeof navigator === 'undefined' || !navigator.canShare || typeof File === 'undefined') {
+      return false;
+    }
     try {
+      const file = (blob instanceof File)
+        ? blob
+        : new File([blob || ''], 'recibo_teste.pdf', { type: 'application/pdf' });
+      return !!navigator.canShare({ files: [file] });
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Baixa diretamente o arquivo PDF com segurança
+   * Suporta ponte JS nativa Android (saveBase64File), fallback Web e detecção de WebView
+   */
+  async function downloadPdf(blob, filename) {
+    const safeFilename = filename || 'recibo-fiado.pdf';
+    try {
+      // 1. Detecção de ponte JS nativa no Android WebView (ex: window.AndroidBridge ou window.androidAppProxy)
+      const bridge = (typeof window.AndroidBridge !== 'undefined' && typeof window.AndroidBridge.saveBase64File === 'function')
+        ? window.AndroidBridge
+        : (typeof window.androidAppProxy !== 'undefined' && typeof window.androidAppProxy.saveBase64File === 'function')
+        ? window.androidAppProxy
+        : null;
+
+      if (bridge) {
+        const base64Data = await blobToBase64(blob);
+        bridge.saveBase64File(base64Data, safeFilename, 'application/pdf');
+        return {
+          success: true,
+          method: 'native_bridge',
+          message: `Arquivo "${safeFilename}" salvo na pasta Downloads do seu aparelho.`
+        };
+      }
+
+      // 2. Detecção de WebView Android sem ponte e sem suporte nativo a download
+      const isAndroidWebView = /android/i.test(navigator.userAgent || '') && 
+        (typeof window.androidAppProxy !== 'undefined' || /; wv\)/.test(navigator.userAgent || '') || !window.chrome);
+
+      // 3. Fallback para navegador web tradicional ou desktop via <a download>
       const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename || 'recibo-fiado.pdf';
+      a.download = safeFilename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       if (typeof blob !== 'string') {
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       }
-      return { success: true };
+
+      if (isAndroidWebView) {
+        return {
+          success: false,
+          method: 'webview_no_bridge',
+          error: 'O download direto neste aplicativo requer suporte nativo do WebView. Utilize a opção "Enviar Arquivo PDF" ou visualize na tela.'
+        };
+      }
+
+      return {
+        success: true,
+        method: 'browser_download',
+        message: `Download do arquivo "${safeFilename}" iniciado.`
+      };
     } catch(err) {
       console.error('Falha no download direto do PDF:', err);
-      return { success: false, error: err.message };
+      return { success: false, error: err.message || 'Erro ao realizar download do arquivo.' };
     }
   }
 
@@ -566,7 +715,9 @@ window.PdfService = (function() {
     generateReceiptText,
     downloadPdf,
     sharePdfFile,
-    openPdfPreview
+    openPdfPreview,
+    canSharePdf,
+    blobToBase64
   };
 })();
 
@@ -578,6 +729,115 @@ window.PdfService = (function() {
  * Gerenciamento Central de Estado e Persistência Local (localStorage)
  * CadernoFiado & Cobrança Zap
  */
+
+/**
+ * Gerenciador de Histórico de Navegação e Modais (Android Back Button / Popstate)
+ * Controla a pilha de modais para que o botão/gesto "Voltar" do Android feche o modal mais de cima
+ * e só feche o app quando nenhum modal estiver aberto.
+ */
+window.ModalHistory = (function() {
+  const stack = [];
+  let isBackTriggeredByUi = false;
+
+  // Limpa estados residuais de histórico no carregamento inicial
+  try {
+    if (window.history && window.history.state && window.history.state.__cfModal) {
+      window.history.replaceState(null, '');
+    }
+  } catch(e) {}
+
+  window.addEventListener('popstate', function(event) {
+    if (isBackTriggeredByUi) {
+      isBackTriggeredByUi = false;
+      return;
+    }
+
+    if (stack.length > 0) {
+      const top = stack.pop();
+      if (top && typeof top.close === 'function') {
+        top.isPoppedByPopstate = true;
+        try {
+          top.close();
+        } catch(err) {
+          console.error('[ModalHistory] Erro ao fechar modal via popstate:', err);
+        }
+      }
+    }
+  });
+
+  function push(id, closeFn) {
+    if (!id || typeof closeFn !== 'function') return null;
+
+    const existingIndex = stack.findIndex(item => item.id === id);
+    if (existingIndex !== -1) {
+      return stack[existingIndex];
+    }
+
+    const item = {
+      id: id,
+      close: closeFn,
+      isPoppedByPopstate: false
+    };
+    stack.push(item);
+
+    try {
+      window.history.pushState({ __cfModal: true, modalId: id, depth: stack.length }, '');
+    } catch(e) {
+      console.warn('[ModalHistory] pushState não suportado ou falhou:', e);
+    }
+
+    return item;
+  }
+
+  function pop(id) {
+    const index = stack.findIndex(item => item.id === id);
+    if (index === -1) return;
+
+    const item = stack[index];
+    stack.splice(index, 1);
+
+    // Se o fechamento foi disparado pela interface do app (ex: clique no X),
+    // retrocedemos o histórico correspondente para manter o navegador em sincronia.
+    if (!item.isPoppedByPopstate) {
+      isBackTriggeredByUi = true;
+      try {
+        window.history.back();
+      } catch(e) {
+        isBackTriggeredByUi = false;
+      }
+    }
+  }
+
+  function getStack() {
+    return [...stack];
+  }
+
+  return {
+    push,
+    pop,
+    getStack
+  };
+})();
+
+/**
+ * Hook React para registrar e desregistrar modais na pilha de histórico automaticamente
+ */
+window.useModalHistory = function useModalHistory(isOpen, onClose, modalId) {
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const id = modalId || 'modal_' + Math.random().toString(36).substring(2, 9);
+    window.ModalHistory.push(id, () => {
+      if (onCloseRef.current) onCloseRef.current();
+    });
+
+    return () => {
+      window.ModalHistory.pop(id);
+    };
+  }, [isOpen, modalId]);
+};
 
 window.AppState = (function() {
   const STORAGE_KEY_CLIENTS = 'cadernofiado_clients_v1';
@@ -859,14 +1119,23 @@ window.AppState = (function() {
     const todayStr = new Date().toISOString().split('T')[0];
     const transactions = Array.isArray(client.transactions) ? client.transactions : [];
 
-    // Clona e ordena todas as vendas cronologicamente (FIFO) para abatimento de pagamentos genéricos
+    // Clona e ordena todas as vendas cronologicamente pela data de CRIAÇÃO (FIFO) para abatimento de pagamentos genéricos.
+    // O date é o critério primário imutável da dívida (o dueDate é editável e não reflete a ordem real da tomada da dívida).
     const allSales = transactions
       .filter(t => t.type === 'sale')
       .slice()
       .sort((a, b) => {
-        const dateA = a.dueDate || a.date || '';
-        const dateB = b.dueDate || b.date || '';
-        return dateA.localeCompare(dateB) || a.id.localeCompare(b.id);
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateA !== dateB) {
+          return dateA.localeCompare(dateB);
+        }
+        // Desempate quando a data de criação for idêntica (ex: parcelas da mesma venda ou mesmo milissegundo)
+        if (a.installment?.groupId && b.installment?.groupId && a.installment.groupId === b.installment.groupId) {
+          return (a.installment.current || 1) - (b.installment.current || 1);
+        }
+        // Entre vendas com timestamp idêntico, a criada anteriormente fica no final do array transactions (unshift)
+        return transactions.indexOf(b) - transactions.indexOf(a);
       });
 
     const allPayments = transactions.filter(t => t.type === 'payment');
@@ -2671,19 +2940,20 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
   const timerRef = React.useRef(null);
   const { X, QrCode, Copy, Check, MessageCircle, Crown, ShieldCheck, Sparkles, AlertTriangle } = window.Icons || {};
 
-  if (!isOpen || !client) return null;
+  const debt = (isOpen && client && window.AppState) ? window.AppState.computeBalance(client) : 0;
 
-  const debt = window.AppState ? window.AppState.computeBalance(client) : 0;
-  const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
-  const hasCustomPixKey = !!shopSettings?.pixKey;
-
-  // Gera o payload oficial do PIX e renderiza o QR Code
+  // Gera o payload oficial do PIX e renderiza o QR Code (executado incondicionalmente em ordem de hooks)
   React.useEffect(() => {
     if (!isOpen || !client) return;
     setErrorMsg(null);
 
+    let payload = '';
     try {
-      const payload = window.PixService.generatePayload({
+      if (!window.PixService || typeof window.PixService.generatePayload !== 'function') {
+        throw new Error('PixService não disponível.');
+      }
+
+      payload = window.PixService.generatePayload({
         pixKey: shopSettings?.pixKey || '11987650000',
         merchantName: shopSettings?.shopName || 'MEU COMERCIO',
         merchantCity: shopSettings?.city || 'BRASIL',
@@ -2692,24 +2962,38 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
       });
 
       setPixPayload(payload);
-
-      // Renderiza o QR Code com cleanup seguro
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
-        if (qrRef.current) {
-          qrRef.current.innerHTML = '';
-          window.PixService.renderQRCode(qrRef.current, payload, 190);
-        }
-      }, 60);
     } catch(err) {
       console.error('Erro ao gerar payload PIX:', err);
       setErrorMsg('Não foi possível gerar o QR Code. Utilize os dados manuais abaixo.');
     }
 
+    // Renderiza o QR Code com cleanup seguro e proteção try/catch dentro do setTimeout
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      try {
+        if (qrRef.current) {
+          qrRef.current.innerHTML = '';
+          if (window.PixService && typeof window.PixService.renderQRCode === 'function') {
+            window.PixService.renderQRCode(qrRef.current, payload, 190);
+          } else {
+            throw new Error('Serviço PixService não disponível para renderização.');
+          }
+        }
+      } catch (renderErr) {
+        console.warn('Erro ao renderizar QR Code no timer:', renderErr);
+        setErrorMsg('Não foi possível renderizar o QR Code visual. Utilize o código Copia e Cola abaixo.');
+      }
+    }, 60);
+
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [isOpen, client, debt, shopSettings]);
+
+  if (!isOpen || !client) return null;
+
+  const formattedDebt = `R$ ${debt.toFixed(2).replace('.', ',')}`;
+  const hasCustomPixKey = !!shopSettings?.pixKey;
 
   const handleCopy = () => {
     if (!pixPayload) return;
@@ -2878,6 +3162,12 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
       setSaveSuccess(false);
     }
   }, [isOpen, shopSettings]);
+
+  // Controle de histórico do botão/gesto Voltar do Android para subdiálogos (BUG 2)
+  window.useModalHistory(confirmResetOpen, () => setConfirmResetOpen(false), 'settingsConfirmReset');
+  window.useModalHistory(pasteBackupOpen, () => setPasteBackupOpen(false), 'settingsPasteBackup');
+  window.useModalHistory(!!confirmRestoreData, () => setConfirmRestoreData(null), 'settingsConfirmRestore');
+  window.useModalHistory(feedbackDialog.isOpen, () => setFeedbackDialog(prev => ({ ...prev, isOpen: false })), 'settingsFeedback');
 
   if (!isOpen) return null;
 
@@ -3365,6 +3655,21 @@ window.ClientDetailModal = function ClientDetailModal({
   const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false);
   const [showInAppReceipt, setShowInAppReceipt] = React.useState(false);
 
+  // Controle de histórico do botão/gesto Voltar do Android para submodais (BUG 2)
+  window.useModalHistory(!!showDeleteConfirm, () => setShowDeleteConfirm(false), 'showDeleteConfirm');
+  window.useModalHistory(feedbackModal.isOpen, () => setFeedbackModal(prev => ({ ...prev, isOpen: false })), 'feedbackModal');
+  window.useModalHistory(!!pdfModalData, () => setPdfModalData(null), 'pdfModalData');
+  window.useModalHistory(showInAppReceipt, () => setShowInAppReceipt(false), 'showInAppReceipt');
+  window.useModalHistory(!!showPhotoModal, () => setShowPhotoModal(null), 'showPhotoModal');
+
+  // Verifica se o compartilhamento de arquivos PDF é suportado neste ambiente (BUG 1b)
+  const canSharePdf = React.useMemo(() => {
+    if (!pdfModalData || !pdfModalData.blob || !window.PdfService || typeof window.PdfService.canSharePdf !== 'function') {
+      return false;
+    }
+    return window.PdfService.canSharePdf(pdfModalData.blob);
+  }, [pdfModalData]);
+
   const {
     X, Phone, MapPin, Calendar, Clock, DollarSign,
     CheckCircle2, AlertTriangle, FileText, QrCode, MessageCircle, Trash2, Check, Crown,
@@ -3484,7 +3789,17 @@ window.ClientDetailModal = function ClientDetailModal({
   const handleSharePdfFile = async () => {
     if (!pdfModalData || !pdfModalData.blob) return;
 
-    // 1. Tenta compartilhamento nativo de arquivo (Android / iOS)
+    if (!canSharePdf) {
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Recurso Indisponível',
+        message: 'O compartilhamento direto de arquivos não é suportado pelo seu navegador atual. Utilize a opção "Enviar Extrato em Texto" ou "Baixar Arquivo PDF".',
+        variant: 'warning'
+      });
+      return;
+    }
+
+    // 1. Tenta compartilhamento nativo de arquivo via Web Share API
     const shareResult = await window.PdfService.sharePdfFile(
       pdfModalData.blob,
       pdfModalData.filename,
@@ -3493,33 +3808,24 @@ window.ClientDetailModal = function ClientDetailModal({
     );
 
     if (shareResult && shareResult.success) {
-      setPdfModalData(null);
+      if (!shareResult.cancelled) {
+        setPdfModalData(null);
+      }
       return;
     }
 
-    // 2. Se o dispositivo ou WebView não suportar compartilhamento direto de arquivos:
-    // Salva o PDF no aparelho e prepara WhatsApp
-    window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+    if (shareResult && shareResult.cancelled) {
+      return;
+    }
 
-    const phone = (client.phone || '').replace(/\D/g, '');
-    const cleanPhone = phone.startsWith('55') ? phone : (phone ? '55' + phone : '');
-    const initialText = `Olá, ${client.name}! Estou te enviando o seu extrato de conta em PDF emitido agora.`;
-    const url = cleanPhone 
-      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(initialText)}`
-      : `https://wa.me/?text=${encodeURIComponent(initialText)}`;
-
-    setPdfModalData(null);
+    // 2. Se falhar, exibe feedback visual amigável sem cair silenciosamente
     setFeedbackModal({
       isOpen: true,
-      title: 'PDF Salvo no Aparelho',
-      message: `O arquivo "${pdfModalData.filename}" foi baixado nos seus Downloads.\n\nPara enviar ao cliente, abra a conversa no WhatsApp e anexe o documento tocando no clipe 📎.`,
-      confirmText: 'Abrir WhatsApp',
-      showCancel: true,
-      cancelText: 'Fechar',
-      onConfirm: () => {
-        window.open(url, '_blank');
-      },
-      variant: 'success'
+      title: 'Não foi possível enviar o arquivo',
+      message: (shareResult && shareResult.error) 
+        ? shareResult.error 
+        : 'O dispositivo não concluiu o envio do documento. Tente a opção "Enviar Extrato em Texto" ou baixe o PDF.',
+      variant: 'warning'
     });
   };
 
@@ -4034,18 +4340,28 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={handleSharePdfFile}
-                  className="w-full p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-between transition-all shadow-sm btn-smooth group"
+                  disabled={!canSharePdf}
+                  className={`w-full p-3 rounded-xl font-semibold text-xs flex items-center justify-between transition-all shadow-sm btn-smooth group ${
+                    canSharePdf
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                      : 'bg-slate-200 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+                  }`}
+                  title={canSharePdf ? 'Enviar Arquivo PDF via WhatsApp' : 'Compartilhamento de arquivos não suportado neste navegador'}
                 >
                   <div className="flex items-center gap-2.5 text-left min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${canSharePdf ? 'bg-white/15' : 'bg-slate-300 dark:bg-slate-700'}`}>
                       <FileText size={16} />
                     </div>
                     <div className="min-w-0">
-                      <span className="block font-bold text-xs truncate">Enviar Arquivo PDF</span>
-                      <span className="block text-[10px] text-emerald-100/90 truncate">Documento timbrado para WhatsApp</span>
+                      <span className="block font-bold text-xs truncate">
+                        Enviar Arquivo PDF {canSharePdf ? '' : '(Indisponível)'}
+                      </span>
+                      <span className="block text-[10px] truncate opacity-90">
+                        {canSharePdf ? 'Documento timbrado para WhatsApp' : 'Navegador sem suporte a envio de arquivos'}
+                      </span>
                     </div>
                   </div>
-                  <ChevronRight size={16} className="text-white/70 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+                  <ChevronRight size={16} className="opacity-70 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
                 </button>
 
                 {/* 2. Enviar Extrato em Texto no WhatsApp */}
@@ -4070,16 +4386,25 @@ window.ClientDetailModal = function ClientDetailModal({
                 {/* 3. Baixar / Salvar Arquivo PDF no Dispositivo (Celular ou Computador) */}
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.PdfService && pdfModalData.blob) {
-                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      setFeedbackModal({
-                        isOpen: true,
-                        title: 'PDF Salvo',
-                        message: `O arquivo "${pdfModalData.filename}" foi baixado no seu dispositivo.`,
-                        variant: 'success'
-                      });
-                      setPdfModalData(null);
+                  onClick={async () => {
+                    if (window.PdfService && pdfModalData?.blob) {
+                      const res = await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      if (res && res.success) {
+                        setFeedbackModal({
+                          isOpen: true,
+                          title: 'PDF Salvo',
+                          message: res.message || `O arquivo "${pdfModalData.filename}" foi baixado no seu dispositivo.`,
+                          variant: 'success'
+                        });
+                        setPdfModalData(null);
+                      } else {
+                        setFeedbackModal({
+                          isOpen: true,
+                          title: 'Falha no Download',
+                          message: (res && res.error) ? res.error : 'Não foi possível salvar o arquivo diretamente no dispositivo.',
+                          variant: 'warning'
+                        });
+                      }
                     }
                   }}
                   className="w-full p-2.5 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium flex items-center justify-between transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
@@ -4218,15 +4543,24 @@ window.ClientDetailModal = function ClientDetailModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (window.PdfService && pdfModalData?.blob) {
-                      window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      setFeedbackModal({
-                        isOpen: true,
-                        title: 'PDF Salvo',
-                        message: `O arquivo "${pdfModalData.filename}" foi baixado no seu aparelho.`,
-                        variant: 'success'
-                      });
+                      const res = await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      if (res && res.success) {
+                        setFeedbackModal({
+                          isOpen: true,
+                          title: 'PDF Salvo',
+                          message: res.message || `O arquivo "${pdfModalData.filename}" foi baixado no seu aparelho.`,
+                          variant: 'success'
+                        });
+                      } else {
+                        setFeedbackModal({
+                          isOpen: true,
+                          title: 'Falha no Download',
+                          message: (res && res.error) ? res.error : 'Não foi possível salvar o arquivo diretamente no dispositivo.',
+                          variant: 'warning'
+                        });
+                      }
                     }
                   }}
                   className="py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
@@ -4237,7 +4571,13 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={handleSharePdfFile}
-                  className="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                  disabled={!canSharePdf}
+                  className={`py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm ${
+                    canSharePdf
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                      : 'bg-slate-300 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
+                  }`}
+                  title={canSharePdf ? 'Enviar PDF via WhatsApp' : 'Compartilhamento não suportado neste navegador'}
                 >
                   <MessageCircle size={15} />
                   <span className="truncate">Enviar PDF</span>
@@ -5976,6 +6316,14 @@ function App() {
   const [installModalOpen, setInstallModalOpen] = React.useState(false);
   const [paywallReason, setPaywallReason] = React.useState(null);
 
+  // Controle de histórico do botão/gesto Voltar do Android (BUG 2)
+  window.useModalHistory(!!selectedClientId, () => setSelectedClientId(null), 'ClientDetailModal');
+  window.useModalHistory(whatsAppModalData.open, () => setWhatsAppModalData({ open: false, client: null, pixPayload: null, targetInstallment: null }), 'WhatsAppModal');
+  window.useModalHistory(pixModalData.open, () => setPixModalData({ open: false, client: null }), 'PixModal');
+  window.useModalHistory(settingsModalOpen, () => setSettingsModalOpen(false), 'SettingsModal');
+  window.useModalHistory(rewardedModalOpen, () => setRewardedModalOpen(false), 'RewardedAdModal');
+  window.useModalHistory(installModalOpen, () => setInstallModalOpen(false), 'InstallPwaModal');
+
   // Aplica classe de tema inicial no documento
   React.useEffect(() => {
     const savedTheme = localStorage.getItem('cf_theme');
@@ -6187,11 +6535,97 @@ function App() {
   );
 }
 
+/**
+ * ErrorBoundary React: Captura erros não tratados na árvore de componentes e exibe interface
+ * amigável de recuperação em vez de tela preta silenciosa (BUG 4a).
+ */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error: error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('[CadernoFiado ErrorBoundary]', error, errorInfo);
+    try {
+      if (window.__appErrors) {
+        window.__appErrors.push(`[React Error] ${error?.message || error}`);
+      }
+    } catch(e) {}
+  }
+
+  handleReload = () => {
+    window.location.reload();
+  };
+
+  handleReset = () => {
+    if (window.confirm('Deseja restaurar as configurações padrão do aplicativo? Os dados locais serão redefinidos.')) {
+      try {
+        localStorage.clear();
+      } catch(e) {}
+      window.location.reload();
+    }
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 selection:bg-rose-500 selection:text-white font-sans">
+          <div className="w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-center space-y-4">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center text-2xl font-bold shadow-sm">
+              ⚠️
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white tracking-tight">Ops! Algo deu errado</h2>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Ocorreu uma falha inesperada no aplicativo, mas seus dados continuam seguros.
+              </p>
+            </div>
+
+            {this.state.error && (
+              <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80 text-left overflow-x-auto text-[11px] font-mono text-rose-300/90 max-h-28">
+                {this.state.error.message || String(this.state.error)}
+              </div>
+            )}
+
+            <div className="pt-2 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={this.handleReload}
+                className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all active:scale-95"
+              >
+                Recarregar Aplicativo
+              </button>
+              <button
+                type="button"
+                onClick={this.handleReset}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
+              >
+                Restaurar Padrões
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 // Renderiza a aplicação React no DOM
 const rootElement = document.getElementById('root');
 if (rootElement) {
   const root = ReactDOM.createRoot(rootElement);
-  root.render(<App />);
+  root.render(
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
 }
 
 

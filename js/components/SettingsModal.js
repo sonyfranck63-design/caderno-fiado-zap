@@ -23,6 +23,12 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
     }
   }, [isOpen, shopSettings]);
 
+  // Controle de histórico do botão/gesto Voltar do Android para subdiálogos (BUG 2)
+  window.useModalHistory(confirmResetOpen, () => setConfirmResetOpen(false), 'settingsConfirmReset');
+  window.useModalHistory(pasteBackupOpen, () => setPasteBackupOpen(false), 'settingsPasteBackup');
+  window.useModalHistory(!!confirmRestoreData, () => setConfirmRestoreData(null), 'settingsConfirmRestore');
+  window.useModalHistory(feedbackDialog.isOpen, () => setFeedbackDialog(prev => ({ ...prev, isOpen: false })), 'settingsFeedback');
+
   if (!isOpen) return null;
 
   const handleChange = (field, val) => {
