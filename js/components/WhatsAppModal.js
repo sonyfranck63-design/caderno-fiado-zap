@@ -47,7 +47,7 @@ window.WhatsAppModal = function WhatsAppModal({
       : '';
 
     if (tone === 'amigavel') {
-      defaultMessage = `Olá, ${client.name}! Tudo bem? 👋\n\nPassando para lembrar da sua parcela na loja *${shopName}*:\n\n• Compra: ${desc}\n• Parcela: ${current}/${total}\n• Valor: ${formattedCharge}${partialNotice}\n• Vencimento: ${due}\n• Saldo total da conta: ${formattedTotalDebt}\n\nQualquer dúvida estou à disposição! Obrigado.`;
+      defaultMessage = `Oi ${client.name}, tudo bem? Passando só para lembrar da sua parcela ${current}/${total} de ${desc} no valor de ${formattedCharge}${partialNotice}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
     } else if (tone === 'hoje') {
       defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nLembrando que hoje é o vencimento da sua parcela na *${shopName}*:\n\n• Compra: ${desc}\n• Parcela: ${current}/${total}\n• Valor: ${formattedCharge}${partialNotice}\n• Vencimento: Hoje (${due})\n\nAssim que puder acertar, me envie o comprovante por aqui. Muito obrigado!`;
     } else if (tone === 'acordo') {
@@ -65,7 +65,7 @@ window.WhatsAppModal = function WhatsAppModal({
       : '';
 
     if (tone === 'amigavel') {
-      defaultMessage = `Olá, ${client.name}! Tudo bem? 👋\n\nPassando para te enviar o resumo da sua compra anotada na *${shopName}*:\n\n• Item: ${desc}\n• Valor: ${formattedCharge}${partialNotice}\n• Vencimento: ${due}\n• Saldo total da conta: ${formattedTotalDebt}\n\nQualquer dúvida fico à sua disposição!`;
+      defaultMessage = `Oi ${client.name}, tudo bem? Passando só para te avisar que a sua compra de ${desc} fechou em ${formattedCharge}${partialNotice}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
     } else if (tone === 'hoje') {
       defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nLembrando que hoje vence sua compra de *${desc}* no valor de *${formattedCharge}* na *${shopName}*.\n\nQualquer dúvida, pode me chamar por aqui. Obrigado!`;
     } else if (tone === 'acordo') {
@@ -82,7 +82,7 @@ window.WhatsAppModal = function WhatsAppModal({
       : 'compras registradas';
 
     if (tone === 'amigavel') {
-      defaultMessage = `Olá, ${client.name}! Tudo bem? 👋\n\nPassando para enviar o resumo atualizado da sua conta na *${shopName}*:\n\n• Compras: ${itemsDescription}\n• Saldo total em aberto: ${formattedCharge}\n\nQualquer dúvida fico à sua disposição!`;
+      defaultMessage = `Oi ${client.name}, tudo bem? O total do seu caderno fechou em ${formattedCharge}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
     } else if (tone === 'hoje') {
       defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nHoje é a data combinada para o acerto da sua conta na *${shopName}*:\n\n• Saldo a acertar: ${formattedCharge}\n\nPodemos acertar via PIX ou pessoalmente. Muito obrigado!`;
     } else if (tone === 'acordo') {

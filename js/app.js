@@ -21,6 +21,8 @@ function App() {
   const [rewardedModalOpen, setRewardedModalOpen] = React.useState(false);
   const [installModalOpen, setInstallModalOpen] = React.useState(false);
   const [massBillingModalOpen, setMassBillingModalOpen] = React.useState(false);
+  const [backupModalOpen, setBackupModalOpen] = React.useState(false);
+  const [signatureModalData, setSignatureModalData] = React.useState({ open: false, client: null });
   const [paywallReason, setPaywallReason] = React.useState(null);
 
   // Controle de histórico do botão/gesto Voltar do Android (BUG 2)
@@ -31,6 +33,8 @@ function App() {
   window.useModalHistory(rewardedModalOpen, () => setRewardedModalOpen(false), 'RewardedAdModal');
   window.useModalHistory(installModalOpen, () => setInstallModalOpen(false), 'InstallPwaModal');
   window.useModalHistory(massBillingModalOpen, () => setMassBillingModalOpen(false), 'MassBillingModal');
+  window.useModalHistory(backupModalOpen, () => setBackupModalOpen(false), 'BackupModal');
+  window.useModalHistory(signatureModalData.open, () => setSignatureModalData({ open: false, client: null }), 'SignatureModal');
 
   // Aplica classe de tema inicial no documento
   React.useEffect(() => {
@@ -102,6 +106,7 @@ function App() {
           vipInfo={vipInfo}
           remainingTime={remainingPassTime}
           onOpenSettings={() => setSettingsModalOpen(true)}
+          onOpenBackup={() => setBackupModalOpen(true)}
           onOpenVip={() => {
             setPaywallReason(null);
             setActiveTab('vip');
@@ -251,6 +256,14 @@ function App() {
           onClose={() => setMassBillingModalOpen(false)}
           clients={clients}
           shopSettings={shopSettings}
+        />
+
+        {/* Modal de Backup na Nuvem */}
+        <window.BackupModal
+          isOpen={backupModalOpen}
+          onClose={() => setBackupModalOpen(false)}
+          isVip={vipInfo.isVip}
+          onTriggerPaywall={handleTriggerPaywall}
         />
 
       </div>

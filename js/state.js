@@ -588,7 +588,15 @@ window.AppState = (function() {
   function fromBase64Url(b64url) {
     let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4 !== 0) b64 += '=';
-    return decodeURIComponent(escape(atob(b64)));
+    try {
+      return decodeURIComponent(escape(atob(b64)));
+    } catch (e) {
+      try {
+        return atob(b64);
+      } catch (err) {
+        return "{}";
+      }
+    }
   }
 
   const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
@@ -915,13 +923,24 @@ window.AppState = (function() {
       salesCount += (c.transactions || []).filter(t => t.type === 'sale').length;
     });
 
+    let backupFile = null;
+    if (typeof File !== 'undefined') {
+      backupFile = new File([blob], filename, { type: 'application/json' });
+    }
+
     // 1. Web Share API para Android/iOS se suportado (permite salvar no Drive, WhatsApp ou pasta do celular)
-    if (typeof File !== 'undefined' && navigator.canShare) {
+    if (typeof navigator !== 'undefined' && navigator.share && backupFile) {
       try {
-        const file = new File([blob], filename, { type: 'application/json' });
-        if (navigator.canShare({ files: [file] })) {
+        if (navigator.canShare && navigator.canShare({ files: [backupFile] })) {
           await navigator.share({
-            files: [file],
+            files: [backupFile],
+            title: 'Backup CadernoFiado',
+            text: 'Backup completo dos clientes e fiados do CadernoFiado.'
+          });
+          return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount };
+        } else {
+          await navigator.share({
+            files: [backupFile],
             title: 'Backup CadernoFiado',
             text: 'Backup completo dos clientes e fiados do CadernoFiado.'
           });
@@ -931,24 +950,33 @@ window.AppState = (function() {
         if (err.name === 'AbortError') {
           return { success: true, method: 'cancelled', filename, clientCount: data.clients.length, salesCount };
         }
-        console.warn('Share API falhou no backup, tentando download direto:', err);
+        console.warn('Share API falhou no backup, tentando fallback 1:', err);
       }
     }
 
-    // 2. Download direto com atraso seguro de revoke para não ser abortado no Chrome Mobile/Android
+    // 2. Fallback 1: Bypass criando URL local e abrindo em nova aba
     try {
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-      return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount };
+      const win = window.open(url, '_blank');
+      if (win) {
+        return { success: true, method: 'window.open', filename, clientCount: data.clients.length, salesCount };
+      }
     } catch (e) {
-      return { success: false, error: e.message };
+      console.warn('Fallback 1 window.open falhou, tentando fallback 2:', e);
     }
+
+    // 3. Fallback 2: Data URI convertendo no FileReader
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        window.location.href = reader.result;
+        resolve({ success: true, method: 'location.href', filename, clientCount: data.clients.length, salesCount });
+      };
+      reader.onerror = () => {
+        resolve({ success: false, error: 'Falha completa na exportação do arquivo.' });
+      };
+      reader.readAsDataURL(blob);
+    });
   }
 
   /**

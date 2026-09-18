@@ -299,76 +299,16 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
               </div>
             </div>
 
-            {/* Seção de Backup e Segurança dos Dados */}
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3 transition-colors">
-              <h4 className="text-xs font-bold text-slate-900 dark:text-slate-300 flex items-center gap-1.5">
-                <ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" />
-                Backup e Segurança dos Seus Dados
-              </h4>
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                Seus fiados ficam salvos de forma privada neste aparelho. Faça backup para nunca perder suas anotações mesmo trocando de celular.
-              </p>
-
-              {/* Botões de Ação de Backup */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleExportBackup}
-                  className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center space-x-1.5 shadow-sm transition-all active:scale-95 btn-smooth"
-                >
-                  <Download size={14} />
-                  <span>Exportar / Salvar</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCopyBackupText}
-                  className="py-2.5 px-3 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
-                >
-                  <Copy size={14} />
-                  <span>Copiar Código</span>
-                </button>
-              </div>
-
-              {/* Botões de Restauração */}
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
-                >
-                  <Upload size={14} />
-                  <span>Restaurar Arquivo</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPasteBackupOpen(true)}
-                  className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
-                >
-                  <FileText size={14} />
-                  <span>Colar Backup</span>
-                </button>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="*/*,.json,application/json,text/plain"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
-
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80">
-                <button
-                  type="button"
-                  onClick={() => setConfirmResetOpen(true)}
-                  className="text-[11px] text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 flex items-center space-x-1 transition-colors btn-smooth"
-                >
-                  <Trash2 size={13} />
-                  <span>Limpar dados locais deste aparelho</span>
-                </button>
-              </div>
+            {/* Seção de Limpeza de Dados */}
+            <div className="p-3.5 bg-rose-50/50 dark:bg-rose-950/20 rounded-xl border border-rose-100 dark:border-rose-900/30 transition-colors">
+              <button
+                type="button"
+                onClick={() => setConfirmResetOpen(true)}
+                className="w-full text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 font-medium flex items-center justify-center space-x-1.5 transition-colors btn-smooth"
+              >
+                <Trash2 size={15} />
+                <span>Limpar todos os dados locais deste aparelho</span>
+              </button>
             </div>
 
           </form>

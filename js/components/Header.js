@@ -3,8 +3,8 @@
  * Visual limpo e despoluído inspirado em interfaces nativas.
  */
 
-window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpenVip, isDark, onToggleTheme, shopSettings, onOpenInstall }) {
-  const { Crown, Settings, Moon, Sun, Clock } = window.Icons || {};
+window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpenBackup, onOpenVip, isDark, onToggleTheme, shopSettings, onOpenInstall }) {
+  const { Crown, Settings, Moon, Sun, Clock, Cloud } = window.Icons || {};
 
   return (
     <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0e141f]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/70 px-4 py-3 transition-colors duration-200">
@@ -70,6 +70,16 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
             title="Alternar Tema"
           >
             {isDark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-slate-600" />}
+          </button>
+
+          {/* Botão de Nuvem (Backup) */}
+          <button
+            onClick={onOpenBackup}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 transition-colors btn-smooth"
+            aria-label="Backup de Segurança"
+            title="Backup de Segurança"
+          >
+            <Cloud size={17} />
           </button>
 
           {/* Botão de Configurações */}

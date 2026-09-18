@@ -78,7 +78,12 @@ window.VipTab = function VipTab({
           <Crown size={18} className="text-amber-500 dark:text-amber-400 flex-shrink-0 mt-0.5" />
           <div>
             <span className="font-bold block">
-              {triggerReason === 'pix' ? 'Cobrança PIX Automática' : 'Emissão de Recibo em PDF Timbrado'} é um recurso VIP!
+              {triggerReason === 'pix' && 'Cobrança PIX Automática é um recurso VIP!'}
+              {triggerReason === 'pdf' && 'Emissão de Recibos em PDF é um recurso VIP!'}
+              {triggerReason === 'signature' && 'A Assinatura Anticalote é um recurso VIP!'}
+              {triggerReason === 'backup' && 'O Backup de Segurança é um recurso VIP!'}
+              {triggerReason === 'mass_billing' && 'A Cobrança em Massa é um recurso VIP!'}
+              {(!triggerReason || !['pix', 'pdf', 'signature', 'backup', 'mass_billing'].includes(triggerReason)) && 'Esse é um recurso VIP exclusivo!'}
             </span>
             <span className="text-[11px] text-slate-600 dark:text-slate-300">
               Assine um plano a partir de R$ 9,90/mês ou assista a um vídeo rápido para desbloquear por 24h.
@@ -161,9 +166,12 @@ window.VipTab = function VipTab({
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-2 leading-tight">
                 CadernoFiado <span className="text-emerald-600 dark:text-emerald-400">PRO</span>
               </h2>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">
-                Cobrança com QR Code PIX automático no WhatsApp e extratos timbrados em PDF para seus clientes.
-              </p>
+              <ul className="text-left text-xs text-slate-700 dark:text-slate-300 mt-3 mx-auto max-w-xs space-y-2">
+                <li className="flex items-center gap-2"><FileText size={14} className="text-emerald-500" /> Extratos em PDF com a Logo do negócio</li>
+                <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> Assinatura Anticalote de Clientes</li>
+                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-emerald-500" /> Backup de segurança na nuvem</li>
+                <li className="flex items-center gap-2"><Star size={14} className="text-emerald-500" /> Zero propagandas no aplicativo</li>
+              </ul>
             </div>
 
             {/* Caixa do ID do Celular */}

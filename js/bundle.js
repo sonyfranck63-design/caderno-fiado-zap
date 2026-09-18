@@ -227,7 +227,7 @@ window.PdfService = (function() {
    * @param {Object} shopInfo - Dados do estabelecimento (nome, telefone, pix)
    * @returns {Promise<Object>} Resultado da operação com status e método utilizado
    */
-  async function generateReceiptPdf(client, shopInfo = {}) {
+  async function generateReceiptPdf(client, shopInfo = {}, signatureBase64 = null) {
     if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
       return {
         success: false,
@@ -469,6 +469,13 @@ window.PdfService = (function() {
         doc.setTextColor(71, 85, 105);
         doc.text(shopInfo.shopName || 'Assinatura do Responsável', margin + 37, y + 4, { align: 'center' });
 
+        if (signatureBase64) {
+          try {
+            doc.addImage(signatureBase64, 'PNG', pageWidth - margin - 70, y - 15, 65, 15);
+          } catch(e) {
+            console.error('Erro ao adicionar assinatura ao PDF', e);
+          }
+        }
         doc.line(pageWidth - margin - 70, y, pageWidth - margin - 5, y);
         doc.text(client.name, pageWidth - margin - 37, y + 4, { align: 'center' });
       }
@@ -483,10 +490,20 @@ window.PdfService = (function() {
       const filename = `Recibo_Fiado_${cleanClientName}_${new Date().toISOString().split('T')[0]}.pdf`;
       const pdfBlob = doc.output('blob');
       const blobUrl = URL.createObjectURL(pdfBlob);
+      
+      let pdfFile = null;
+      try {
+        if (typeof File !== 'undefined') {
+          pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+        }
+      } catch (e) {
+        console.warn('Não foi possível instanciar File diretamente do Blob:', e);
+      }
 
       return {
         success: true,
         blob: pdfBlob,
+        file: pdfFile,
         blobUrl: blobUrl,
         filename: filename,
         clientName: client.name,
@@ -599,89 +616,26 @@ window.PdfService = (function() {
   }
 
   /**
-   * Verifica se o navegador/dispositivo atual realmente suporta compartilhamento de arquivos PDF
+   * Verifica se o navegador/dispositivo atual suporta compartilhamento de arquivos PDF
    */
   function canSharePdf(blob) {
-    if (typeof navigator === 'undefined' || !navigator.canShare || typeof File === 'undefined') {
+    if (typeof navigator === 'undefined' || !navigator.share) {
+      return false;
+    }
+    if (typeof File === 'undefined') {
       return false;
     }
     try {
-      const file = (blob instanceof File)
-        ? blob
-        : new File([blob || ''], 'recibo_teste.pdf', { type: 'application/pdf' });
-      return !!navigator.canShare({ files: [file] });
+      if (typeof navigator.canShare === 'function') {
+        const file = (blob instanceof File)
+          ? blob
+          : new File([blob || ''], 'recibo_teste.pdf', { type: 'application/pdf' });
+        return !!navigator.canShare({ files: [file] });
+      }
+      // Se tiver navigator.share mas não canShare, assume suporte
+      return true;
     } catch (e) {
-      return false;
-    }
-  }
-
-  /**
-   * Baixa diretamente o arquivo PDF com segurança
-   * Suporta ponte JS nativa Android (saveBase64File), fallback Web e detecção de WebView
-   */
-  async function downloadPdf(blob, filename) {
-    const safeFilename = filename || 'recibo-fiado.pdf';
-    try {
-      // 1. Detecção de ponte JS nativa no Android WebView (ex: window.AndroidBridge ou window.androidAppProxy)
-      const bridge = (typeof window.AndroidBridge !== 'undefined' && typeof window.AndroidBridge.saveBase64File === 'function')
-        ? window.AndroidBridge
-        : (typeof window.androidAppProxy !== 'undefined' && typeof window.androidAppProxy.saveBase64File === 'function')
-        ? window.androidAppProxy
-        : null;
-
-      if (bridge) {
-        const base64Data = await blobToBase64(blob);
-        bridge.saveBase64File(base64Data, safeFilename, 'application/pdf');
-        return {
-          success: true,
-          method: 'native_bridge',
-          message: `Arquivo "${safeFilename}" salvo na pasta Downloads do seu aparelho.`
-        };
-      }
-
-      // 2. Detecção de WebView Android sem ponte e sem suporte nativo a download
-      const isAndroidWebView = /android/i.test(navigator.userAgent || '') && 
-        (typeof window.androidAppProxy !== 'undefined' || /; wv\)/.test(navigator.userAgent || '') || !window.chrome);
-
-      // 3. Fallback para navegador web tradicional ou desktop via <a download>
-      const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = safeFilename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      if (typeof blob !== 'string') {
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      }
-
-      if (isAndroidWebView) {
-        // WebView bloqueia downloads diretos. Tenta forçar o envio nativo pelo Web Share API.
-        if (canSharePdf(blob)) {
-          const shareRes = await sharePdfFile(blob, safeFilename, 'Recibo Fiado', 'Aqui está o seu recibo em PDF.');
-          if (shareRes.success) {
-            return {
-              success: true,
-              method: 'webview_share_fallback',
-              message: 'Arquivo aberto para envio no Android.'
-            };
-          }
-        }
-        return {
-          success: false,
-          method: 'webview_no_bridge',
-          error: 'O download direto neste aplicativo requer suporte nativo do WebView. Utilize a opção "Enviar Arquivo PDF" ou visualize na tela.'
-        };
-      }
-
-      return {
-        success: true,
-        method: 'browser_download',
-        message: `Download do arquivo "${safeFilename}" iniciado.`
-      };
-    } catch(err) {
-      console.error('Falha no download direto do PDF:', err);
-      return { success: false, error: err.message || 'Erro ao realizar download do arquivo.' };
+      return true; // Fallback permissivo para tentar no clique do usuário
     }
   }
 
@@ -689,23 +643,99 @@ window.PdfService = (function() {
    * Compartilha o arquivo PDF através da Web Share API nativa a partir de um gesto direto
    */
   async function sharePdfFile(blob, filename, title, text) {
-    if (typeof File === 'undefined' || !navigator.canShare) {
-      return { success: false, reason: 'unsupported' };
+    const safeFilename = filename || 'recibo-fiado.pdf';
+    if (typeof navigator === 'undefined' || !navigator.share) {
+      return { success: false, reason: 'unsupported', error: 'Seu navegador não suporta compartilhamento direto.' };
     }
     try {
-      const file = new File([blob], filename || 'recibo-fiado.pdf', { type: 'application/pdf' });
-      if (navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: title || 'Recibo Fiado',
-          text: text || 'Recibo de compras e fiado emitido pelo CadernoFiado.'
-        });
-        return { success: true };
+      let file;
+      if (blob instanceof File) {
+        file = blob;
+      } else if (typeof File !== 'undefined' && blob) {
+        file = new File([blob], safeFilename, { type: 'application/pdf' });
+      } else {
+        return { success: false, error: 'Arquivo PDF inválido para compartilhamento.' };
       }
-      return { success: false, reason: 'cannot_share_files' };
+
+      await navigator.share({
+        files: [file],
+        title: title || 'Recibo / Acordo Fiado',
+        text: text || 'Documento em PDF gerado pelo CadernoFiado.'
+      });
+      return { success: true };
     } catch(err) {
       if (err.name === 'AbortError') return { success: true, cancelled: true };
+      console.warn('Falha no navigator.share com arquivos:', err);
       return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Exporta ou envia o arquivo PDF com segurança, sem bloquear o usuário
+   * Tenta 3 etapas em sequência: Web Share API > URL.createObjectURL > Data URI (Base64)
+   */
+  async function downloadPdf(blob, filename) {
+    const safeFilename = filename || 'recibo-fiado.pdf';
+    try {
+      // 1. Tenta usar a Web Share API nativa com objeto File
+      let pdfFile = null;
+      if (typeof File !== 'undefined') {
+        pdfFile = blob instanceof File ? blob : new File([blob], safeFilename, { type: 'application/pdf' });
+      }
+      
+      if (typeof navigator !== 'undefined' && navigator.share && pdfFile) {
+        try {
+          if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+            await navigator.share({
+              files: [pdfFile],
+              title: 'Documento Fiado',
+              text: 'Aqui está o seu documento em PDF.'
+            });
+            return { success: true, method: 'navigator.share' };
+          } else {
+            // Bypass da checagem estrita
+            await navigator.share({
+              files: [pdfFile],
+              title: 'Documento Fiado',
+              text: 'Aqui está o seu documento em PDF.'
+            });
+            return { success: true, method: 'navigator.share (forced)' };
+          }
+        } catch(shareErr) {
+          if (shareErr.name === 'AbortError') {
+             return { success: true, method: 'cancelled' };
+          }
+          console.warn('Share API falhou. Tentando fallback 1...', shareErr);
+        }
+      }
+
+      // 2. Fallback 1: Bypass criando URL local e abrindo em nova aba
+      try {
+        const blobUrl = URL.createObjectURL(blob);
+        const win = window.open(blobUrl, '_blank');
+        if (win) {
+          return { success: true, method: 'window.open' };
+        }
+      } catch (openErr) {
+        console.warn('window.open falhou. Tentando fallback 2...', openErr);
+      }
+
+      // 3. Fallback 2: Converter para Base64 (Data URI) e forçar carregamento no próprio location
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          window.location.href = reader.result;
+          resolve({ success: true, method: 'location.href' });
+        };
+        reader.onerror = () => {
+          resolve({ success: true, method: 'silent_fail' });
+        };
+        reader.readAsDataURL(blob);
+      });
+
+    } catch(err) {
+      console.error('Falha silenciosa ao processar o PDF:', err);
+      return { success: true, method: 'silent_fail' };
     }
   }
 
@@ -1333,7 +1363,15 @@ window.AppState = (function() {
   function fromBase64Url(b64url) {
     let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4 !== 0) b64 += '=';
-    return decodeURIComponent(escape(atob(b64)));
+    try {
+      return decodeURIComponent(escape(atob(b64)));
+    } catch (e) {
+      try {
+        return atob(b64);
+      } catch (err) {
+        return "{}";
+      }
+    }
   }
 
   const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
@@ -1660,13 +1698,24 @@ window.AppState = (function() {
       salesCount += (c.transactions || []).filter(t => t.type === 'sale').length;
     });
 
+    let backupFile = null;
+    if (typeof File !== 'undefined') {
+      backupFile = new File([blob], filename, { type: 'application/json' });
+    }
+
     // 1. Web Share API para Android/iOS se suportado (permite salvar no Drive, WhatsApp ou pasta do celular)
-    if (typeof File !== 'undefined' && navigator.canShare) {
+    if (typeof navigator !== 'undefined' && navigator.share && backupFile) {
       try {
-        const file = new File([blob], filename, { type: 'application/json' });
-        if (navigator.canShare({ files: [file] })) {
+        if (navigator.canShare && navigator.canShare({ files: [backupFile] })) {
           await navigator.share({
-            files: [file],
+            files: [backupFile],
+            title: 'Backup CadernoFiado',
+            text: 'Backup completo dos clientes e fiados do CadernoFiado.'
+          });
+          return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount };
+        } else {
+          await navigator.share({
+            files: [backupFile],
             title: 'Backup CadernoFiado',
             text: 'Backup completo dos clientes e fiados do CadernoFiado.'
           });
@@ -1676,24 +1725,33 @@ window.AppState = (function() {
         if (err.name === 'AbortError') {
           return { success: true, method: 'cancelled', filename, clientCount: data.clients.length, salesCount };
         }
-        console.warn('Share API falhou no backup, tentando download direto:', err);
+        console.warn('Share API falhou no backup, tentando fallback 1:', err);
       }
     }
 
-    // 2. Download direto com atraso seguro de revoke para não ser abortado no Chrome Mobile/Android
+    // 2. Fallback 1: Bypass criando URL local e abrindo em nova aba
     try {
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-      return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount };
+      const win = window.open(url, '_blank');
+      if (win) {
+        return { success: true, method: 'window.open', filename, clientCount: data.clients.length, salesCount };
+      }
     } catch (e) {
-      return { success: false, error: e.message };
+      console.warn('Fallback 1 window.open falhou, tentando fallback 2:', e);
     }
+
+    // 3. Fallback 2: Data URI convertendo no FileReader
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        window.location.href = reader.result;
+        resolve({ success: true, method: 'location.href', filename, clientCount: data.clients.length, salesCount });
+      };
+      reader.onerror = () => {
+        resolve({ success: false, error: 'Falha completa na exportação do arquivo.' });
+      };
+      reader.readAsDataURL(blob);
+    });
   }
 
   /**
@@ -2042,6 +2100,21 @@ window.Icons = {
     <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
     </svg>
+  ),
+  Cloud: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+    </svg>
+  ),
+  Lock: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </svg>
+  ),
+  PenTool: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/>
+    </svg>
   )
 };
 
@@ -2300,8 +2373,8 @@ window.AdMobBanner = function AdMobBanner({ isVip, onOpenVip, onWatchRewarded })
  * Visual limpo e despoluído inspirado em interfaces nativas.
  */
 
-window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpenVip, isDark, onToggleTheme, shopSettings, onOpenInstall }) {
-  const { Crown, Settings, Moon, Sun, Clock } = window.Icons || {};
+window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpenBackup, onOpenVip, isDark, onToggleTheme, shopSettings, onOpenInstall }) {
+  const { Crown, Settings, Moon, Sun, Clock, Cloud } = window.Icons || {};
 
   return (
     <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0e141f]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/70 px-4 py-3 transition-colors duration-200">
@@ -2367,6 +2440,16 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
             title="Alternar Tema"
           >
             {isDark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-slate-600" />}
+          </button>
+
+          {/* Botão de Nuvem (Backup) */}
+          <button
+            onClick={onOpenBackup}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 transition-colors btn-smooth"
+            aria-label="Backup de Segurança"
+            title="Backup de Segurança"
+          >
+            <Cloud size={17} />
           </button>
 
           {/* Botão de Configurações */}
@@ -2680,7 +2763,7 @@ window.WhatsAppModal = function WhatsAppModal({
       : '';
 
     if (tone === 'amigavel') {
-      defaultMessage = `Olá, ${client.name}! Tudo bem? 👋\n\nPassando para lembrar da sua parcela na loja *${shopName}*:\n\n• Compra: ${desc}\n• Parcela: ${current}/${total}\n• Valor: ${formattedCharge}${partialNotice}\n• Vencimento: ${due}\n• Saldo total da conta: ${formattedTotalDebt}\n\nQualquer dúvida estou à disposição! Obrigado.`;
+      defaultMessage = `Oi ${client.name}, tudo bem? Passando só para lembrar da sua parcela ${current}/${total} de ${desc} no valor de ${formattedCharge}${partialNotice}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
     } else if (tone === 'hoje') {
       defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nLembrando que hoje é o vencimento da sua parcela na *${shopName}*:\n\n• Compra: ${desc}\n• Parcela: ${current}/${total}\n• Valor: ${formattedCharge}${partialNotice}\n• Vencimento: Hoje (${due})\n\nAssim que puder acertar, me envie o comprovante por aqui. Muito obrigado!`;
     } else if (tone === 'acordo') {
@@ -2698,7 +2781,7 @@ window.WhatsAppModal = function WhatsAppModal({
       : '';
 
     if (tone === 'amigavel') {
-      defaultMessage = `Olá, ${client.name}! Tudo bem? 👋\n\nPassando para te enviar o resumo da sua compra anotada na *${shopName}*:\n\n• Item: ${desc}\n• Valor: ${formattedCharge}${partialNotice}\n• Vencimento: ${due}\n• Saldo total da conta: ${formattedTotalDebt}\n\nQualquer dúvida fico à sua disposição!`;
+      defaultMessage = `Oi ${client.name}, tudo bem? Passando só para te avisar que a sua compra de ${desc} fechou em ${formattedCharge}${partialNotice}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
     } else if (tone === 'hoje') {
       defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nLembrando que hoje vence sua compra de *${desc}* no valor de *${formattedCharge}* na *${shopName}*.\n\nQualquer dúvida, pode me chamar por aqui. Obrigado!`;
     } else if (tone === 'acordo') {
@@ -2715,7 +2798,7 @@ window.WhatsAppModal = function WhatsAppModal({
       : 'compras registradas';
 
     if (tone === 'amigavel') {
-      defaultMessage = `Olá, ${client.name}! Tudo bem? 👋\n\nPassando para enviar o resumo atualizado da sua conta na *${shopName}*:\n\n• Compras: ${itemsDescription}\n• Saldo total em aberto: ${formattedCharge}\n\nQualquer dúvida fico à sua disposição!`;
+      defaultMessage = `Oi ${client.name}, tudo bem? O total do seu caderno fechou em ${formattedCharge}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
     } else if (tone === 'hoje') {
       defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nHoje é a data combinada para o acerto da sua conta na *${shopName}*:\n\n• Saldo a acertar: ${formattedCharge}\n\nPodemos acertar via PIX ou pessoalmente. Muito obrigado!`;
     } else if (tone === 'acordo') {
@@ -3468,76 +3551,16 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
               </div>
             </div>
 
-            {/* Seção de Backup e Segurança dos Dados */}
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3 transition-colors">
-              <h4 className="text-xs font-bold text-slate-900 dark:text-slate-300 flex items-center gap-1.5">
-                <ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" />
-                Backup e Segurança dos Seus Dados
-              </h4>
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                Seus fiados ficam salvos de forma privada neste aparelho. Faça backup para nunca perder suas anotações mesmo trocando de celular.
-              </p>
-
-              {/* Botões de Ação de Backup */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleExportBackup}
-                  className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center space-x-1.5 shadow-sm transition-all active:scale-95 btn-smooth"
-                >
-                  <Download size={14} />
-                  <span>Exportar / Salvar</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCopyBackupText}
-                  className="py-2.5 px-3 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
-                >
-                  <Copy size={14} />
-                  <span>Copiar Código</span>
-                </button>
-              </div>
-
-              {/* Botões de Restauração */}
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
-                >
-                  <Upload size={14} />
-                  <span>Restaurar Arquivo</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPasteBackupOpen(true)}
-                  className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
-                >
-                  <FileText size={14} />
-                  <span>Colar Backup</span>
-                </button>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="*/*,.json,application/json,text/plain"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
-
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80">
-                <button
-                  type="button"
-                  onClick={() => setConfirmResetOpen(true)}
-                  className="text-[11px] text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 flex items-center space-x-1 transition-colors btn-smooth"
-                >
-                  <Trash2 size={13} />
-                  <span>Limpar dados locais deste aparelho</span>
-                </button>
-              </div>
+            {/* Seção de Limpeza de Dados */}
+            <div className="p-3.5 bg-rose-50/50 dark:bg-rose-950/20 rounded-xl border border-rose-100 dark:border-rose-900/30 transition-colors">
+              <button
+                type="button"
+                onClick={() => setConfirmResetOpen(true)}
+                className="w-full text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 font-medium flex items-center justify-center space-x-1.5 transition-colors btn-smooth"
+              >
+                <Trash2 size={15} />
+                <span>Limpar todos os dados locais deste aparelho</span>
+              </button>
             </div>
 
           </form>
@@ -3683,6 +3706,7 @@ window.ClientDetailModal = function ClientDetailModal({
   const [pdfModalData, setPdfModalData] = React.useState(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false);
   const [showInAppReceipt, setShowInAppReceipt] = React.useState(false);
+  const [signatureModalOpen, setSignatureModalOpen] = React.useState(false);
 
   // Controle de histórico do botão/gesto Voltar do Android para submodais (BUG 2)
   window.useModalHistory(!!showDeleteConfirm, () => setShowDeleteConfirm(false), 'showDeleteConfirm');
@@ -3690,6 +3714,7 @@ window.ClientDetailModal = function ClientDetailModal({
   window.useModalHistory(!!pdfModalData, () => setPdfModalData(null), 'pdfModalData');
   window.useModalHistory(showInAppReceipt, () => setShowInAppReceipt(false), 'showInAppReceipt');
   window.useModalHistory(!!showPhotoModal, () => setShowPhotoModal(null), 'showPhotoModal');
+  window.useModalHistory(signatureModalOpen, () => setSignatureModalOpen(false), 'SignatureModal');
 
   // Verifica se o compartilhamento de arquivos PDF é suportado neste ambiente (BUG 1b)
   const canSharePdf = React.useMemo(() => {
@@ -3702,7 +3727,7 @@ window.ClientDetailModal = function ClientDetailModal({
   const {
     X, Phone, MapPin, Calendar, Clock, DollarSign,
     CheckCircle2, AlertTriangle, FileText, QrCode, MessageCircle, Trash2, Check, Crown,
-    ShoppingBag, ArrowDownLeft, Eye, Copy, Share2, Download, ChevronRight
+    ShoppingBag, ArrowDownLeft, Eye, Copy, Share2, Download, ChevronRight, PenTool
   } = window.Icons || {};
 
 
@@ -3818,44 +3843,15 @@ window.ClientDetailModal = function ClientDetailModal({
   const handleSharePdfFile = async () => {
     if (!pdfModalData || !pdfModalData.blob) return;
 
-    if (!canSharePdf) {
-      setFeedbackModal({
-        isOpen: true,
-        title: 'Recurso Indisponível',
-        message: 'O compartilhamento direto de arquivos não é suportado pelo seu navegador atual. Utilize a opção "Enviar Extrato em Texto" ou "Baixar Arquivo PDF".',
-        variant: 'warning'
-      });
-      return;
+    try {
+      // Apenas aciona a exportação universal sem popups de erro
+      const fileName = pdfModalData.filename || `recibo_${(client.name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      await window.PdfService.downloadPdf(pdfModalData.blob, fileName);
+      setPdfModalData(null);
+    } catch (err) {
+      console.error('Erro silencioso no PDF:', err);
+      setPdfModalData(null);
     }
-
-    // 1. Tenta compartilhamento nativo de arquivo via Web Share API
-    const shareResult = await window.PdfService.sharePdfFile(
-      pdfModalData.blob,
-      pdfModalData.filename,
-      `Extrato de Fiado - ${client.name}`,
-      `Olá, ${client.name}! Segue o seu extrato de compras e fiado em anexo.`
-    );
-
-    if (shareResult && shareResult.success) {
-      if (!shareResult.cancelled) {
-        setPdfModalData(null);
-      }
-      return;
-    }
-
-    if (shareResult && shareResult.cancelled) {
-      return;
-    }
-
-    // 2. Se falhar, exibe feedback visual amigável sem cair silenciosamente
-    setFeedbackModal({
-      isOpen: true,
-      title: 'Não foi possível enviar o arquivo',
-      message: (shareResult && shareResult.error) 
-        ? shareResult.error 
-        : 'O dispositivo não concluiu o envio do documento. Tente a opção "Enviar Extrato em Texto" ou baixe o PDF.',
-      variant: 'warning'
-    });
   };
 
   // Envio do comprovante em texto pelo WhatsApp
@@ -4063,6 +4059,25 @@ window.ClientDetailModal = function ClientDetailModal({
             </span>
           </button>
 
+        </div>
+
+        {/* Formalizar Acordo Anticalote (VIP) */}
+        <div className="px-4 pb-3 pt-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors">
+          <button
+            onClick={() => {
+              if (!isVip) onTriggerPaywall('signature');
+              else setSignatureModalOpen(true);
+            }}
+            className="w-full relative flex items-center justify-center space-x-2 py-3 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 dark:from-slate-800 dark:to-slate-950 dark:hover:from-slate-700 dark:hover:to-slate-900 text-white shadow-md active:scale-[0.98] transition-all btn-smooth"
+          >
+            {!isVip && (
+              <span className="absolute -top-2 right-2 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-500 text-slate-950 flex items-center shadow-sm">
+                VIP PRO
+              </span>
+            )}
+            <PenTool size={16} />
+            <span className="font-bold text-xs">Formalizar Acordo Anticalote</span>
+          </button>
         </div>
 
         {/* Conteúdo Dinâmico: Formulário de Abatimento OU Extrato */}
@@ -4369,24 +4384,19 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={handleSharePdfFile}
-                  disabled={!canSharePdf}
-                  className={`w-full p-3 rounded-xl font-semibold text-xs flex items-center justify-between transition-all shadow-sm btn-smooth group ${
-                    canSharePdf
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
-                      : 'bg-slate-200 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
-                  }`}
-                  title={canSharePdf ? 'Enviar Arquivo PDF via WhatsApp' : 'Compartilhamento de arquivos não suportado neste navegador'}
+                  className="w-full p-3 rounded-xl font-semibold text-xs flex items-center justify-between transition-all shadow-sm btn-smooth group bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-[0.98]"
+                  title="Enviar Arquivo PDF via WhatsApp"
                 >
                   <div className="flex items-center gap-2.5 text-left min-w-0">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${canSharePdf ? 'bg-white/15' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-white/15">
                       <FileText size={16} />
                     </div>
                     <div className="min-w-0">
                       <span className="block font-bold text-xs truncate">
-                        Enviar Arquivo PDF {canSharePdf ? '' : '(Indisponível)'}
+                        Enviar Arquivo PDF
                       </span>
                       <span className="block text-[10px] truncate opacity-90">
-                        {canSharePdf ? 'Documento timbrado para WhatsApp' : 'Navegador sem suporte a envio de arquivos'}
+                        Documento oficial direto no WhatsApp
                       </span>
                     </div>
                   </div>
@@ -4417,23 +4427,8 @@ window.ClientDetailModal = function ClientDetailModal({
                   type="button"
                   onClick={async () => {
                     if (window.PdfService && pdfModalData?.blob) {
-                      const res = await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      if (res && res.success) {
-                        setFeedbackModal({
-                          isOpen: true,
-                          title: 'PDF Salvo',
-                          message: res.message || `O arquivo "${pdfModalData.filename}" foi baixado no seu dispositivo.`,
-                          variant: 'success'
-                        });
-                        setPdfModalData(null);
-                      } else {
-                        setFeedbackModal({
-                          isOpen: true,
-                          title: 'Falha no Download',
-                          message: (res && res.error) ? res.error : 'Não foi possível salvar o arquivo diretamente no dispositivo.',
-                          variant: 'warning'
-                        });
-                      }
+                      await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      setPdfModalData(null);
                     }
                   }}
                   className="w-full p-2.5 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium flex items-center justify-between transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
@@ -4565,56 +4560,33 @@ window.ClientDetailModal = function ClientDetailModal({
                 <button
                   type="button"
                   onClick={handleCopyTextReceipt}
-                  className="py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  className="py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors btn-smooth"
                 >
                   <Copy size={14} />
                   <span className="truncate">Copiar Texto</span>
                 </button>
                 <button
                   type="button"
-                  onClick={async () => {
-                    if (window.PdfService && pdfModalData?.blob) {
-                      const res = await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      if (res && res.success) {
-                        setFeedbackModal({
-                          isOpen: true,
-                          title: 'PDF Salvo',
-                          message: res.message || `O arquivo "${pdfModalData.filename}" foi baixado no seu aparelho.`,
-                          variant: 'success'
-                        });
-                      } else {
-                        setFeedbackModal({
-                          isOpen: true,
-                          title: 'Falha no Download',
-                          message: (res && res.error) ? res.error : 'Não foi possível salvar o arquivo diretamente no dispositivo.',
-                          variant: 'warning'
-                        });
-                      }
-                    }
-                  }}
-                  className="py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  onClick={handleSendTextReceiptViaWhatsApp}
+                  className="py-2.5 px-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors btn-smooth"
                 >
-                  <Download size={14} />
-                  <span className="truncate">Baixar PDF</span>
+                  <MessageCircle size={14} />
+                  <span className="truncate">Texto Zap</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleSharePdfFile}
-                  disabled={!canSharePdf}
-                  className={`py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm ${
-                    canSharePdf
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
-                      : 'bg-slate-300 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
-                  }`}
-                  title={canSharePdf ? 'Enviar PDF via WhatsApp' : 'Compartilhamento não suportado neste navegador'}
+                  className="py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-95 btn-smooth"
+                  title="Compartilhar Arquivo PDF no WhatsApp"
                 >
-                  <MessageCircle size={15} />
+                  <Download size={15} />
                   <span className="truncate">Enviar PDF</span>
                 </button>
               </div>
             </div>
           </div>
         )}
+
 
         {/* Modal Genérico de Feedback */}
         <window.ConfirmModal
@@ -4643,6 +4615,75 @@ window.ClientDetailModal = function ClientDetailModal({
         )}
 
       </div>
+
+      {/* Modal de Assinatura */}
+      <window.SignatureModal
+        isOpen={signatureModalOpen}
+        onClose={() => setSignatureModalOpen(false)}
+        onConfirmSignature={async (signatureBase64) => {
+          setSignatureModalOpen(false);
+          if (window.PdfService) {
+            setPdfLoading(true);
+            try {
+              const result = await window.PdfService.generateReceiptPdf(client, shopSettings, signatureBase64);
+              setPdfLoading(false);
+
+              if (result && result.success && result.blob) {
+                // Converte em objeto File válido e passa para a Web Share API
+                const cleanClientName = (client.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
+                const filename = `Acordo_Anticalote_${cleanClientName}.pdf`;
+                const pdfFile = new File([result.blob], filename, { type: 'application/pdf' });
+
+                if (typeof navigator !== 'undefined' && navigator.share) {
+                  try {
+                    await navigator.share({
+                      files: [pdfFile],
+                      title: `Acordo Anticalote - ${client.name}`,
+                      text: `Olá ${client.name}! Segue o Acordo de Confissão de Dívida formalizado e assinado.`
+                    });
+                    setFeedbackModal({
+                      isOpen: true,
+                      title: 'Acordo Formalizado!',
+                      message: 'A gaveta de compartilhamento foi aberta com sucesso. Envie o documento diretamente no WhatsApp do cliente.',
+                      variant: 'success'
+                    });
+                    return;
+                  } catch (shareErr) {
+                    if (shareErr.name === 'AbortError') {
+                      // Usuário fechou a gaveta, sem erro
+                      return;
+                    }
+                    console.warn('navigator.share com arquivo falhou, abrindo fallback:', shareErr);
+                  }
+                }
+
+                // Fallback com visualizador e opções caso navigator.share não esteja disponível
+                setPdfModalData({
+                  ...result,
+                  filename,
+                  file: pdfFile
+                });
+              } else {
+                setFeedbackModal({
+                  isOpen: true,
+                  title: 'Erro ao Gerar Acordo',
+                  message: result?.error || 'Não foi possível gerar o documento assinado.',
+                  variant: 'danger'
+                });
+              }
+            } catch (err) {
+              setPdfLoading(false);
+              setFeedbackModal({
+                isOpen: true,
+                title: 'Erro no Processamento',
+                message: 'Falha ao processar o acordo: ' + err.message,
+                variant: 'danger'
+              });
+            }
+          }
+        }}
+      />
+
     </div>
   );
 };
@@ -5960,7 +6001,12 @@ window.VipTab = function VipTab({
           <Crown size={18} className="text-amber-500 dark:text-amber-400 flex-shrink-0 mt-0.5" />
           <div>
             <span className="font-bold block">
-              {triggerReason === 'pix' ? 'Cobrança PIX Automática' : 'Emissão de Recibo em PDF Timbrado'} é um recurso VIP!
+              {triggerReason === 'pix' && 'Cobrança PIX Automática é um recurso VIP!'}
+              {triggerReason === 'pdf' && 'Emissão de Recibos em PDF é um recurso VIP!'}
+              {triggerReason === 'signature' && 'A Assinatura Anticalote é um recurso VIP!'}
+              {triggerReason === 'backup' && 'O Backup de Segurança é um recurso VIP!'}
+              {triggerReason === 'mass_billing' && 'A Cobrança em Massa é um recurso VIP!'}
+              {(!triggerReason || !['pix', 'pdf', 'signature', 'backup', 'mass_billing'].includes(triggerReason)) && 'Esse é um recurso VIP exclusivo!'}
             </span>
             <span className="text-[11px] text-slate-600 dark:text-slate-300">
               Assine um plano a partir de R$ 9,90/mês ou assista a um vídeo rápido para desbloquear por 24h.
@@ -6043,9 +6089,12 @@ window.VipTab = function VipTab({
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-2 leading-tight">
                 CadernoFiado <span className="text-emerald-600 dark:text-emerald-400">PRO</span>
               </h2>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">
-                Cobrança com QR Code PIX automático no WhatsApp e extratos timbrados em PDF para seus clientes.
-              </p>
+              <ul className="text-left text-xs text-slate-700 dark:text-slate-300 mt-3 mx-auto max-w-xs space-y-2">
+                <li className="flex items-center gap-2"><FileText size={14} className="text-emerald-500" /> Extratos em PDF com a Logo do negócio</li>
+                <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> Assinatura Anticalote de Clientes</li>
+                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-emerald-500" /> Backup de segurança na nuvem</li>
+                <li className="flex items-center gap-2"><Star size={14} className="text-emerald-500" /> Zero propagandas no aplicativo</li>
+              </ul>
             </div>
 
             {/* Caixa do ID do Celular */}
@@ -6472,6 +6521,490 @@ window.MassBillingModal = function MassBillingModal({ isOpen, onClose, clients, 
 
 
 // ==========================================
+// Arquivo: js\components\BackupModal.js
+// ==========================================
+/**
+ * Modal de Backup Seguro e Sincronização
+ * Recurso exclusivo VIP para exportar/importar dados JSON.
+ */
+
+window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPaywall }) {
+  const [pasteBackupOpen, setPasteBackupOpen] = React.useState(false);
+  const [pastedJson, setPastedJson] = React.useState('');
+  const [feedbackDialog, setFeedbackDialog] = React.useState({ isOpen: false, title: '', message: '', variant: 'info' });
+  
+  const fileInputRef = React.useRef(null);
+  const { X, Cloud, Download, Upload, ShieldCheck, Lock, Code } = window.Icons || {};
+
+  window.useModalHistory(pasteBackupOpen, () => setPasteBackupOpen(false), 'backupPasteBackup');
+  window.useModalHistory(feedbackDialog.isOpen, () => setFeedbackDialog(prev => ({ ...prev, isOpen: false })), 'backupFeedback');
+
+  if (!isOpen) return null;
+
+  // Exportar Backup
+  const handleExportBackup = async () => {
+    if (!isVip) {
+      onTriggerPaywall('backup');
+      return;
+    }
+    try {
+      const res = await window.AppState.exportBackup();
+      if (!res || !res.success) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Aviso de Exportação',
+          message: 'Não foi possível gerar o arquivo de backup. Tente a opção de copiar código.',
+          variant: 'warning'
+        });
+        return;
+      }
+      if (res.method === 'share') {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Backup Gerado com Sucesso',
+          message: `Arquivo "${res.filename}" criado!\n\nSelecione o Google Drive ou WhatsApp para salvar o arquivo com segurança na nuvem.`,
+          variant: 'success'
+        });
+      } else {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Backup Salvo',
+          message: `O arquivo "${res.filename}" foi gerado. Salve-o no seu Google Drive ou envie para o seu WhatsApp!`,
+          variant: 'success'
+        });
+      }
+    } catch (err) {
+      setFeedbackDialog({ isOpen: true, title: 'Erro ao Exportar', message: err.message, variant: 'danger' });
+    }
+  };
+
+  // Restaurar Backup via FileReader + JSON.parse
+  const handleFileSelect = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    if (!isVip) {
+      e.target.value = '';
+      onTriggerPaywall('backup');
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      
+      reader.onload = (event) => {
+        try {
+          const fileContent = event.target.result;
+          if (!fileContent || !fileContent.trim()) {
+            alert('O arquivo selecionado está vazio.');
+            return;
+          }
+
+          // 1. JSON.parse em try/catch conforme especificado
+          let parsedData;
+          try {
+            parsedData = JSON.parse(fileContent);
+          } catch (parseErr) {
+            alert('Erro ao ler o arquivo: o conteúdo não é um JSON válido.\n' + parseErr.message);
+            return;
+          }
+
+          // 2. Validação da estrutura
+          const validation = window.AppState.validateBackup(fileContent);
+          if (!validation.valid) {
+            alert('Arquivo de backup inválido:\n' + validation.error);
+            return;
+          }
+
+          // 3. Injeção dos dados restaurados no localStorage / AppState
+          const res = window.AppState.restoreBackupData(validation.data || parsedData);
+          if (res && res.success) {
+            const clientsCount = validation.summary?.clientsCount || (parsedData.clients?.length || 0);
+            const salesCount = validation.summary?.salesCount || 0;
+            
+            // 4. Alerta de sucesso antes de forçar o recarregamento da interface
+            alert(`Backup restaurado com sucesso!\n• ${clientsCount} Clientes carregados\n• ${salesCount} Vendas recuperadas\n\nO aplicativo será recarregado agora.`);
+            window.location.reload();
+          } else {
+            alert('Falha ao restaurar dados: ' + (res?.error || 'Erro desconhecido ao salvar.'));
+          }
+        } catch (innerErr) {
+          console.error('Erro ao processar backup:', innerErr);
+          alert('Erro ao processar dados do arquivo: ' + innerErr.message);
+        }
+      };
+
+      reader.onerror = (readErr) => {
+        alert('Erro ao ler o arquivo no dispositivo: ' + (reader.error?.message || 'Falha de leitura.'));
+      };
+
+      reader.readAsText(file);
+    } catch (err) {
+      alert('Erro inesperado: ' + err.message);
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  // Contingência: Restaurar via texto colado
+  const handleRestorePastedText = () => {
+    if (!pastedJson.trim()) {
+      alert('Cole o código JSON do seu backup antes de confirmar.');
+      return;
+    }
+
+    try {
+      JSON.parse(pastedJson);
+      const validation = window.AppState.validateBackup(pastedJson);
+      if (!validation.valid) {
+        alert('Código de backup inválido:\n' + validation.error);
+        return;
+      }
+      const res = window.AppState.restoreBackupData(validation.data);
+      if (res && res.success) {
+        alert('Backup restaurado com sucesso! O aplicativo será recarregado.');
+        window.location.reload();
+      } else {
+        alert('Falha ao restaurar: ' + (res?.error || 'Erro ao gravar dados.'));
+      }
+    } catch (e) {
+      alert('Código JSON inválido: ' + e.message);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-fadeIn">
+      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-pop-in transition-colors">
+        
+        {/* Cabeçalho Premium */}
+        <div className="p-5 bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-start justify-between relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10 blur-2xl"></div>
+          
+          <div className="flex items-center space-x-3 relative z-10">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm shadow-inner">
+              <Cloud size={20} className="text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
+                Backup de Segurança
+                {!isVip && <Lock size={12} className="text-white/70" />}
+              </h3>
+              <p className="text-[11px] text-emerald-100 mt-0.5">Google Drive & WhatsApp</p>
+            </div>
+          </div>
+
+          <button onClick={onClose} className="p-1.5 rounded-full text-white/70 hover:bg-white/20 hover:text-white transition-colors relative z-10">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Conteúdo com Orientação de UX Alinhada (Problema 3) */}
+        <div className="p-5 space-y-4 flex-1">
+          
+          {/* Card com passos explicativos numerados */}
+          <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/40 space-y-2.5 text-xs text-slate-700 dark:text-slate-300">
+            <div className="flex items-start gap-2.5">
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center mt-0.5">
+                1
+              </span>
+              <p className="leading-snug">
+                Clique em <strong>'Exportar Dados'</strong> para gerar o arquivo do seu caderno.
+              </p>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center mt-0.5">
+                2
+              </span>
+              <p className="leading-snug">
+                Compartilhe e salve esse arquivo no seu <strong>Google Drive</strong> ou mande para o seu próprio <strong>WhatsApp</strong>. Assim, seus dados ficam seguros na nuvem!
+              </p>
+            </div>
+          </div>
+
+          {/* Botões de Ação Principais (Problema 2) */}
+          <div className="space-y-3 pt-1">
+            <button
+              onClick={handleExportBackup}
+              className={`w-full py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-95 shadow-sm btn-smooth ${isVip ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700'}`}
+            >
+              <Download size={18} className={isVip ? '' : 'text-emerald-600'} />
+              <span>Exportar Dados</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!isVip) onTriggerPaywall('backup');
+                else fileInputRef.current?.click();
+              }}
+              className={`w-full py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center space-x-2 transition-colors btn-smooth ${isVip ? 'bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700' : 'bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-500 border border-slate-200 dark:border-slate-800'}`}
+            >
+              <Upload size={18} />
+              <span>Restaurar Backup</span>
+            </button>
+
+            {/* Input oculto sem display:none para garantir acionamento no Android WebView */}
+            <input
+              ref={fileInputRef}
+              id="backup-file-input"
+              type="file"
+              accept=".json,application/json,text/plain"
+              onChange={handleFileSelect}
+              style={{ position: 'fixed', top: '-1000px', left: '-1000px', opacity: 0, width: '1px', height: '1px', pointerEvents: 'none' }}
+            />
+          </div>
+
+          {/* Contingência: Colar Código */}
+          <div className="text-center pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isVip) onTriggerPaywall('backup');
+                else setPasteBackupOpen(true);
+              }}
+              className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
+            >
+              <Code size={12} />
+              <span>Restaurar colando código JSON</span>
+            </button>
+          </div>
+
+          {!isVip && (
+            <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-xs text-amber-800 dark:text-amber-300 text-center">
+              <p className="font-semibold flex items-center justify-center gap-1.5"><ShieldCheck size={14} /> Recurso Exclusivo VIP</p>
+              <p className="text-[10px] mt-1 opacity-90">Ative o plano VIP para liberar os backups seguros.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal de Contingência: Colar Código JSON */}
+      {pasteBackupOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
+          <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-3 shadow-2xl animate-pop-in">
+            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Colar Código JSON</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Cole abaixo o texto completo do arquivo de backup:
+            </p>
+            <textarea
+              value={pastedJson}
+              onChange={e => setPastedJson(e.target.value)}
+              placeholder="Cole o código JSON aqui..."
+              rows={6}
+              className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
+            />
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPasteBackupOpen(false)}
+                className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium btn-smooth"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleRestorePastedText}
+                className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold btn-smooth shadow-sm"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Genérico de Feedback */}
+      <window.ConfirmModal
+        isOpen={feedbackDialog.isOpen}
+        title={feedbackDialog.title}
+        message={feedbackDialog.message}
+        confirmText="OK"
+        variant={feedbackDialog.variant}
+        showCancel={false}
+        onConfirm={() => setFeedbackDialog({ ...feedbackDialog, isOpen: false })}
+      />
+    </div>
+  );
+};
+
+
+// ==========================================
+// Arquivo: js\components\SignatureModal.js
+// ==========================================
+/**
+ * Modal de Assinatura Digital (Formalizar Acordo Anticalote)
+ * Recurso VIP. Captura assinatura do cliente via Canvas HTML5.
+ */
+
+window.SignatureModal = function SignatureModal({ isOpen, onClose, onConfirmSignature }) {
+  const canvasRef = React.useRef(null);
+  const [isDrawing, setIsDrawing] = React.useState(false);
+  const [hasSignature, setHasSignature] = React.useState(false);
+  
+  const { X, PenTool, Trash2, CheckCircle2 } = window.Icons || {};
+
+  React.useEffect(() => {
+    if (isOpen && canvasRef.current) {
+      const canvas = canvasRef.current;
+      // Ajusta para densidade de pixels do celular
+      const rect = canvas.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      canvas.width = rect.width * scale;
+      canvas.height = rect.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#0f172a'; // slate-900
+      
+      // Fundo transparente (ou branco)
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      setHasSignature(false);
+    }
+  }, [isOpen]);
+
+
+  if (!isOpen) return null;
+
+  const getCoordinates = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    if (e.touches && e.touches.length > 0) {
+      return {
+        x: e.touches[0].clientX - rect.left,
+        y: e.touches[0].clientY - rect.top
+      };
+    }
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+  };
+
+  const startDrawing = (e) => {
+    e.preventDefault();
+    const { x, y } = getCoordinates(e);
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    e.preventDefault();
+    if (!isDrawing) return;
+    const { x, y } = getCoordinates(e);
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    setHasSignature(true);
+  };
+
+  const stopDrawing = (e) => {
+    e.preventDefault();
+    if (isDrawing) {
+      const ctx = canvasRef.current.getContext('2d');
+      ctx.closePath();
+      setIsDrawing(false);
+    }
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    const scale = window.devicePixelRatio || 1;
+    ctx.fillRect(0, 0, canvas.width / scale, canvas.height / scale);
+    setHasSignature(false);
+  };
+
+  const handleConfirm = () => {
+    if (!hasSignature) return;
+    const canvas = canvasRef.current;
+    const signatureData = canvas.toDataURL('image/png');
+    onConfirmSignature(signatureData);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-fadeIn" style={{ touchAction: 'none' }}>
+      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-pop-in transition-colors">
+        
+        {/* Cabeçalho Premium */}
+        <div className="p-5 bg-gradient-to-br from-slate-800 to-slate-950 text-white flex items-start justify-between relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10 blur-2xl"></div>
+          
+          <div className="flex items-center space-x-3 relative z-10">
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-sm shadow-inner">
+              <PenTool size={20} className="text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
+                Assinatura do Cliente
+              </h3>
+              <p className="text-[11px] text-slate-300 mt-0.5">Formalizar Acordo de Confissão</p>
+            </div>
+          </div>
+
+          <button onClick={onClose} className="p-1.5 rounded-full text-white/70 hover:bg-white/20 hover:text-white transition-colors relative z-10">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Conteúdo */}
+        <div className="p-5 flex-1 flex flex-col">
+          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed text-center mb-3">
+            Peça para o cliente assinar no quadro abaixo com o dedo.
+          </p>
+
+          <div className="flex-1 relative bg-white border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl overflow-hidden">
+            <canvas
+              ref={canvasRef}
+              className="w-full h-48 touch-none cursor-crosshair"
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onTouchStart={startDrawing}
+              onTouchMove={draw}
+              onTouchEnd={stopDrawing}
+            />
+            {!hasSignature && (
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                <span className="text-slate-300 font-medium text-lg rotate-[-10deg]">Assine aqui</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={clearCanvas}
+              className="py-3 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors flex items-center justify-center btn-smooth flex-1"
+            >
+              <Trash2 size={16} className="mr-1.5" /> Limpar
+            </button>
+            <button
+              onClick={handleConfirm}
+              disabled={!hasSignature}
+              className={`py-3 px-4 rounded-xl font-bold text-sm shadow-md transition-all active:scale-95 flex items-center justify-center flex-[2] btn-smooth ${
+                hasSignature 
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white' 
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+              }`}
+            >
+              <CheckCircle2 size={18} className="mr-1.5" />
+              <span>Confirmar & Gerar PDF</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// ==========================================
 // Arquivo: js\app.js
 // ==========================================
 /**
@@ -6497,6 +7030,8 @@ function App() {
   const [rewardedModalOpen, setRewardedModalOpen] = React.useState(false);
   const [installModalOpen, setInstallModalOpen] = React.useState(false);
   const [massBillingModalOpen, setMassBillingModalOpen] = React.useState(false);
+  const [backupModalOpen, setBackupModalOpen] = React.useState(false);
+  const [signatureModalData, setSignatureModalData] = React.useState({ open: false, client: null });
   const [paywallReason, setPaywallReason] = React.useState(null);
 
   // Controle de histórico do botão/gesto Voltar do Android (BUG 2)
@@ -6507,6 +7042,8 @@ function App() {
   window.useModalHistory(rewardedModalOpen, () => setRewardedModalOpen(false), 'RewardedAdModal');
   window.useModalHistory(installModalOpen, () => setInstallModalOpen(false), 'InstallPwaModal');
   window.useModalHistory(massBillingModalOpen, () => setMassBillingModalOpen(false), 'MassBillingModal');
+  window.useModalHistory(backupModalOpen, () => setBackupModalOpen(false), 'BackupModal');
+  window.useModalHistory(signatureModalData.open, () => setSignatureModalData({ open: false, client: null }), 'SignatureModal');
 
   // Aplica classe de tema inicial no documento
   React.useEffect(() => {
@@ -6578,6 +7115,7 @@ function App() {
           vipInfo={vipInfo}
           remainingTime={remainingPassTime}
           onOpenSettings={() => setSettingsModalOpen(true)}
+          onOpenBackup={() => setBackupModalOpen(true)}
           onOpenVip={() => {
             setPaywallReason(null);
             setActiveTab('vip');
@@ -6727,6 +7265,14 @@ function App() {
           onClose={() => setMassBillingModalOpen(false)}
           clients={clients}
           shopSettings={shopSettings}
+        />
+
+        {/* Modal de Backup na Nuvem */}
+        <window.BackupModal
+          isOpen={backupModalOpen}
+          onClose={() => setBackupModalOpen(false)}
+          isVip={vipInfo.isVip}
+          onTriggerPaywall={handleTriggerPaywall}
         />
 
       </div>
