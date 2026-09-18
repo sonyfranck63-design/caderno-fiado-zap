@@ -36,8 +36,12 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
   if (!isOpen) return null;
 
   const handleClaimReward = () => {
-    window.AppState.activate24hPass();
-    if (onRewardGranted) onRewardGranted();
+    const res = window.AppState.activate24hPass();
+    if (res && res.success === false) {
+      alert(res.message);
+    } else {
+      if (onRewardGranted) onRewardGranted();
+    }
     onClose();
   };
 

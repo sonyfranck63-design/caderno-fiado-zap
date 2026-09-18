@@ -117,23 +117,118 @@ window.AppState = (function() {
   const STORAGE_KEY_SETTINGS = 'cadernofiado_settings_v1';
   const STORAGE_KEY_VIP = 'cadernofiado_vip_v1';
   const STORAGE_KEY_REWARDED = 'cadernofiado_rewarded_pass_v1';
+  const STORAGE_KEY_TRIAL_USED = 'cadernofiado_trial_used_v1';
   const STORAGE_KEY_LICENSE = 'cadernofiado_license_v2';
   const STORAGE_KEY_DEVICE_ID = 'cadernofiado_device_id_v1';
   const STORAGE_KEY_LAST_SEEN_TIME = 'cadernofiado_last_seen_time_v1';
+  const STORAGE_KEY_TIME_OFFSET = 'cadernofiado_time_offset_v1';
+
+  // --- MOTOR DE TEMPO BLINDADO (Anti-Adulteração de Data & Sincronização em Nuvem) ---
+  const sessionStartPerf = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+  let sessionBaseTime = Date.now();
+  let timeOffsetMs = 0;
+
+  try {
+    const rawLastSeen = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
+    const lastSeen = rawLastSeen ? parseInt(rawLastSeen, 10) : 0;
+    const rawOffset = localStorage.getItem(STORAGE_KEY_TIME_OFFSET);
+    if (rawOffset) timeOffsetMs = parseInt(rawOffset, 10) || 0;
+
+    // Se o relógio do aparelho estiver marcando um horário ANTERIOR ao último horário já registrado,
+    // o usuário atrasou a data do celular! O tempo é ancorado no último horário e avança monotonicamente.
+    if (lastSeen && (sessionBaseTime + timeOffsetMs) < lastSeen) {
+      sessionBaseTime = lastSeen;
+      timeOffsetMs = 0;
+    }
+  } catch(e) {}
 
   function getEffectiveTime() {
-    const now = Date.now();
+    let current;
+    if (sessionStartPerf > 0 && typeof performance !== 'undefined' && performance.now) {
+      const elapsed = performance.now() - sessionStartPerf;
+      current = sessionBaseTime + timeOffsetMs + elapsed;
+    } else {
+      current = Date.now() + timeOffsetMs;
+    }
+
     try {
       const raw = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
       const lastSeen = raw ? parseInt(raw, 10) : 0;
-      if (lastSeen && now < lastSeen - 300000) {
-        return lastSeen;
-      }
-      if (now > lastSeen) {
-        localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, now.toString());
+      if (current > lastSeen) {
+        localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, Math.floor(current).toString());
+      } else if (lastSeen && current < lastSeen) {
+        current = lastSeen;
       }
     } catch(e) {}
-    return now;
+
+    return Math.floor(current);
+  }
+
+  // Sincronização em segundo plano com servidor de tempo real (Cloudflare / WorldTimeAPI)
+  async function syncNetworkTime() {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+
+      // Cloudflare Trace: altíssima disponibilidade global, ultra rápido e sem bloqueio CORS
+      const res = await fetch('https://cloudflare.com/cdn-cgi/trace', {
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const text = await res.text();
+        const match = text.match(/ts=(\d+(\.\d+)?)/);
+        if (match && match[1]) {
+          const serverNow = Math.round(parseFloat(match[1]) * 1000);
+          applyNetworkTime(serverNow);
+          return;
+        }
+      }
+    } catch(e) {
+      try {
+        const controller2 = new AbortController();
+        const timer2 = setTimeout(() => controller2.abort(), 3500);
+        const res2 = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC', {
+          cache: 'no-store',
+          signal: controller2.signal
+        });
+        clearTimeout(timer2);
+        if (res2.ok) {
+          const data = await res2.json();
+          if (data && data.unixtime) {
+            applyNetworkTime(data.unixtime * 1000);
+          }
+        }
+      } catch(err) {}
+    }
+  }
+
+  function applyNetworkTime(realTimeMs) {
+    if (!realTimeMs || isNaN(realTimeMs)) return;
+    const currentDeviceNow = (sessionStartPerf > 0 && performance.now) 
+      ? sessionBaseTime + (performance.now() - sessionStartPerf)
+      : Date.now();
+
+    const diff = realTimeMs - currentDeviceNow;
+    timeOffsetMs = diff;
+    try {
+      localStorage.setItem(STORAGE_KEY_TIME_OFFSET, diff.toString());
+      const raw = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
+      const lastSeen = raw ? parseInt(raw, 10) : 0;
+      if (realTimeMs > lastSeen) {
+        localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, realTimeMs.toString());
+      }
+    } catch(e) {}
+    notify();
+  }
+
+  if (typeof window !== 'undefined') {
+    setTimeout(syncNetworkTime, 1200);
+    window.addEventListener('online', syncNetworkTime);
+    setInterval(syncNetworkTime, 10 * 60 * 1000);
   }
 
   // Chave Pública Criptográfica ECDSA P-256 Oficial do CadernoFiado
@@ -933,7 +1028,8 @@ window.AppState = (function() {
       }
     }
 
-    // Suporte ao passe de 24h por anúncio (Rewarded Video) com bloqueio estrito em tempo real
+    // Suporte ao passe de 24h por anúncio (Degustação única por aparelho)
+    const storedTrialUsed = localStorage.getItem(STORAGE_KEY_TRIAL_USED) === 'true';
     const rewardedPassRaw = localStorage.getItem(STORAGE_KEY_REWARDED);
     const rewardedPassExpiresAt = rewardedPassRaw ? parseInt(rewardedPassRaw, 10) : null;
     const isPassActive = Boolean(rewardedPassExpiresAt && rewardedPassExpiresAt > now);
@@ -941,12 +1037,15 @@ window.AppState = (function() {
     // Se o passe de 24h expirou, remove do storage imediatamente para garantir bloqueio real sem tolerância
     if (rewardedPassExpiresAt && rewardedPassExpiresAt <= now) {
       try { localStorage.removeItem(STORAGE_KEY_REWARDED); } catch(e) {}
+      try { localStorage.setItem(STORAGE_KEY_TRIAL_USED, 'true'); } catch(e) {}
     }
 
     if (isPassActive && !isVip) {
       isVip = true;
       planName = 'Passe VIP 24h';
     }
+
+    const trialUsed = Boolean(storedTrialUsed || isPassActive || rewardedPassExpiresAt);
 
     return {
       isVip,
@@ -955,6 +1054,7 @@ window.AppState = (function() {
       isLifetime,
       isExpired,
       isPassActive,
+      trialUsed,
       passExpiresAt: isPassActive ? rewardedPassExpiresAt : null,
       daysRemaining,
       expiresAt: license ? license.expiresAt : null,
@@ -982,12 +1082,22 @@ window.AppState = (function() {
   }
 
   function activate24hPass() {
+    const trialAlreadyUsed = localStorage.getItem(STORAGE_KEY_TRIAL_USED) === 'true' ||
+                             Boolean(localStorage.getItem(STORAGE_KEY_REWARDED));
+    if (trialAlreadyUsed) {
+      return { 
+        success: false, 
+        message: 'O teste grátis de 24 horas já foi utilizado neste aparelho. Assine um plano para continuar aproveitando!' 
+      };
+    }
+
     const now = getEffectiveTime();
     const expiresAt = now + 24 * 60 * 60 * 1000;
+    localStorage.setItem(STORAGE_KEY_TRIAL_USED, 'true');
     localStorage.setItem(STORAGE_KEY_REWARDED, expiresAt.toString());
     try { localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, now.toString()); } catch(e) {}
     notify();
-    return expiresAt;
+    return { success: true, expiresAt };
   }
 
   function getPassRemainingTimeFormatted() {
@@ -1007,13 +1117,18 @@ window.AppState = (function() {
 
   // --- BACKUP & RESTAURAÇÃO ---
   function getBackupData() {
+    const allClients = getClients();
+    const isTrialUsed = localStorage.getItem(STORAGE_KEY_TRIAL_USED) === 'true' ||
+                        Boolean(localStorage.getItem(STORAGE_KEY_REWARDED)) ||
+                        (Array.isArray(allClients) && allClients.length > 0);
     return {
       version: '1.0',
       exportedAt: new Date().toISOString(),
       shopSettings: getSettings(),
-      clients: getClients(),
+      clients: allClients,
       license: getStoredLicense(),
-      deviceId: getInstallationId()
+      deviceId: getInstallationId(),
+      trialUsed: isTrialUsed
     };
   }
 
@@ -1206,6 +1321,12 @@ window.AppState = (function() {
         localStorage.setItem(STORAGE_KEY_DEVICE_ID, validatedData.deviceId);
         saveLicense(validatedData.license);
       }
+
+      // Blindagem antifraude: bases restauradas de backup ou que já usaram teste têm o trial permanentemente bloqueado
+      if (validatedData.trialUsed || (validatedData.clients && validatedData.clients.length > 0)) {
+        localStorage.setItem(STORAGE_KEY_TRIAL_USED, 'true');
+      }
+
       notify();
       return { success: true, count: validatedData.clients.length };
     } catch (e) {
@@ -1226,6 +1347,7 @@ window.AppState = (function() {
     localStorage.removeItem(STORAGE_KEY_SETTINGS);
     localStorage.removeItem(STORAGE_KEY_VIP);
     localStorage.removeItem(STORAGE_KEY_REWARDED);
+    localStorage.removeItem(STORAGE_KEY_TRIAL_USED);
     notify();
   }
 

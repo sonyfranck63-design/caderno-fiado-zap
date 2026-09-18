@@ -295,19 +295,30 @@ window.VipTab = function VipTab({
             </form>
           </div>
 
-          {/* Opção Gratuita: Vídeo Premiado 24h */}
+          {/* Opção Gratuita: Vídeo Premiado 24h (Degustação única por aparelho) */}
           {onWatchRewarded && (
             <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-center space-y-2 transition-colors">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                Quer testar antes? Libere 24h grátis assistindo a um vídeo rápido:
-              </span>
-              <button
-                onClick={onWatchRewarded}
-                className="py-2 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 mx-auto border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
-              >
-                <Play size={14} className="text-emerald-600 dark:text-emerald-400" />
-                <span>Assistir Vídeo (Liberar 24h)</span>
-              </button>
+              {!vipInfo.trialUsed ? (
+                <>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                    Quer testar antes? Libere 24h grátis assistindo a um vídeo rápido:
+                  </span>
+                  <button
+                    onClick={onWatchRewarded}
+                    className="py-2 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 mx-auto border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
+                  >
+                    <Play size={14} className="text-emerald-600 dark:text-emerald-400" />
+                    <span>Assistir Vídeo (Liberar Teste 24h)</span>
+                  </button>
+                </>
+              ) : (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 py-1">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300 block mb-0.5">
+                    ✨ Teste de 24h já utilizado
+                  </span>
+                  Escolha um dos planos acima para desbloquear o acesso ilimitado com cobrança PIX e recibos em PDF.
+                </div>
+              )}
             </div>
           )}
 

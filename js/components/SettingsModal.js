@@ -15,6 +15,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck, Store, Phone, QrCode, Copy, FileText } = window.Icons || {};
 
   const [confirmRestoreData, setConfirmRestoreData] = React.useState(null);
+  const [sigPreview, setSigPreview] = React.useState(null);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -22,6 +23,14 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
       setSaveSuccess(false);
     }
   }, [isOpen, shopSettings]);
+
+  React.useEffect(() => {
+    if (isOpen && window.PdfService && typeof window.PdfService.generateMerchantSignature === 'function') {
+      const name = formData.ownerName || formData.shopName || 'Meu Caderno';
+      const sigData = window.PdfService.generateMerchantSignature(name);
+      setSigPreview(sigData);
+    }
+  }, [isOpen, formData.ownerName, formData.shopName]);
 
   // Controle de histórico do botão/gesto Voltar do Android para subdiálogos (BUG 2)
   window.useModalHistory(confirmResetOpen, () => setConfirmResetOpen(false), 'settingsConfirmReset');
@@ -232,6 +241,50 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
               <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 block">
                 Aparece no topo do aplicativo, nas mensagens de cobrança e nos recibos PDF.
               </span>
+            </div>
+
+            {/* Assinatura Digital Automática do Emissor / Proprietário */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 transition-colors">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Check size={14} className="text-blue-600 dark:text-blue-400" />
+                  Sua Assinatura Digital (Recibo PDF):
+                </label>
+                <span className="text-[10px] text-blue-700 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-500/20">
+                  Assina Sempre Automático
+                </span>
+              </div>
+              
+              <input
+                type="text"
+                value={formData.ownerName || ''}
+                onChange={e => handleChange('ownerName', e.target.value)}
+                placeholder="Ex: Seu Nome Completo / Responsável"
+                className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
+              />
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
+                Digite seu nome ou da empresa. O sistema gera sua rubrica caligráfica e já assina automaticamente a via do emissor em todos os recibos.
+              </span>
+
+              {sigPreview && (
+                <div className="mt-2 p-2.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center">
+                  <span className="text-[9.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                    Prévia da sua rubrica no recibo:
+                  </span>
+                  <div className="bg-white px-4 py-1.5 rounded-lg border border-slate-200 shadow-sm flex flex-col items-center">
+                    <img
+                      src={sigPreview}
+                      alt="Prévia da Assinatura Digital"
+                      className="h-12 max-w-full object-contain"
+                    />
+                    <div className="w-40 border-t border-slate-300 mt-0.5 pt-0.5 text-center">
+                      <span className="text-[10px] font-medium text-slate-700 block truncate">
+                        {formData.ownerName || formData.shopName || 'Meu Caderno'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Telefone do Comércio */}

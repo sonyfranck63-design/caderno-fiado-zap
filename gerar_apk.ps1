@@ -72,13 +72,24 @@ if (Test-Path $nativePatchDir) {
 Write-Host "[4/7] Aplicando identidade visual, ícones e permissões do CadernoFiado..." -ForegroundColor Yellow
 
 # A. Atualizar Versão do Aplicativo (versionCode e versionName) para forçar atualização no Android
+$targetVersionCode = 42
+$targetVersionName = "2.0.7"
+
 $ymlPath = Join-Path $buildDir "apktool.yml"
 if (Test-Path $ymlPath) {
     $yml = [System.IO.File]::ReadAllText($ymlPath, [System.Text.Encoding]::UTF8)
-    $yml = $yml -replace 'versionCode:\s*\d+', 'versionCode: 38'
-    $yml = $yml -replace "versionName:\s*.*", "versionName: '2.0.4'"
+    $yml = $yml -replace 'versionCode:\s*.*', "versionCode: $targetVersionCode"
+    $yml = $yml -replace "versionName:\s*.*", "versionName: '$targetVersionName'"
     [System.IO.File]::WriteAllText($ymlPath, $yml, [System.Text.Encoding]::UTF8)
-    Write-Host "Versão do APK atualizada para: versionCode 38 / versionName 2.0.4" -ForegroundColor Green
+}
+
+$manifestPath = Join-Path $buildDir "AndroidManifest.xml"
+if (Test-Path $manifestPath) {
+    $manifestXml = [System.IO.File]::ReadAllText($manifestPath, [System.Text.Encoding]::UTF8)
+    $manifestXml = $manifestXml -replace 'android:versionCode="[^"]*"', "android:versionCode=`"$targetVersionCode`""
+    $manifestXml = $manifestXml -replace 'android:versionName="[^"]*"', "android:versionName=`"$targetVersionName`""
+    [System.IO.File]::WriteAllText($manifestPath, $manifestXml, [System.Text.Encoding]::UTF8)
+    Write-Host "Versão do APK e Manifest atualizada para: versionCode $targetVersionCode / versionName $targetVersionName" -ForegroundColor Green
 }
 
 # B. Atualizar Nome do Aplicativo

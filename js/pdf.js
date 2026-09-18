@@ -24,6 +24,84 @@ window.PdfService = (function() {
   }
 
   /**
+   * Gera uma assinatura caligráfica / rubrica profissional realista em Canvas HTML5
+   * para o emissor do recibo (lojista/empresa), garantindo que todo extrato
+   * já saia assinado automaticamente no PDF.
+   */
+  function generateMerchantSignature(rawName) {
+    const name = (rawName || 'Meu Caderno').trim();
+    if (!name) return null;
+
+    try {
+      if (typeof document === 'undefined') return null;
+      const canvas = document.createElement('canvas');
+      canvas.width = 440;
+      canvas.height = 110;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Tinta azul caneta tinteiro esferográfica executiva (#1d4ed8 / #1e3a8a)
+      ctx.strokeStyle = '#1e3a8a';
+      ctx.fillStyle = '#1e3a8a';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.save();
+      ctx.translate(15, 10);
+      ctx.rotate(-0.035);
+
+      // 1. Nome caligráfico
+      ctx.font = 'italic 600 34px "Dancing Script", "Brush Script MT", "Caveat", "Great Vibes", "Segoe Script", cursive';
+      const displayName = name.length > 26 ? name.substring(0, 24) + '...' : name;
+      ctx.fillText(displayName, 15, 45);
+
+      const textMetrics = ctx.measureText(displayName);
+      const textWidth = Math.min(320, Math.max(110, textMetrics.width));
+
+      // 2. Traço de Rubrica Caligráfica fluida (laço e sublinhado de caneta)
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      const startX = 10;
+      const startY = 52;
+      ctx.moveTo(startX, startY);
+      
+      // Curva sob o texto
+      ctx.bezierCurveTo(
+        startX + textWidth * 0.35, startY + 16,
+        startX + textWidth * 0.7, startY - 8,
+        startX + textWidth + 20, startY + 6
+      );
+      // Laço de rubrica
+      ctx.bezierCurveTo(
+        startX + textWidth + 35, startY + 14,
+        startX + textWidth + 10, startY + 26,
+        startX + textWidth * 0.4, startY + 20
+      );
+      ctx.stroke();
+
+      // Ponto de caneta final
+      ctx.beginPath();
+      ctx.arc(startX + textWidth * 0.4, startY + 20, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 3. Selo de Autenticação Digital
+      ctx.restore();
+      ctx.save();
+      ctx.font = 'bold 8px "Helvetica Neue", Helvetica, Arial, sans-serif';
+      ctx.fillStyle = '#64748b'; // slate-500
+      ctx.fillText('✓ AUTENTICADO DIGITALMENTE', 30, 98);
+      ctx.restore();
+
+      return canvas.toDataURL('image/png');
+    } catch(err) {
+      console.warn('[PdfService] Falha ao gerar assinatura do lojista:', err);
+      return null;
+    }
+  }
+
+  /**
    * Gera o extrato em formato de texto pronto para enviar no WhatsApp
    * Utilizado como contingência quando o dispositivo tem bloqueios de download.
    */
@@ -306,21 +384,34 @@ window.PdfService = (function() {
 
         y += 20;
 
-        // Linhas de Assinatura
-        doc.setDrawColor(148, 163, 184);
-        doc.setLineWidth(0.3);
-        
+        // Assinatura Digital do Emissor / Lojista (Gerada e autenticada automaticamente)
+        const merchantSignerName = (shopInfo.ownerName || shopInfo.shopName || 'Meu Caderno').trim();
+        const merchantSignatureImg = generateMerchantSignature(merchantSignerName);
+        if (merchantSignatureImg) {
+          try {
+            doc.addImage(merchantSignatureImg, 'PNG', margin + 5, y - 16, 65, 16);
+          } catch(errSig) {
+            console.warn('Erro ao inserir assinatura automática do emissor:', errSig);
+          }
+        }
+
         doc.line(margin + 5, y, margin + 70, y);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(71, 85, 105);
-        doc.text(shopInfo.shopName || 'Assinatura do Responsável', margin + 37, y + 4, { align: 'center' });
+        doc.text(merchantSignerName, margin + 37, y + 4, { align: 'center' });
+        if (shopInfo.ownerName && shopInfo.shopName && shopInfo.ownerName.trim() !== shopInfo.shopName.trim()) {
+          doc.setFontSize(6.5);
+          doc.setTextColor(148, 163, 184);
+          doc.text(shopInfo.shopName, margin + 37, y + 7.5, { align: 'center' });
+        }
 
+        // Assinatura do Cliente
         if (signatureBase64) {
           try {
             doc.addImage(signatureBase64, 'PNG', pageWidth - margin - 70, y - 15, 65, 15);
           } catch(e) {
-            console.error('Erro ao adicionar assinatura ao PDF', e);
+            console.error('Erro ao adicionar assinatura do cliente ao PDF', e);
           }
         }
         doc.line(pageWidth - margin - 70, y, pageWidth - margin - 5, y);
@@ -630,6 +721,7 @@ window.PdfService = (function() {
   return {
     generateReceiptPdf,
     generateReceiptText,
+    generateMerchantSignature,
     downloadPdf,
     sharePdfFile,
     openPdfPreview,

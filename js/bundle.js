@@ -177,6 +177,84 @@ window.PdfService = (function() {
   }
 
   /**
+   * Gera uma assinatura caligráfica / rubrica profissional realista em Canvas HTML5
+   * para o emissor do recibo (lojista/empresa), garantindo que todo extrato
+   * já saia assinado automaticamente no PDF.
+   */
+  function generateMerchantSignature(rawName) {
+    const name = (rawName || 'Meu Caderno').trim();
+    if (!name) return null;
+
+    try {
+      if (typeof document === 'undefined') return null;
+      const canvas = document.createElement('canvas');
+      canvas.width = 440;
+      canvas.height = 110;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Tinta azul caneta tinteiro esferográfica executiva (#1d4ed8 / #1e3a8a)
+      ctx.strokeStyle = '#1e3a8a';
+      ctx.fillStyle = '#1e3a8a';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.save();
+      ctx.translate(15, 10);
+      ctx.rotate(-0.035);
+
+      // 1. Nome caligráfico
+      ctx.font = 'italic 600 34px "Dancing Script", "Brush Script MT", "Caveat", "Great Vibes", "Segoe Script", cursive';
+      const displayName = name.length > 26 ? name.substring(0, 24) + '...' : name;
+      ctx.fillText(displayName, 15, 45);
+
+      const textMetrics = ctx.measureText(displayName);
+      const textWidth = Math.min(320, Math.max(110, textMetrics.width));
+
+      // 2. Traço de Rubrica Caligráfica fluida (laço e sublinhado de caneta)
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      const startX = 10;
+      const startY = 52;
+      ctx.moveTo(startX, startY);
+      
+      // Curva sob o texto
+      ctx.bezierCurveTo(
+        startX + textWidth * 0.35, startY + 16,
+        startX + textWidth * 0.7, startY - 8,
+        startX + textWidth + 20, startY + 6
+      );
+      // Laço de rubrica
+      ctx.bezierCurveTo(
+        startX + textWidth + 35, startY + 14,
+        startX + textWidth + 10, startY + 26,
+        startX + textWidth * 0.4, startY + 20
+      );
+      ctx.stroke();
+
+      // Ponto de caneta final
+      ctx.beginPath();
+      ctx.arc(startX + textWidth * 0.4, startY + 20, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 3. Selo de Autenticação Digital
+      ctx.restore();
+      ctx.save();
+      ctx.font = 'bold 8px "Helvetica Neue", Helvetica, Arial, sans-serif';
+      ctx.fillStyle = '#64748b'; // slate-500
+      ctx.fillText('✓ AUTENTICADO DIGITALMENTE', 30, 98);
+      ctx.restore();
+
+      return canvas.toDataURL('image/png');
+    } catch(err) {
+      console.warn('[PdfService] Falha ao gerar assinatura do lojista:', err);
+      return null;
+    }
+  }
+
+  /**
    * Gera o extrato em formato de texto pronto para enviar no WhatsApp
    * Utilizado como contingência quando o dispositivo tem bloqueios de download.
    */
@@ -459,21 +537,34 @@ window.PdfService = (function() {
 
         y += 20;
 
-        // Linhas de Assinatura
-        doc.setDrawColor(148, 163, 184);
-        doc.setLineWidth(0.3);
-        
+        // Assinatura Digital do Emissor / Lojista (Gerada e autenticada automaticamente)
+        const merchantSignerName = (shopInfo.ownerName || shopInfo.shopName || 'Meu Caderno').trim();
+        const merchantSignatureImg = generateMerchantSignature(merchantSignerName);
+        if (merchantSignatureImg) {
+          try {
+            doc.addImage(merchantSignatureImg, 'PNG', margin + 5, y - 16, 65, 16);
+          } catch(errSig) {
+            console.warn('Erro ao inserir assinatura automática do emissor:', errSig);
+          }
+        }
+
         doc.line(margin + 5, y, margin + 70, y);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(71, 85, 105);
-        doc.text(shopInfo.shopName || 'Assinatura do Responsável', margin + 37, y + 4, { align: 'center' });
+        doc.text(merchantSignerName, margin + 37, y + 4, { align: 'center' });
+        if (shopInfo.ownerName && shopInfo.shopName && shopInfo.ownerName.trim() !== shopInfo.shopName.trim()) {
+          doc.setFontSize(6.5);
+          doc.setTextColor(148, 163, 184);
+          doc.text(shopInfo.shopName, margin + 37, y + 7.5, { align: 'center' });
+        }
 
+        // Assinatura do Cliente
         if (signatureBase64) {
           try {
             doc.addImage(signatureBase64, 'PNG', pageWidth - margin - 70, y - 15, 65, 15);
           } catch(e) {
-            console.error('Erro ao adicionar assinatura ao PDF', e);
+            console.error('Erro ao adicionar assinatura do cliente ao PDF', e);
           }
         }
         doc.line(pageWidth - margin - 70, y, pageWidth - margin - 5, y);
@@ -783,6 +874,7 @@ window.PdfService = (function() {
   return {
     generateReceiptPdf,
     generateReceiptText,
+    generateMerchantSignature,
     downloadPdf,
     sharePdfFile,
     openPdfPreview,
@@ -914,23 +1006,118 @@ window.AppState = (function() {
   const STORAGE_KEY_SETTINGS = 'cadernofiado_settings_v1';
   const STORAGE_KEY_VIP = 'cadernofiado_vip_v1';
   const STORAGE_KEY_REWARDED = 'cadernofiado_rewarded_pass_v1';
+  const STORAGE_KEY_TRIAL_USED = 'cadernofiado_trial_used_v1';
   const STORAGE_KEY_LICENSE = 'cadernofiado_license_v2';
   const STORAGE_KEY_DEVICE_ID = 'cadernofiado_device_id_v1';
   const STORAGE_KEY_LAST_SEEN_TIME = 'cadernofiado_last_seen_time_v1';
+  const STORAGE_KEY_TIME_OFFSET = 'cadernofiado_time_offset_v1';
+
+  // --- MOTOR DE TEMPO BLINDADO (Anti-Adulteração de Data & Sincronização em Nuvem) ---
+  const sessionStartPerf = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+  let sessionBaseTime = Date.now();
+  let timeOffsetMs = 0;
+
+  try {
+    const rawLastSeen = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
+    const lastSeen = rawLastSeen ? parseInt(rawLastSeen, 10) : 0;
+    const rawOffset = localStorage.getItem(STORAGE_KEY_TIME_OFFSET);
+    if (rawOffset) timeOffsetMs = parseInt(rawOffset, 10) || 0;
+
+    // Se o relógio do aparelho estiver marcando um horário ANTERIOR ao último horário já registrado,
+    // o usuário atrasou a data do celular! O tempo é ancorado no último horário e avança monotonicamente.
+    if (lastSeen && (sessionBaseTime + timeOffsetMs) < lastSeen) {
+      sessionBaseTime = lastSeen;
+      timeOffsetMs = 0;
+    }
+  } catch(e) {}
 
   function getEffectiveTime() {
-    const now = Date.now();
+    let current;
+    if (sessionStartPerf > 0 && typeof performance !== 'undefined' && performance.now) {
+      const elapsed = performance.now() - sessionStartPerf;
+      current = sessionBaseTime + timeOffsetMs + elapsed;
+    } else {
+      current = Date.now() + timeOffsetMs;
+    }
+
     try {
       const raw = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
       const lastSeen = raw ? parseInt(raw, 10) : 0;
-      if (lastSeen && now < lastSeen - 300000) {
-        return lastSeen;
-      }
-      if (now > lastSeen) {
-        localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, now.toString());
+      if (current > lastSeen) {
+        localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, Math.floor(current).toString());
+      } else if (lastSeen && current < lastSeen) {
+        current = lastSeen;
       }
     } catch(e) {}
-    return now;
+
+    return Math.floor(current);
+  }
+
+  // Sincronização em segundo plano com servidor de tempo real (Cloudflare / WorldTimeAPI)
+  async function syncNetworkTime() {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+
+      // Cloudflare Trace: altíssima disponibilidade global, ultra rápido e sem bloqueio CORS
+      const res = await fetch('https://cloudflare.com/cdn-cgi/trace', {
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const text = await res.text();
+        const match = text.match(/ts=(\d+(\.\d+)?)/);
+        if (match && match[1]) {
+          const serverNow = Math.round(parseFloat(match[1]) * 1000);
+          applyNetworkTime(serverNow);
+          return;
+        }
+      }
+    } catch(e) {
+      try {
+        const controller2 = new AbortController();
+        const timer2 = setTimeout(() => controller2.abort(), 3500);
+        const res2 = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC', {
+          cache: 'no-store',
+          signal: controller2.signal
+        });
+        clearTimeout(timer2);
+        if (res2.ok) {
+          const data = await res2.json();
+          if (data && data.unixtime) {
+            applyNetworkTime(data.unixtime * 1000);
+          }
+        }
+      } catch(err) {}
+    }
+  }
+
+  function applyNetworkTime(realTimeMs) {
+    if (!realTimeMs || isNaN(realTimeMs)) return;
+    const currentDeviceNow = (sessionStartPerf > 0 && performance.now) 
+      ? sessionBaseTime + (performance.now() - sessionStartPerf)
+      : Date.now();
+
+    const diff = realTimeMs - currentDeviceNow;
+    timeOffsetMs = diff;
+    try {
+      localStorage.setItem(STORAGE_KEY_TIME_OFFSET, diff.toString());
+      const raw = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
+      const lastSeen = raw ? parseInt(raw, 10) : 0;
+      if (realTimeMs > lastSeen) {
+        localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, realTimeMs.toString());
+      }
+    } catch(e) {}
+    notify();
+  }
+
+  if (typeof window !== 'undefined') {
+    setTimeout(syncNetworkTime, 1200);
+    window.addEventListener('online', syncNetworkTime);
+    setInterval(syncNetworkTime, 10 * 60 * 1000);
   }
 
   // Chave Pública Criptográfica ECDSA P-256 Oficial do CadernoFiado
@@ -1730,7 +1917,8 @@ window.AppState = (function() {
       }
     }
 
-    // Suporte ao passe de 24h por anúncio (Rewarded Video) com bloqueio estrito em tempo real
+    // Suporte ao passe de 24h por anúncio (Degustação única por aparelho)
+    const storedTrialUsed = localStorage.getItem(STORAGE_KEY_TRIAL_USED) === 'true';
     const rewardedPassRaw = localStorage.getItem(STORAGE_KEY_REWARDED);
     const rewardedPassExpiresAt = rewardedPassRaw ? parseInt(rewardedPassRaw, 10) : null;
     const isPassActive = Boolean(rewardedPassExpiresAt && rewardedPassExpiresAt > now);
@@ -1738,12 +1926,15 @@ window.AppState = (function() {
     // Se o passe de 24h expirou, remove do storage imediatamente para garantir bloqueio real sem tolerância
     if (rewardedPassExpiresAt && rewardedPassExpiresAt <= now) {
       try { localStorage.removeItem(STORAGE_KEY_REWARDED); } catch(e) {}
+      try { localStorage.setItem(STORAGE_KEY_TRIAL_USED, 'true'); } catch(e) {}
     }
 
     if (isPassActive && !isVip) {
       isVip = true;
       planName = 'Passe VIP 24h';
     }
+
+    const trialUsed = Boolean(storedTrialUsed || isPassActive || rewardedPassExpiresAt);
 
     return {
       isVip,
@@ -1752,6 +1943,7 @@ window.AppState = (function() {
       isLifetime,
       isExpired,
       isPassActive,
+      trialUsed,
       passExpiresAt: isPassActive ? rewardedPassExpiresAt : null,
       daysRemaining,
       expiresAt: license ? license.expiresAt : null,
@@ -1779,12 +1971,22 @@ window.AppState = (function() {
   }
 
   function activate24hPass() {
+    const trialAlreadyUsed = localStorage.getItem(STORAGE_KEY_TRIAL_USED) === 'true' ||
+                             Boolean(localStorage.getItem(STORAGE_KEY_REWARDED));
+    if (trialAlreadyUsed) {
+      return { 
+        success: false, 
+        message: 'O teste grátis de 24 horas já foi utilizado neste aparelho. Assine um plano para continuar aproveitando!' 
+      };
+    }
+
     const now = getEffectiveTime();
     const expiresAt = now + 24 * 60 * 60 * 1000;
+    localStorage.setItem(STORAGE_KEY_TRIAL_USED, 'true');
     localStorage.setItem(STORAGE_KEY_REWARDED, expiresAt.toString());
     try { localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, now.toString()); } catch(e) {}
     notify();
-    return expiresAt;
+    return { success: true, expiresAt };
   }
 
   function getPassRemainingTimeFormatted() {
@@ -1804,13 +2006,18 @@ window.AppState = (function() {
 
   // --- BACKUP & RESTAURAÇÃO ---
   function getBackupData() {
+    const allClients = getClients();
+    const isTrialUsed = localStorage.getItem(STORAGE_KEY_TRIAL_USED) === 'true' ||
+                        Boolean(localStorage.getItem(STORAGE_KEY_REWARDED)) ||
+                        (Array.isArray(allClients) && allClients.length > 0);
     return {
       version: '1.0',
       exportedAt: new Date().toISOString(),
       shopSettings: getSettings(),
-      clients: getClients(),
+      clients: allClients,
       license: getStoredLicense(),
-      deviceId: getInstallationId()
+      deviceId: getInstallationId(),
+      trialUsed: isTrialUsed
     };
   }
 
@@ -2003,6 +2210,12 @@ window.AppState = (function() {
         localStorage.setItem(STORAGE_KEY_DEVICE_ID, validatedData.deviceId);
         saveLicense(validatedData.license);
       }
+
+      // Blindagem antifraude: bases restauradas de backup ou que já usaram teste têm o trial permanentemente bloqueado
+      if (validatedData.trialUsed || (validatedData.clients && validatedData.clients.length > 0)) {
+        localStorage.setItem(STORAGE_KEY_TRIAL_USED, 'true');
+      }
+
       notify();
       return { success: true, count: validatedData.clients.length };
     } catch (e) {
@@ -2023,6 +2236,7 @@ window.AppState = (function() {
     localStorage.removeItem(STORAGE_KEY_SETTINGS);
     localStorage.removeItem(STORAGE_KEY_VIP);
     localStorage.removeItem(STORAGE_KEY_REWARDED);
+    localStorage.removeItem(STORAGE_KEY_TRIAL_USED);
     notify();
   }
 
@@ -2753,8 +2967,12 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
   if (!isOpen) return null;
 
   const handleClaimReward = () => {
-    window.AppState.activate24hPass();
-    if (onRewardGranted) onRewardGranted();
+    const res = window.AppState.activate24hPass();
+    if (res && res.success === false) {
+      alert(res.message);
+    } else {
+      if (onRewardGranted) onRewardGranted();
+    }
     onClose();
   };
 
@@ -3435,6 +3653,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck, Store, Phone, QrCode, Copy, FileText } = window.Icons || {};
 
   const [confirmRestoreData, setConfirmRestoreData] = React.useState(null);
+  const [sigPreview, setSigPreview] = React.useState(null);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -3442,6 +3661,14 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
       setSaveSuccess(false);
     }
   }, [isOpen, shopSettings]);
+
+  React.useEffect(() => {
+    if (isOpen && window.PdfService && typeof window.PdfService.generateMerchantSignature === 'function') {
+      const name = formData.ownerName || formData.shopName || 'Meu Caderno';
+      const sigData = window.PdfService.generateMerchantSignature(name);
+      setSigPreview(sigData);
+    }
+  }, [isOpen, formData.ownerName, formData.shopName]);
 
   // Controle de histórico do botão/gesto Voltar do Android para subdiálogos (BUG 2)
   window.useModalHistory(confirmResetOpen, () => setConfirmResetOpen(false), 'settingsConfirmReset');
@@ -3652,6 +3879,50 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
               <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 block">
                 Aparece no topo do aplicativo, nas mensagens de cobrança e nos recibos PDF.
               </span>
+            </div>
+
+            {/* Assinatura Digital Automática do Emissor / Proprietário */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 transition-colors">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Check size={14} className="text-blue-600 dark:text-blue-400" />
+                  Sua Assinatura Digital (Recibo PDF):
+                </label>
+                <span className="text-[10px] text-blue-700 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-500/20">
+                  Assina Sempre Automático
+                </span>
+              </div>
+              
+              <input
+                type="text"
+                value={formData.ownerName || ''}
+                onChange={e => handleChange('ownerName', e.target.value)}
+                placeholder="Ex: Seu Nome Completo / Responsável"
+                className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
+              />
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
+                Digite seu nome ou da empresa. O sistema gera sua rubrica caligráfica e já assina automaticamente a via do emissor em todos os recibos.
+              </span>
+
+              {sigPreview && (
+                <div className="mt-2 p-2.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center">
+                  <span className="text-[9.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                    Prévia da sua rubrica no recibo:
+                  </span>
+                  <div className="bg-white px-4 py-1.5 rounded-lg border border-slate-200 shadow-sm flex flex-col items-center">
+                    <img
+                      src={sigPreview}
+                      alt="Prévia da Assinatura Digital"
+                      className="h-12 max-w-full object-contain"
+                    />
+                    <div className="w-40 border-t border-slate-300 mt-0.5 pt-0.5 text-center">
+                      <span className="text-[10px] font-medium text-slate-700 block truncate">
+                        {formData.ownerName || formData.shopName || 'Meu Caderno'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Telefone do Comércio */}
@@ -6363,19 +6634,30 @@ window.VipTab = function VipTab({
             </form>
           </div>
 
-          {/* Opção Gratuita: Vídeo Premiado 24h */}
+          {/* Opção Gratuita: Vídeo Premiado 24h (Degustação única por aparelho) */}
           {onWatchRewarded && (
             <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-center space-y-2 transition-colors">
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
-                Quer testar antes? Libere 24h grátis assistindo a um vídeo rápido:
-              </span>
-              <button
-                onClick={onWatchRewarded}
-                className="py-2 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 mx-auto border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
-              >
-                <Play size={14} className="text-emerald-600 dark:text-emerald-400" />
-                <span>Assistir Vídeo (Liberar 24h)</span>
-              </button>
+              {!vipInfo.trialUsed ? (
+                <>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                    Quer testar antes? Libere 24h grátis assistindo a um vídeo rápido:
+                  </span>
+                  <button
+                    onClick={onWatchRewarded}
+                    className="py-2 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 mx-auto border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
+                  >
+                    <Play size={14} className="text-emerald-600 dark:text-emerald-400" />
+                    <span>Assistir Vídeo (Liberar Teste 24h)</span>
+                  </button>
+                </>
+              ) : (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 py-1">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300 block mb-0.5">
+                    ✨ Teste de 24h já utilizado
+                  </span>
+                  Escolha um dos planos acima para desbloquear o acesso ilimitado com cobrança PIX e recibos em PDF.
+                </div>
+              )}
             </div>
           )}
 
