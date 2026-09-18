@@ -75,10 +75,10 @@ Write-Host "[4/7] Aplicando identidade visual, ícones e permissões do CadernoF
 $ymlPath = Join-Path $buildDir "apktool.yml"
 if (Test-Path $ymlPath) {
     $yml = [System.IO.File]::ReadAllText($ymlPath, [System.Text.Encoding]::UTF8)
-    $yml = $yml -replace 'versionCode:\s*\d+', 'versionCode: 36'
-    $yml = $yml -replace "versionName:\s*.*", "versionName: '2.0.2'"
+    $yml = $yml -replace 'versionCode:\s*\d+', 'versionCode: 37'
+    $yml = $yml -replace "versionName:\s*.*", "versionName: '2.0.3'"
     [System.IO.File]::WriteAllText($ymlPath, $yml, [System.Text.Encoding]::UTF8)
-    Write-Host "Versão do APK atualizada para: versionCode 36 / versionName 2.0.2" -ForegroundColor Green
+    Write-Host "Versão do APK atualizada para: versionCode 37 / versionName 2.0.3" -ForegroundColor Green
 }
 
 # B. Atualizar Nome do Aplicativo

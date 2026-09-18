@@ -6911,30 +6911,25 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
           </button>
         </div>
 
-        {/* Conteúdo com Orientação de UX Alinhada (Problema 3) */}
+        {/* Conteúdo */}
         <div className="p-5 space-y-4 flex-1">
           
-          {/* Card com passos explicativos numerados */}
           <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/40 space-y-2.5 text-xs text-slate-700 dark:text-slate-300">
             <div className="flex items-start gap-2.5">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center mt-0.5">
-                1
-              </span>
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center mt-0.5">1</span>
               <p className="leading-snug">
                 Clique em <strong>'Exportar Dados'</strong> para gerar o arquivo do seu caderno.
               </p>
             </div>
             <div className="flex items-start gap-2.5">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center mt-0.5">
-                2
-              </span>
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center mt-0.5">2</span>
               <p className="leading-snug">
-                Compartilhe e salve esse arquivo no seu <strong>Google Drive</strong> ou mande para o seu próprio <strong>WhatsApp</strong>. Assim, seus dados ficam seguros na nuvem!
+                Compartilhe e salve esse arquivo no <strong>Google Drive</strong> ou no seu <strong>WhatsApp</strong>.
               </p>
             </div>
           </div>
 
-          {/* Botões de Ação Principais (Problema 2) */}
+          {/* Botões de Ação Principais */}
           <div className="space-y-3 pt-1">
             <button
               onClick={handleExportBackup}
@@ -6948,136 +6943,90 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
               type="button"
               onClick={() => {
                 if (!isVip) onTriggerPaywall('backup');
-                else fileInputRef.current?.click();
+                else setPasteBackupOpen(true);
               }}
-              className={`w-full py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center space-x-2 transition-colors btn-smooth ${isVip ? 'bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700' : 'bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-500 border border-slate-200 dark:border-slate-800'}`}
+              className={`w-full py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center space-x-2 transition-colors btn-smooth ${isVip ? 'bg-slate-800 hover:bg-slate-700 text-white shadow-sm' : 'bg-slate-50 dark:bg-slate-900 text-slate-500 border border-slate-200'}`}
             >
               <Upload size={18} />
               <span>Restaurar Backup</span>
-            </button>
-
-            {/* Input oculto sem display:none para garantir acionamento no Android WebView */}
-            <input
-              ref={fileInputRef}
-              id="backup-file-input"
-              type="file"
-              accept=".json,application/json,text/plain"
-              onChange={handleFileSelect}
-              style={{ position: 'fixed', top: '-1000px', left: '-1000px', opacity: 0, width: '1px', height: '1px', pointerEvents: 'none' }}
-            />
-          </div>
-
-          {/* Contingência: Colar Código */}
-          <div className="text-center pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                if (!isVip) onTriggerPaywall('backup');
-                else setPasteBackupOpen(true);
-              }}
-              className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
-            >
-              <Code size={12} />
-              <span>Restaurar colando código JSON</span>
             </button>
           </div>
 
           {!isVip && (
             <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-xs text-amber-800 dark:text-amber-300 text-center">
               <p className="font-semibold flex items-center justify-center gap-1.5"><ShieldCheck size={14} /> Recurso Exclusivo VIP</p>
-              <p className="text-[10px] mt-1 opacity-90">Ative o plano VIP para liberar os backups seguros.</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Modal de Contingência: Colar/Copiar Código JSON */}
+      {/* Modal de Restauração Aprimorado (Com suporte a Arquivo e Texto para Mobile/Web) */}
       {pasteBackupOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
-          <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-3 shadow-2xl animate-pop-in">
-            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Código de Backup (JSON)</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Copie o código abaixo para salvar, ou cole um código existente para restaurar:
-            </p>
-            <textarea
-              value={pastedJson}
-              onChange={e => setPastedJson(e.target.value)}
-              placeholder="Cole o código JSON aqui..."
-              rows={6}
-              className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
-            />
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/90 animate-fadeIn">
+          <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
             
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={async () => {
-                  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.readText) {
-                    try {
-                      const text = await navigator.clipboard.readText();
-                      if (text) {
-                        setPastedJson(text);
-                        return;
-                      }
-                    } catch(e) {
-                      console.warn('Clipboard read failed:', e);
-                    }
-                  }
-                }}
-                className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium btn-smooth"
-              >
-                Colar
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  let copied = false;
-                  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-                    try {
-                      await navigator.clipboard.writeText(pastedJson);
-                      copied = true;
-                    } catch(e) {}
-                  }
-                  if (!copied) {
-                    try {
-                      const ta = document.createElement('textarea');
-                      ta.value = pastedJson;
-                      ta.style.position = 'fixed';
-                      ta.style.left = '-9999px';
-                      document.body.appendChild(ta);
-                      ta.focus();
-                      ta.select();
-                      document.execCommand('copy');
-                      document.body.removeChild(ta);
-                      copied = true;
-                    } catch(e) {}
-                  }
-                  setFeedbackDialog({
-                    isOpen: true,
-                    title: 'Código Copiado!',
-                    message: 'O código de backup foi copiado com sucesso para a área de transferência.',
-                    variant: 'success'
-                  });
-                }}
-                className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium btn-smooth"
-              >
-                Copiar
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                <Upload size={18} className="text-emerald-600" />
+                Restaurar Backup
+              </h3>
+              <button onClick={() => { setPasteBackupOpen(false); setPastedJson(''); }} className="p-1.5 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                <X size={18} />
               </button>
             </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => { setPasteBackupOpen(false); setPastedJson(''); }}
-                className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-medium btn-smooth"
-              >
-                Fechar
-              </button>
-              <button
-                type="button"
-                onClick={handleRestorePastedText}
-                className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold btn-smooth shadow-sm"
-              >
-                Restaurar
-              </button>
+
+            <div className="overflow-y-auto space-y-4 flex-1 hide-scrollbar pb-2">
+              {/* Opção 1: Selecionar Arquivo (Funciona no PC) */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800">
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Opção 1: Arquivo</h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
+                  Se você está no PC ou seu celular suporta seleção, clique abaixo:
+                </p>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors btn-smooth flex items-center justify-center gap-2"
+                >
+                  <Upload size={14} /> Selecionar arquivo .json
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json,application/json,text/plain"
+                  onChange={(e) => {
+                    handleFileSelect(e);
+                    setPasteBackupOpen(false);
+                  }}
+                  style={{ display: 'none' }}
+                />
+              </div>
+
+              {/* Opção 2: Colar Texto (Garante funcionamento no Android WebView) */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800">
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Opção 2: Copiar e Colar (WhatsApp)</h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
+                  Se o botão acima não abrir nada no seu celular, siga os passos:<br/>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.</span> Abra o arquivo recebido no WhatsApp (usando Chrome ou leitor HTML).<br/>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">2.</span> Selecione e copie <b>todo</b> o texto do arquivo.<br/>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">3.</span> Cole o texto na caixa abaixo:
+                </p>
+                
+                <textarea
+                  value={pastedJson}
+                  onChange={e => setPastedJson(e.target.value)}
+                  placeholder="Cole o código do backup aqui..."
+                  rows={4}
+                  className="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-[10px] font-mono text-slate-800 dark:text-slate-300 focus:outline-none focus:border-emerald-500"
+                />
+                
+                <button
+                  type="button"
+                  onClick={handleRestorePastedText}
+                  className="w-full mt-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold btn-smooth shadow-sm"
+                >
+                  Restaurar Texto Colado
+                </button>
+              </div>
             </div>
           </div>
         </div>
