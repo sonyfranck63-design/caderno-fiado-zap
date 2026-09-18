@@ -932,7 +932,9 @@ window.AppState = (function() {
     // 1. Web Share API para Android/iOS se suportado
     if (typeof navigator !== 'undefined' && navigator.share && backupFile) {
       try {
-        if (navigator.canShare && navigator.canShare({ files: [backupFile] })) {
+        // Tenta com arquivo primeiro (Android moderno)
+        const canShareFiles = navigator.canShare ? navigator.canShare({ files: [backupFile] }) : true;
+        if (canShareFiles) {
           await navigator.share({
             files: [backupFile],
             title: 'Backup CadernoFiado',
@@ -940,15 +942,21 @@ window.AppState = (function() {
           });
           return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount };
         }
+        // Tenta compartilhar apenas como texto (fallback para WebViews antigos)
+        await navigator.share({
+          title: 'Backup CadernoFiado',
+          text: dataStr
+        });
+        return { success: true, method: 'share_text', filename, clientCount: data.clients.length, salesCount };
       } catch (err) {
         if (err.name === 'AbortError') {
           return { success: true, method: 'cancelled', filename, clientCount: data.clients.length, salesCount };
         }
-        console.warn('Share API falhou no backup, tentando fallback 1:', err);
+        console.warn('Share API falhou no backup, tentando fallback:', err);
       }
     }
 
-    // 2. Fallback 1: Download direto via tag <a> (Normalmente funciona no navegador/desktop)
+    // 2. Fallback: Download direto via tag <a> (funciona no navegador/desktop)
     if (!isAndroid) {
       try {
         const url = URL.createObjectURL(blob);
@@ -961,16 +969,16 @@ window.AppState = (function() {
         setTimeout(() => URL.revokeObjectURL(url), 60000);
         return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount };
       } catch (e) {
-        console.warn('Fallback 1 download <a> falhou, tentando fallback 2:', e);
+        console.warn('Fallback download <a> falhou:', e);
       }
     }
 
-    // 3. Fallback 2: Retornar o JSON Bruto (Raw) para que a UI ofereça a cópia
+    // 3. Fallback final: Retornar JSON bruto para copiar na tela
     // ATENÇÃO: Nunca usar window.location.href com data:application/json no Android WebView (causa Crash)
     return { 
       success: true, 
       method: 'raw_json', 
-      rawJson: jsonString, 
+      rawJson: dataStr, 
       filename, 
       clientCount: data.clients.length, 
       salesCount 

@@ -521,15 +521,17 @@ window.PdfService = (function() {
     const safeFilename = filename || 'recibo-fiado.pdf';
     
     try {
-      // 1. Tenta usar a Web Share API nativa com objeto File (Funciona em Android WebViews modernos)
       let pdfFile = null;
       if (typeof File !== 'undefined') {
         pdfFile = blob instanceof File ? blob : new File([blob], safeFilename, { type: 'application/pdf' });
       }
       
+      // 1. Web Share API - tenta sempre que disponível, sem depender de canShare
       if (typeof navigator !== 'undefined' && navigator.share && pdfFile) {
         try {
-          if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+          // Primeiro: tenta com arquivo (Android moderno)
+          const canShareFiles = navigator.canShare ? navigator.canShare({ files: [pdfFile] }) : true;
+          if (canShareFiles) {
             await navigator.share({
               files: [pdfFile],
               title: 'Documento Fiado',
@@ -541,11 +543,25 @@ window.PdfService = (function() {
           if (shareErr.name === 'AbortError') {
              return { success: true, method: 'cancelled' };
           }
-          console.warn('Share API falhou. Tentando fallbacks...', shareErr);
+          console.warn('Share com arquivo falhou:', shareErr);
+        }
+        
+        // Segunda tentativa: share sem arquivo, apenas texto (WebViews antigos)
+        try {
+          await navigator.share({
+            title: 'Documento Fiado',
+            text: 'Seu extrato de fiado foi gerado. Por favor, solicite ao estabelecimento o envio pelo WhatsApp.'
+          });
+          return { success: true, method: 'share_text' };
+        } catch(shareTextErr) {
+          if (shareTextErr.name === 'AbortError') {
+            return { success: true, method: 'cancelled' };
+          }
+          console.warn('Share texto falhou:', shareTextErr);
         }
       }
 
-      // 2. Fallback 1: Download direto via tag <a> (Normalmente falha em Android WebView, mas funciona no Desktop/Navegador)
+      // 2. Fallback: Download via <a> (funciona no navegador/desktop)
       const isAndroid = /android/i.test(navigator.userAgent || '');
       if (!isAndroid) {
         try {
@@ -561,11 +577,11 @@ window.PdfService = (function() {
           }
           return { success: true, method: 'browser_download' };
         } catch (openErr) {
-          console.warn('Download <a> falhou. Tentando fallback 2...', openErr);
+          console.warn('Download <a> falhou:', openErr);
         }
       }
 
-      // 3. Fallback 2: Tentar ponte nativa se existir
+      // 3. Fallback nativo: ponte Android se existir
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -583,13 +599,11 @@ window.PdfService = (function() {
             } catch(e) { console.warn(e); }
           }
           
-          // ATENÇÃO: NÃO usar window.location.href = reader.result no Android WebView. 
-          // Isso causa ActivityNotFoundException e FECHA o aplicativo!
-          // Retornamos falso para forçar a interface a mostrar os fallbacks limpos.
-          resolve({ success: false, method: 'no_native_bridge', error: 'Download direto de PDF não suportado neste dispositivo. Use a opção de compartilhar pelo WhatsApp.' });
+          // Nenhum método disponível — retornar falso para UI mostrar fallback de texto
+          resolve({ success: false, method: 'no_native_bridge', error: 'Download de PDF não suportado neste aparelho. Use "Enviar extrato em texto pelo WhatsApp".' });
         };
         reader.onerror = () => {
-          resolve({ success: false, method: 'file_read_error', error: 'Erro ao ler o arquivo PDF gerado.' });
+          resolve({ success: false, method: 'file_read_error', error: 'Erro ao ler o arquivo PDF.' });
         };
         reader.readAsDataURL(blob);
       });
