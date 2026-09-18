@@ -336,24 +336,12 @@
 
     const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
 
-    async function computeCompactChecksum(cleanDeviceId, plan) {
+    function computeCompactChecksum(cleanDeviceId, plan) {
       const data = `${COMPACT_KEY_SALT}:${cleanDeviceId}:${plan}`;
-      try {
-        if (window.crypto && window.crypto.subtle && typeof window.crypto.subtle.digest === 'function') {
-          const hashBuf = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
-          const hashArray = Array.from(new Uint8Array(hashBuf));
-          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-          return hashHex.substring(0, 6);
-        }
-      } catch (subtleErr) {
-        console.warn('SubtleCrypto indisponível, usando fallback autônomo SHA-256:', subtleErr);
-      }
-      // Fallback 100% autônomo e idêntico
-      const fallbackHex = sha256Hex(data);
-      return fallbackHex.substring(0, 6);
+      return sha256Hex(data).substring(0, 6);
     }
 
-    async function generateCompactLicense(deviceId, planType) {
+    function generateCompactLicense(deviceId, planType) {
       let cleanId = (deviceId || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
       if (cleanId.length < 8) {
         cleanId = cleanId.padEnd(8, '0');
@@ -362,14 +350,14 @@
       }
       let planKey = 'L';
       let planName = 'Plano VIP Vitalício';
-      if (planType === '30D') {
+      if (planType === '30D' || planType === 'M') {
         planKey = 'M';
         planName = 'Plano VIP Mensal (30 Dias)';
-      } else if (planType === '365D') {
+      } else if (planType === '365D' || planType === 'A') {
         planKey = 'A';
         planName = 'Plano VIP Anual (1 Ano)';
       }
-      const checksum = await computeCompactChecksum(cleanId, planKey);
+      const checksum = computeCompactChecksum(cleanId, planKey);
       const part1 = cleanId.substring(0, 4);
       const part2 = cleanId.substring(4, 8);
       const compactCode = `VIP-${planKey}-${part1}-${part2}-${checksum}`;

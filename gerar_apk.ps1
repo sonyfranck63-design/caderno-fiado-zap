@@ -68,10 +68,20 @@ if (Test-Path $nativePatchDir) {
     Copy-Item "$nativePatchDir\*" $buildDir -Recurse -Force
 }
 
-# 5. Aplicar personalizações nativas (Nome, Cores, Ícones e Configurações)
+# 5. Aplicar personalizações nativas (Nome, Cores, Ícones, Versão e Configurações)
 Write-Host "[4/7] Aplicando identidade visual, ícones e permissões do CadernoFiado..." -ForegroundColor Yellow
 
-# A. Atualizar Nome do Aplicativo
+# A. Atualizar Versão do Aplicativo (versionCode e versionName) para forçar atualização no Android
+$ymlPath = Join-Path $buildDir "apktool.yml"
+if (Test-Path $ymlPath) {
+    $yml = [System.IO.File]::ReadAllText($ymlPath, [System.Text.Encoding]::UTF8)
+    $yml = $yml -replace 'versionCode:\s*\d+', 'versionCode: 35'
+    $yml = $yml -replace "versionName:\s*.*", "versionName: '2.0.1'"
+    [System.IO.File]::WriteAllText($ymlPath, $yml, [System.Text.Encoding]::UTF8)
+    Write-Host "Versão do APK atualizada para: versionCode 35 / versionName 2.0.1" -ForegroundColor Green
+}
+
+# B. Atualizar Nome do Aplicativo
 $stringsPath = Join-Path $buildDir "res\values\strings.xml"
 if (Test-Path $stringsPath) {
     $stringsXml = [System.IO.File]::ReadAllText($stringsPath, [System.Text.Encoding]::UTF8)
@@ -79,7 +89,7 @@ if (Test-Path $stringsPath) {
     [System.IO.File]::WriteAllText($stringsPath, $stringsXml, [System.Text.Encoding]::UTF8)
 }
 
-# B. Atualizar Cor de Fundo do Ícone
+# C. Atualizar Cor de Fundo do Ícone
 $colorsPath = Join-Path $buildDir "res\values\colors.xml"
 if (Test-Path $colorsPath) {
     $colorsXml = [System.IO.File]::ReadAllText($colorsPath, [System.Text.Encoding]::UTF8)
@@ -87,24 +97,42 @@ if (Test-Path $colorsPath) {
     [System.IO.File]::WriteAllText($colorsPath, $colorsXml, [System.Text.Encoding]::UTF8)
 }
 
-# C. Configurar Ícones PNG de Alta Resolução
-$iconSource = Join-Path $root "icons\icon-192.png"
-if (-not (Test-Path $iconSource)) {
-    $iconSource = Join-Path $root "icons\icon-512.png"
-}
+# D. Configurar Ícones PNG de Alta Resolução e Ícone Adaptativo Android
+$icon192 = Join-Path $root "icons\icon-192.png"
+$icon512 = Join-Path $root "icons\icon-512.png"
+$iconSource = if (Test-Path $icon512) { $icon512 } else { $icon192 }
 
 if (Test-Path $iconSource) {
-    # Remover mipmap-anydpi para priorizar o ícone bitmap em todos os Androids
-    $anydpi = Join-Path $buildDir "res\mipmap-anydpi"
-    if (Test-Path $anydpi) { Remove-Item $anydpi -Recurse -Force }
+    # 1. Atualizar ícones bitmap em todas as densidades (para telas e launchers legacy)
+    $densities = @("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi")
+    foreach ($d in $densities) {
+        $mipmapDir = Join-Path $buildDir "res\mipmap-$d"
+        if (-not (Test-Path $mipmapDir)) { New-Item -ItemType Directory -Path $mipmapDir | Out-Null }
+        Copy-Item $iconSource (Join-Path $mipmapDir "ic_launcher.png") -Force
+        Copy-Item $iconSource (Join-Path $mipmapDir "ic_launcher_round.png") -Force
 
-    $densities = @("mipmap-mdpi", "mipmap-hdpi", "mipmap-xhdpi", "mipmap-xxhdpi", "mipmap-xxxhdpi")
-    foreach ($density in $densities) {
-        $densityDir = Join-Path $buildDir "res\$density"
-        if (-not (Test-Path $densityDir)) { New-Item -ItemType Directory -Path $densityDir | Out-Null }
-        Copy-Item $iconSource (Join-Path $densityDir "ic_launcher.png") -Force
-        Copy-Item $iconSource (Join-Path $densityDir "ic_launcher_round.png") -Force
+        $drawableDir = Join-Path $buildDir "res\drawable-$d"
+        if (-not (Test-Path $drawableDir)) { New-Item -ItemType Directory -Path $drawableDir | Out-Null }
+        Copy-Item $iconSource (Join-Path $drawableDir "ic_launcher_foreground.png") -Force
     }
+
+    # 2. Remover ic_launcher_foreground.xml vetorial do template base para não sobrepor o PNG do CadernoFiado
+    $fgXml = Join-Path $buildDir "res\drawable\ic_launcher_foreground.xml"
+    if (Test-Path $fgXml) { Remove-Item $fgXml -Force }
+
+    # 3. Configurar mipmap-anydpi para aparelhos Android modernos (Adaptive Icons)
+    $anydpi = Join-Path $buildDir "res\mipmap-anydpi"
+    if (-not (Test-Path $anydpi)) { New-Item -ItemType Directory -Path $anydpi | Out-Null }
+    
+    $adaptiveXml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
+"@
+    [System.IO.File]::WriteAllText((Join-Path $anydpi "ic_launcher.xml"), $adaptiveXml.Trim(), [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $anydpi "ic_launcher_round.xml"), $adaptiveXml.Trim(), [System.Text.Encoding]::UTF8)
 }
 
 # D. Configurar Navegação e Abertura Automática do WhatsApp (settings.json)

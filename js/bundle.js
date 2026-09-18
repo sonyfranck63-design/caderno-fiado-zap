@@ -1515,16 +1515,34 @@ window.AppState = (function() {
     if (!keyInput) {
       return { success: false, message: 'Por favor, digite o código de ativação fornecido no WhatsApp.' };
     }
-    const raw = keyInput.trim().replace(/\s+/g, '');
+    // Remove espaços, aspas, quebras de linha e caracteres invisíveis
+    const raw = keyInput.toString().trim().replace(/[\s"'\r\n`]/g, '');
 
     // 1. Suporte a Código de Ativação Compacto (Curto, prático e amigável para celular)
-    if (raw.toUpperCase().startsWith('VIP-')) {
-      const parts = raw.toUpperCase().split('-');
-      if (parts.length !== 5) {
-        return { success: false, message: 'Formato do código incompleto. Exemplo esperado: VIP-M-XXXX-YYYY-ZZZZZZ' };
+    if (raw.toUpperCase().startsWith('VIP-') || (raw.toUpperCase().startsWith('VIP') && raw.length >= 18)) {
+      let clean = raw.toUpperCase();
+      let parts;
+      if (clean.includes('-')) {
+        parts = clean.split('-');
+      } else {
+        // Sem traços: VIP + PLAN(1) + PART1(4) + PART2(4) + CHECKSUM(6)
+        const withoutPrefix = clean.substring(3);
+        const plan = withoutPrefix.charAt(0);
+        const p1 = withoutPrefix.substring(1, 5);
+        const p2 = withoutPrefix.substring(5, 9);
+        const chk = withoutPrefix.substring(9);
+        parts = ['VIP', plan, p1, p2, chk];
       }
+
+      if (parts.length < 5) {
+        return { success: false, message: 'Código incompleto. Exemplo esperado: VIP-M-XXXX-YYYY-ZZZZ' };
+      }
+
       let planCode = parts[1]; // 'M', 'A' ou 'L'
-      if (planCode === '3') planCode = 'M'; // Retrocompatibilidade caso alguém tenha gerado chave antiga com prefixo 30D
+      if (planCode === '3' || planCode === '30' || planCode === '30D') planCode = 'M';
+      if (planCode === '365' || planCode === '365D') planCode = 'A';
+      if (planCode === 'LIFETIME' || planCode === 'VIT') planCode = 'L';
+
       const keyDevId = parts[2] + parts[3]; // 'XXXX' + 'YYYY'
       const keyChecksum = parts[4];
 
@@ -1547,11 +1565,11 @@ window.AppState = (function() {
 
       const expectedChecksum = await computeCompactChecksum(currentDevId, planCode);
       if (keyChecksum !== expectedChecksum) {
-        return { success: false, message: 'Código de ativação inválido ou incorreto.' };
+        return { success: false, message: 'Código de ativação inválido. Verifique os caracteres e tente novamente.' };
       }
 
       const now = getEffectiveTime();
-      let planName = 'VIP Pro';
+      let planName = 'VIP Pro Vitalício';
       let planType = 'LIFETIME';
       let expiresAt = null;
 
@@ -1574,7 +1592,7 @@ window.AppState = (function() {
         planName,
         activatedAt: new Date().toISOString(),
         expiresAt,
-        licenseKey: raw.toUpperCase()
+        licenseKey: clean
       });
 
       return {
@@ -1589,7 +1607,7 @@ window.AppState = (function() {
     if (!raw.startsWith('CFVIP.')) {
       return { 
         success: false, 
-        message: 'Código de ativação inválido. Digite o código de ativação recebido no WhatsApp.' 
+        message: 'Código de ativação inválido. Verifique o código recebido no WhatsApp.' 
       };
     }
 
@@ -1603,7 +1621,12 @@ window.AppState = (function() {
       const sigB64 = parts[2];
 
       const payloadJson = fromBase64Url(payloadB64);
-      const payload = JSON.parse(payloadJson);
+      let payload;
+      try {
+        payload = JSON.parse(payloadJson);
+      } catch (err) {
+        return { success: false, message: 'Código de ativação corrompido ou com caracteres inválidos.' };
+      }
 
       function normalizeDeviceId(id) {
         return (id || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -1646,14 +1669,13 @@ window.AppState = (function() {
         return { success: false, message: 'Este código de licença já se encontra expirado.' };
       }
 
-      let planName = 'VIP Pro';
-      let expiresAt = null;
+      let planName = 'Plano VIP Mensal (30 Dias)';
+      let expiresAt = payload.e;
+
       if (payload.p === '30D') {
-        planName = 'VIP Pro Mensal (30 Dias)';
-        expiresAt = payload.e || (now + 30 * 24 * 60 * 60 * 1000);
+        planName = 'Plano VIP Mensal (30 Dias)';
       } else if (payload.p === '365D') {
-        planName = 'VIP Pro Anual (1 Ano)';
-        expiresAt = payload.e || (now + 365 * 24 * 60 * 60 * 1000);
+        planName = 'Plano VIP Anual (1 Ano)';
       } else if (payload.p === 'LIFETIME') {
         planName = 'VIP Pro Vitalício';
         expiresAt = null;
@@ -1676,7 +1698,7 @@ window.AppState = (function() {
 
     } catch (e) {
       console.error('Erro na validação da chave:', e);
-      return { success: false, message: 'Falha ao processar código de ativação: ' + e.message };
+      return { success: false, message: 'Código de ativação inválido. Verifique os caracteres e tente novamente.' };
     }
   }
 

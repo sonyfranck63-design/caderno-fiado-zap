@@ -141,7 +141,7 @@
   <script src="vendor/jspdf.umd.min.js"></script>
 
   <!-- Estilos Globais -->
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/styles.css?v=2.0.1">
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen font-sans selection:bg-brand-500 selection:text-white transition-colors duration-200">
   <div id="debug-error" style="display:none; background:#7f1d1d; color:#fef2f2; padding:16px; font-family:monospace; white-space:pre-wrap; border-bottom:3px solid #ef4444; z-index:999999; position:relative;"></div>
@@ -178,21 +178,45 @@
   </div>
 
   <!-- Script Unificado da Aplicação -->
-  <script type="text/babel" src="js/bundle.js"></script>
+  <script type="text/babel" src="js/bundle.js?v=2.0.1"></script>
 
-  <!-- Registro do Service Worker & Suporte PWA -->
+  <!-- Gerenciamento de Cache & Service Worker -->
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js', { scope: './' })
-          .then(function(reg) {
-            console.log('[PWA] Service Worker registrado no escopo:', reg.scope);
-          })
-          .catch(function(err) {
-            console.warn('[PWA] Falha ao registrar Service Worker:', err);
+    (function() {
+      var isNativeApp = window.androidAppProxy !== undefined || 
+                        navigator.userAgent.indexOf('wv') !== -1 ||
+                        window.location.protocol === 'file:';
+
+      if ('serviceWorker' in navigator) {
+        if (isNativeApp) {
+          // No app nativo Android, os assets já são locais e offline em assets/web/.
+          // Desregistramos SW e limpamos CacheStorage para garantir que novas atualizações entrem imediatamente!
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for (var i = 0; i < regs.length; i++) {
+              regs[i].unregister();
+            }
           });
-      });
-    }
+          if ('caches' in window) {
+            caches.keys().then(function(names) {
+              for (var j = 0; j < names.length; j++) {
+                caches.delete(names[j]);
+              }
+            });
+          }
+        } else {
+          // No navegador Web (PWA), registra e atualiza
+          window.addEventListener('load', function() {
+            navigator.serviceWorker.register('./sw.js?v=2.0.1', { scope: './' })
+              .then(function(reg) {
+                reg.update();
+                console.log('[PWA] Service Worker ativo:', reg.scope);
+              })
+              .catch(function(err) {});
+          });
+        }
+      }
+    })();
+  </script>
 
     // Captura de evento de instalação PWA (beforeinstallprompt)
     window.__deferredInstallPrompt = null;
