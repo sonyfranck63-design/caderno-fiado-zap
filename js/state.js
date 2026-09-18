@@ -949,7 +949,6 @@ window.AppState = (function() {
     }
 
     // 2. Fallback 1: Download direto via tag <a> (Normalmente funciona no navegador/desktop)
-    const isAndroid = /android/i.test(navigator.userAgent || '');
     if (!isAndroid) {
       try {
         const url = URL.createObjectURL(blob);
