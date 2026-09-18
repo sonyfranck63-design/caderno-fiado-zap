@@ -23,7 +23,6 @@ $files = @(
     "js\components\InstallPwaModal.js",
     "js\components\MassBillingModal.js",
     "js\components\BackupModal.js",
-    "js\components\AdminLicenseModal.js",
     "js\components\SignatureModal.js",
     "js\app.js"
 )

@@ -22,7 +22,6 @@ function App() {
   const [installModalOpen, setInstallModalOpen] = React.useState(false);
   const [massBillingModalOpen, setMassBillingModalOpen] = React.useState(false);
   const [backupModalOpen, setBackupModalOpen] = React.useState(false);
-  const [adminModalOpen, setAdminModalOpen] = React.useState(false);
   const [signatureModalData, setSignatureModalData] = React.useState({ open: false, client: null });
   const [paywallReason, setPaywallReason] = React.useState(null);
 
@@ -35,7 +34,6 @@ function App() {
   window.useModalHistory(installModalOpen, () => setInstallModalOpen(false), 'InstallPwaModal');
   window.useModalHistory(massBillingModalOpen, () => setMassBillingModalOpen(false), 'MassBillingModal');
   window.useModalHistory(backupModalOpen, () => setBackupModalOpen(false), 'BackupModal');
-  window.useModalHistory(adminModalOpen, () => setAdminModalOpen(false), 'AdminLicenseModal');
   window.useModalHistory(signatureModalData.open, () => setSignatureModalData({ open: false, client: null }), 'SignatureModal');
 
   // Aplica classe de tema inicial no documento
@@ -168,7 +166,6 @@ function App() {
               onWatchRewarded={() => setRewardedModalOpen(true)}
               triggerReason={paywallReason}
               shopSettings={shopSettings}
-              onOpenAdmin={() => setAdminModalOpen(true)}
             />
           )}
         </main>
@@ -268,14 +265,6 @@ function App() {
           isVip={vipInfo.isVip}
           onTriggerPaywall={handleTriggerPaywall}
         />
-
-        {/* Painel Administrativo do Dono (Gerador de Licenças VIP) */}
-        {window.AdminLicenseModal && (
-          <window.AdminLicenseModal
-            isOpen={adminModalOpen}
-            onClose={() => setAdminModalOpen(false)}
-          />
-        )}
 
       </div>
     </div>
