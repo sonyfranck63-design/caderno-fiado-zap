@@ -670,12 +670,9 @@ window.PdfService = (function() {
     }
   }
 
-  /**
-   * Exporta ou envia o arquivo PDF com segurança, sem bloquear o usuário
-   * Tenta 3 etapas em sequência: Web Share API > URL.createObjectURL > Data URI (Base64)
-   */
   async function downloadPdf(blob, filename) {
     const safeFilename = filename || 'recibo-fiado.pdf';
+    const isAndroid = /android/i.test(navigator.userAgent || '');
     try {
       // 1. Tenta usar a Web Share API nativa com objeto File
       let pdfFile = null;
@@ -692,39 +689,57 @@ window.PdfService = (function() {
               text: 'Aqui está o seu documento em PDF.'
             });
             return { success: true, method: 'navigator.share' };
-          } else {
-            // Bypass da checagem estrita
-            await navigator.share({
-              files: [pdfFile],
-              title: 'Documento Fiado',
-              text: 'Aqui está o seu documento em PDF.'
-            });
-            return { success: true, method: 'navigator.share (forced)' };
           }
         } catch(shareErr) {
           if (shareErr.name === 'AbortError') {
              return { success: true, method: 'cancelled' };
           }
-          console.warn('Share API falhou. Tentando fallback 1...', shareErr);
+          console.warn('Share API falhou. Tentando fallbacks...', shareErr);
         }
       }
 
-      // 2. Fallback 1: Bypass criando URL local e abrindo em nova aba
-      try {
-        const blobUrl = URL.createObjectURL(blob);
-        const win = window.open(blobUrl, '_blank');
-        if (win) {
-          return { success: true, method: 'window.open' };
+      // 2. Fallback 1: Download direto via tag <a> (Apenas Não-Android/Desktop)
+      if (!isAndroid) {
+        try {
+          const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = safeFilename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          if (typeof blob !== 'string') {
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+          }
+          return { success: true, method: 'browser_download' };
+        } catch (openErr) {
+          console.warn('Download <a> falhou. Tentando fallback 2...', openErr);
         }
-      } catch (openErr) {
-        console.warn('window.open falhou. Tentando fallback 2...', openErr);
       }
 
-      // 3. Fallback 2: Converter para Base64 (Data URI) e forçar carregamento no próprio location
+      // 3. Fallback 2: Converter para Base64 (Data URI) e tentar ponte nativa ou location.href
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = () => {
-          window.location.href = reader.result;
+          const bridge = (typeof window.AndroidBridge !== 'undefined' && window.AndroidBridge.saveBase64File) 
+                         ? window.AndroidBridge 
+                         : (typeof window.androidAppProxy !== 'undefined' && window.androidAppProxy.saveBase64File)
+                         ? window.androidAppProxy : null;
+          
+          if (bridge) {
+            try {
+               const b64 = reader.result.split(',')[1] || reader.result;
+               bridge.saveBase64File(b64, safeFilename, 'application/pdf');
+               resolve({ success: true, method: 'native_bridge' });
+               return;
+            } catch(e) { console.warn(e); }
+          }
+          
+          setTimeout(() => {
+            try {
+              window.location.href = reader.result;
+            } catch(e) {}
+          }, 50);
           resolve({ success: true, method: 'location.href' });
         };
         reader.onerror = () => {
@@ -1692,6 +1707,7 @@ window.AppState = (function() {
     const dataStr = JSON.stringify(data, null, 2);
     const filename = `backup-cadernofiado-${new Date().toISOString().split('T')[0]}.json`;
     const blob = new Blob([dataStr], { type: 'application/json' });
+    const isAndroid = /android/i.test(navigator.userAgent || '');
 
     let salesCount = 0;
     (data.clients || []).forEach(c => {
@@ -1703,17 +1719,10 @@ window.AppState = (function() {
       backupFile = new File([blob], filename, { type: 'application/json' });
     }
 
-    // 1. Web Share API para Android/iOS se suportado (permite salvar no Drive, WhatsApp ou pasta do celular)
+    // 1. Web Share API para Android/iOS se suportado
     if (typeof navigator !== 'undefined' && navigator.share && backupFile) {
       try {
         if (navigator.canShare && navigator.canShare({ files: [backupFile] })) {
-          await navigator.share({
-            files: [backupFile],
-            title: 'Backup CadernoFiado',
-            text: 'Backup completo dos clientes e fiados do CadernoFiado.'
-          });
-          return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount };
-        } else {
           await navigator.share({
             files: [backupFile],
             title: 'Backup CadernoFiado',
@@ -1729,22 +1738,30 @@ window.AppState = (function() {
       }
     }
 
-    // 2. Fallback 1: Bypass criando URL local e abrindo em nova aba
-    try {
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, '_blank');
-      if (win) {
-        return { success: true, method: 'window.open', filename, clientCount: data.clients.length, salesCount };
+    // 2. Fallback 1: Download direto via tag <a> (Apenas Não-Android/Desktop)
+    if (!isAndroid) {
+      try {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount };
+      } catch (e) {
+        console.warn('Fallback 1 download <a> falhou, tentando fallback 2:', e);
       }
-    } catch (e) {
-      console.warn('Fallback 1 window.open falhou, tentando fallback 2:', e);
     }
 
     // 3. Fallback 2: Data URI convertendo no FileReader
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
-        window.location.href = reader.result;
+        setTimeout(() => {
+          try { window.location.href = reader.result; } catch(e){}
+        }, 50);
         resolve({ success: true, method: 'location.href', filename, clientCount: data.clients.length, salesCount });
       };
       reader.onerror = () => {
