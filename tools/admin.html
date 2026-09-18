@@ -252,18 +252,109 @@
       };
     }
 
+    // Implementação Canônica e Autônoma de SHA-256 (FIPS 180-4)
+    // 100% offline, funciona no protocolo file://, celulares e qualquer navegador
+    function sha256Pure(ascii) {
+      function rightRotate(value, amount) {
+        return (value >>> amount) | (value << (32 - amount));
+      }
+      var mathPow = Math.pow;
+      var maxWord = mathPow(2, 32);
+      var i, j;
+      var result = '';
+      var words = [];
+      var asciiBitLength = ascii.length * 8;
+      var hash = [];
+      var k = [];
+      var primeCounter = 0;
+      var isComposite = {};
+      for (var candidate = 2; primeCounter < 64; candidate++) {
+        if (!isComposite[candidate]) {
+          for (i = 0; i < 313; i += candidate) {
+            isComposite[i] = candidate;
+          }
+          hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0;
+          k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;
+        }
+      }
+      ascii += '\x80';
+      while ((ascii.length % 64) - 56) ascii += '\x00';
+      for (i = 0; i < ascii.length; i++) {
+        j = ascii.charCodeAt(i);
+        if (j >> 8) return '';
+        words[i >> 2] |= j << ((3 - (i % 4)) * 8);
+      }
+      words[words.length] = (asciiBitLength / maxWord) | 0;
+      words[words.length] = asciiBitLength | 0;
+
+      for (j = 0; j < words.length;) {
+        var w = words.slice(j, (j += 16));
+        var oldHash = hash.slice(0);
+        for (i = 0; i < 64; i++) {
+          var i2 = i + j;
+          var w15 = w[i - 15], w2 = w[i - 2];
+          var a = hash[0], e = hash[4];
+          var temp1 = hash[7] +
+            (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) +
+            ((e & hash[5]) ^ (~e & hash[6])) +
+            k[i] +
+            (w[i] = (i < 16) ? w[i] : (
+              w[i - 16] +
+              (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
+              w[i - 7] +
+              (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
+            ) | 0);
+          var temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
+            ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+
+          hash[7] = hash[6];
+          hash[6] = hash[5];
+          hash[5] = hash[4];
+          hash[4] = (hash[3] + temp1) | 0;
+          hash[3] = hash[2];
+          hash[2] = hash[1];
+          hash[1] = hash[0];
+          hash[0] = (temp1 + temp2) | 0;
+        }
+        for (i = 0; i < 8; i++) {
+          hash[i] = (hash[i] + oldHash[i]) | 0;
+        }
+      }
+      for (i = 0; i < 8; i++) {
+        for (j = 3; j >= 0; j--) {
+          var b = (hash[i] >> (8 * j)) & 255;
+          result += (b < 16 ? '0' : '') + b.toString(16);
+        }
+      }
+      return result;
+    }
+
+    function sha256Hex(str) {
+      var utf8 = unescape(encodeURIComponent(str));
+      return sha256Pure(utf8).toUpperCase();
+    }
+
     const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
 
     async function computeCompactChecksum(cleanDeviceId, plan) {
       const data = `${COMPACT_KEY_SALT}:${cleanDeviceId}:${plan}`;
-      const hashBuf = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
-      const hashArray = Array.from(new Uint8Array(hashBuf));
-      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-      return hashHex.substring(0, 6);
+      try {
+        if (window.crypto && window.crypto.subtle && typeof window.crypto.subtle.digest === 'function') {
+          const hashBuf = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+          const hashArray = Array.from(new Uint8Array(hashBuf));
+          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+          return hashHex.substring(0, 6);
+        }
+      } catch (subtleErr) {
+        console.warn('SubtleCrypto indisponível, usando fallback autônomo SHA-256:', subtleErr);
+      }
+      // Fallback 100% autônomo e idêntico
+      const fallbackHex = sha256Hex(data);
+      return fallbackHex.substring(0, 6);
     }
 
     async function generateCompactLicense(deviceId, planType) {
-      let cleanId = (deviceId || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
+      let cleanId = (deviceId || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
       if (cleanId.length < 8) {
         cleanId = cleanId.padEnd(8, '0');
       } else if (cleanId.length > 8) {
@@ -289,6 +380,33 @@
       };
     }
 
+    // Função de cópia resiliente (funciona mesmo sem contexto HTTPS/clipboard API)
+    async function copyToClipboardSafe(text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (e) {
+          // prossegue para o fallback
+        }
+      }
+      try {
+        const tempTextarea = document.createElement('textarea');
+        tempTextarea.value = text;
+        tempTextarea.style.position = 'fixed';
+        tempTextarea.style.left = '-9999px';
+        tempTextarea.style.top = '-9999px';
+        document.body.appendChild(tempTextarea);
+        tempTextarea.focus();
+        tempTextarea.select();
+        const success = document.execCommand('copy');
+        document.body.removeChild(tempTextarea);
+        return success;
+      } catch (err) {
+        return false;
+      }
+    }
+
     // Manipulação do Formulário
     const form = document.getElementById('licenseForm');
     const resultSection = document.getElementById('resultSection');
@@ -309,34 +427,36 @@
       e.preventDefault();
       deviceIdInput.value = formatDeviceId(deviceIdInput.value);
       const deviceId = deviceIdInput.value;
-      const planType = document.querySelector('input[name="planType"]:checked').value;
+      const planTypeEl = document.querySelector('input[name="planType"]:checked');
+      const planType = planTypeEl ? planTypeEl.value : '30D';
 
       try {
         const license = await generateCompactLicense(deviceId, planType);
         generatedKeyInput.value = license.code;
         planBadge.innerText = license.planName;
 
-        const msg = `Olá! Seu acesso ao *${license.planName}* do CadernoFiado foi liberado.\n\nCódigo de Ativação:\n${license.code}\n\nComo ativar no celular:\n1. Abra o CadernoFiado\n2. Toque na aba inferior "Plano VIP"\n3. Digite ou cole o código acima e toque em "Ativar Código"\n\nPronto! Os recursos de cobrança com PIX e extrato em PDF já estão liberados. Boas vendas!`;
+        const msg = `Olá! Seu acesso ao *${license.planName}* do CadernoFiado foi liberado com sucesso! 🎉\n\n🔑 *Código de Ativação:*\n${license.code}\n\n📲 *Como ativar no celular:*\n1. Abra o CadernoFiado\n2. Toque na aba inferior "Plano VIP"\n3. Digite ou cole o código acima no campo "Ativar com Código Recebido" e toque em "Ativar Código"\n\nPronto! Todos os recursos profissionais com PIX e extrato em PDF já estão liberados. Boas vendas!`;
         
         whatsappMessage.value = msg;
         resultSection.classList.remove('hidden');
         resultSection.scrollIntoView({ behavior: 'smooth' });
       } catch (err) {
-        alert('Erro ao gerar licença: ' + err.message);
+        console.error('Erro na geração de licença:', err);
+        alert('Erro ao gerar código: ' + (err.message || err));
       }
     });
 
-    btnCopyKey.addEventListener('click', () => {
-      navigator.clipboard.writeText(generatedKeyInput.value);
-      btnCopyKey.innerText = 'Copiado!';
+    btnCopyKey.addEventListener('click', async () => {
+      const ok = await copyToClipboardSafe(generatedKeyInput.value);
+      btnCopyKey.innerText = ok ? 'Copiado!' : 'Selecione e copie';
       setTimeout(() => btnCopyKey.innerText = 'Copiar', 2000);
     });
 
-    btnCopyMessage.addEventListener('click', () => {
-      navigator.clipboard.writeText(whatsappMessage.value);
-      btnCopyMessage.innerHTML = '<span>Mensagem Copiada!</span>';
+    btnCopyMessage.addEventListener('click', async () => {
+      const ok = await copyToClipboardSafe(whatsappMessage.value);
+      btnCopyMessage.innerHTML = ok ? '<span>Mensagem Copiada!</span>' : '<span>Selecione a mensagem acima</span>';
       setTimeout(() => {
-        btnCopyMessage.innerHTML = '<span>Copiar Mensagem para WhatsApp</span>';
+        btnCopyMessage.innerHTML = '<span>📲 Copiar Mensagem Completa para o WhatsApp</span>';
       }, 2000);
     });
   </script>

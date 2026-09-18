@@ -599,25 +599,111 @@ window.AppState = (function() {
     }
   }
 
-  const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
+  // Implementação Canônica de SHA-256 (RFC 6234 / FIPS 180-4) para fallback 100% offline
+  function sha256Pure(ascii) {
+    function rightRotate(value, amount) {
+      return (value >>> amount) | (value << (32 - amount));
+    }
+    var mathPow = Math.pow;
+    var maxWord = mathPow(2, 32);
+    var i, j;
+    var result = '';
+    var words = [];
+    var asciiBitLength = ascii.length * 8;
+    var hash = [];
+    var k = [];
+    var primeCounter = 0;
+    var isComposite = {};
+    for (var candidate = 2; primeCounter < 64; candidate++) {
+      if (!isComposite[candidate]) {
+        for (i = 0; i < 313; i += candidate) {
+          isComposite[i] = candidate;
+        }
+        hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0;
+        k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;
+      }
+    }
+    ascii += '\x80';
+    while ((ascii.length % 64) - 56) ascii += '\x00';
+    for (i = 0; i < ascii.length; i++) {
+      j = ascii.charCodeAt(i);
+      if (j >> 8) return '';
+      words[i >> 2] |= j << ((3 - (i % 4)) * 8);
+    }
+    words[words.length] = (asciiBitLength / maxWord) | 0;
+    words[words.length] = asciiBitLength | 0;
 
-  async function computeCompactChecksum(cleanDeviceId, plan) {
-    const data = `${COMPACT_KEY_SALT}:${cleanDeviceId}:${plan}`;
-    const hashBuf = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
-    const hashArray = Array.from(new Uint8Array(hashBuf));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-    return hashHex.substring(0, 6);
+    for (j = 0; j < words.length;) {
+      var w = words.slice(j, (j += 16));
+      var oldHash = hash.slice(0);
+      for (i = 0; i < 64; i++) {
+        var i2 = i + j;
+        var w15 = w[i - 15], w2 = w[i - 2];
+        var a = hash[0], e = hash[4];
+        var temp1 = hash[7] +
+          (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) +
+          ((e & hash[5]) ^ (~e & hash[6])) +
+          k[i] +
+          (w[i] = (i < 16) ? w[i] : (
+            w[i - 16] +
+            (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
+            w[i - 7] +
+            (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
+          ) | 0);
+        var temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
+          ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+
+        hash[7] = hash[6];
+        hash[6] = hash[5];
+        hash[5] = hash[4];
+        hash[4] = (hash[3] + temp1) | 0;
+        hash[3] = hash[2];
+        hash[2] = hash[1];
+        hash[1] = hash[0];
+        hash[0] = (temp1 + temp2) | 0;
+      }
+      for (i = 0; i < 8; i++) {
+        hash[i] = (hash[i] + oldHash[i]) | 0;
+      }
+    }
+    for (i = 0; i < 8; i++) {
+      for (j = 3; j >= 0; j--) {
+        var b = (hash[i] >> (8 * j)) & 255;
+        result += (b < 16 ? '0' : '') + b.toString(16);
+      }
+    }
+    return result;
   }
 
-  async function generateCompactLicenseKey(targetDeviceId, plan) {
+  function sha256Hex(str) {
+    var utf8 = unescape(encodeURIComponent(str));
+    return sha256Pure(utf8).toUpperCase();
+  }
+
+  const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
+
+  function computeCompactChecksum(cleanDeviceId, plan) {
+    const data = `${COMPACT_KEY_SALT}:${cleanDeviceId}:${plan}`;
+    return sha256Hex(data).substring(0, 6);
+  }
+
+  function normalizeCompactPlanKey(plan) {
+    const p = (plan || 'L').toString().toUpperCase().trim();
+    if (p === '30D' || p === 'M' || p.startsWith('MENSAL')) return 'M';
+    if (p === '365D' || p === 'A' || p.startsWith('ANUAL')) return 'A';
+    if (p === 'LIFETIME' || p === 'L' || p.startsWith('VITAL')) return 'L';
+    return ['M', 'A', 'L'].includes(p.charAt(0)) ? p.charAt(0) : 'L';
+  }
+
+  function generateCompactLicenseKey(targetDeviceId, plan) {
     let cleanId = (targetDeviceId || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
     if (cleanId.length < 8) {
       cleanId = cleanId.padEnd(8, '0');
     } else if (cleanId.length > 8) {
       cleanId = cleanId.substring(0, 8);
     }
-    const planKey = (plan || 'L').toString().toUpperCase().substring(0, 1);
-    const checksum = await computeCompactChecksum(cleanId, planKey);
+    const planKey = normalizeCompactPlanKey(plan);
+    const checksum = computeCompactChecksum(cleanId, planKey);
     const part1 = cleanId.substring(0, 4);
     const part2 = cleanId.substring(4, 8);
     return `VIP-${planKey}-${part1}-${part2}-${checksum}`;
@@ -640,7 +726,8 @@ window.AppState = (function() {
       if (parts.length !== 5) {
         return { success: false, message: 'Formato do código incompleto. Exemplo esperado: VIP-M-XXXX-YYYY-ZZZZZZ' };
       }
-      const planCode = parts[1]; // 'M', 'A' ou 'L'
+      let planCode = parts[1]; // 'M', 'A' ou 'L'
+      if (planCode === '3') planCode = 'M'; // Retrocompatibilidade caso alguém tenha gerado chave antiga com prefixo 30D
       const keyDevId = parts[2] + parts[3]; // 'XXXX' + 'YYYY'
       const keyChecksum = parts[4];
 
@@ -1140,6 +1227,7 @@ window.AppState = (function() {
     getDeviceId: getInstallationId,
     activateLicenseKey,
     generateCompactLicenseKey,
+    generateLicenseKey: generateCompactLicenseKey,
     getBackupData,
     getBackupJsonString,
     exportBackup,

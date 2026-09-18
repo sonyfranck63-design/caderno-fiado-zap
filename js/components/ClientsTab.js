@@ -53,21 +53,21 @@ window.ClientsTab = function ClientsTab({
     <div className="space-y-3.5 pb-24 tab-enter">
       
       {/* Painel Financeiro Integrado (Estilo Fintech) */}
-      <div className="rounded-2xl bg-white dark:bg-[#121926] border border-slate-200/80 dark:border-slate-800/80 p-4 shadow-sm transition-colors">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/60">
+      <div className="fintech-card p-4 transition-colors">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/80">
           <div>
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
               Total em Aberto no Fiado
             </span>
-            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight block mt-0.5">
+            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight block mt-0.5 font-mono">
               R$ {totalReceivables.toFixed(2).replace('.', ',')}
             </span>
           </div>
           <button
             onClick={onOpenNewRecord}
-            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm btn-smooth"
+            className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md tap-bounce transition-all active:scale-[0.97]"
           >
-            <PlusCircle size={15} />
+            <PlusCircle size={16} />
             <span>Nova Venda</span>
           </button>
         </div>
@@ -292,7 +292,7 @@ window.ClientsTab = function ClientsTab({
               <div
                 key={client.id}
                 onClick={() => onSelectClient(client.id)}
-                className="p-3.5 rounded-2xl bg-white dark:bg-[#121926] hover:bg-slate-50 dark:hover:bg-[#161f30] border border-slate-200/80 dark:border-slate-800/80 transition-all cursor-pointer shadow-sm group active:scale-[0.99] btn-smooth"
+                className="fintech-card p-3.5 transition-all cursor-pointer group tap-bounce"
               >
                 <div className="flex items-center justify-between gap-3">
                   

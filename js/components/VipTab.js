@@ -8,7 +8,8 @@ window.VipTab = function VipTab({
   vipInfo,
   onWatchRewarded,
   triggerReason,
-  shopSettings
+  shopSettings,
+  onOpenAdmin
 }) {
   const [selectedPlan, setSelectedPlan] = React.useState('monthly'); // 'monthly' | 'annual' | 'lifetime'
   const [licenseCode, setLicenseCode] = React.useState('');
@@ -311,6 +312,20 @@ window.VipTab = function VipTab({
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* Acesso ao Painel do Dono para emissão de licenças */}
+      {onOpenAdmin && (
+        <div className="pt-3 pb-2 text-center">
+          <button
+            type="button"
+            onClick={onOpenAdmin}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-850 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-[11px] font-semibold transition-all border border-slate-200/80 dark:border-slate-800"
+          >
+            <ShieldCheck size={13} className="text-emerald-500" />
+            <span>Painel do Administrador (Dono)</span>
+          </button>
         </div>
       )}
 

@@ -146,8 +146,36 @@
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen font-sans selection:bg-brand-500 selection:text-white transition-colors duration-200">
   <div id="debug-error" style="display:none; background:#7f1d1d; color:#fef2f2; padding:16px; font-family:monospace; white-space:pre-wrap; border-bottom:3px solid #ef4444; z-index:999999; position:relative;"></div>
   
-  <!-- Root do App React -->
-  <div id="root"></div>
+  <!-- Root do App React com Loading State Inicial Elegante -->
+  <div id="root">
+    <div style="min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#0b0f19; color:#f8fafc; font-family:'Plus Jakarta Sans', system-ui, -apple-system, sans-serif; padding:24px; text-align:center;">
+      <div style="position:relative; width:84px; height:84px; margin-bottom:22px;">
+        <div style="position:absolute; inset:-8px; border-radius:30px; background:radial-gradient(circle, rgba(34,197,94,0.35) 0%, rgba(34,197,94,0) 70%); animation:cfPulse 2s infinite ease-in-out;"></div>
+        <div style="position:relative; width:84px; height:84px; border-radius:24px; background:linear-gradient(145deg, #16a34a 0%, #064e3b 100%); border:1px solid rgba(74,222,128,0.35); display:flex; align-items:center; justify-content:center; box-shadow:0 14px 32px -8px rgba(34,197,94,0.45);">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            <path d="M12 6v6"></path>
+            <path d="M9 9h6"></path>
+          </svg>
+        </div>
+      </div>
+      <h1 style="font-size:22px; font-weight:800; letter-spacing:-0.02em; margin:0 0 6px 0; color:#ffffff;">
+        CadernoFiado <span style="color:#22c55e;">Zap</span>
+      </h1>
+      <p style="font-size:13px; color:#94a3b8; margin:0 0 24px 0; font-weight:500;">
+        Gestão Inteligente & Cobrança Rápida
+      </p>
+      <div style="display:flex; align-items:center; gap:10px; background:rgba(255,255,255,0.05); padding:8px 18px; border-radius:999px; border:1px solid rgba(255,255,255,0.08); backdrop-filter:blur(8px);">
+        <div style="width:16px; height:16px; border:2.5px solid rgba(34,197,94,0.25); border-top-color:#22c55e; border-radius:50%; animation:cfSpin 0.8s linear infinite;"></div>
+        <span style="font-size:12px; font-weight:600; color:#cbd5e1; letter-spacing:0.02em;">Carregando seu aplicativo...</span>
+      </div>
+      <style>
+        @keyframes cfSpin { to { transform: rotate(360deg); } }
+        @keyframes cfPulse { 0%, 100% { transform: scale(1); opacity: 0.35; } 50% { transform: scale(1.18); opacity: 0.8; } }
+      </style>
+    </div>
+  </div>
 
   <!-- Script Unificado da Aplicação -->
   <script type="text/babel" src="js/bundle.js"></script>

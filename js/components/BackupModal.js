@@ -82,7 +82,7 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
         try {
           const fileContent = event.target.result;
           if (!fileContent || !fileContent.trim()) {
-            alert('O arquivo selecionado está vazio.');
+            setFeedbackDialog({ isOpen: true, title: 'Arquivo Vazio', message: 'O arquivo selecionado está vazio.', variant: 'warning' });
             return;
           }
 
@@ -91,14 +91,24 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
           try {
             parsedData = JSON.parse(fileContent);
           } catch (parseErr) {
-            alert('Erro ao ler o arquivo: o conteúdo não é um JSON válido.\n' + parseErr.message);
+            setFeedbackDialog({
+              isOpen: true,
+              title: 'Formato Inválido',
+              message: 'Erro ao ler o arquivo: o conteúdo não é um JSON válido.\n' + parseErr.message,
+              variant: 'danger'
+            });
             return;
           }
 
           // 2. Validação da estrutura
           const validation = window.AppState.validateBackup(fileContent);
           if (!validation.valid) {
-            alert('Arquivo de backup inválido:\n' + validation.error);
+            setFeedbackDialog({
+              isOpen: true,
+              title: 'Arquivo Inválido',
+              message: 'Arquivo de backup inválido:\n' + validation.error,
+              variant: 'danger'
+            });
             return;
           }
 
@@ -108,25 +118,50 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
             const clientsCount = validation.summary?.clientsCount || (parsedData.clients?.length || 0);
             const salesCount = validation.summary?.salesCount || 0;
             
-            // 4. Alerta de sucesso antes de forçar o recarregamento da interface
-            alert(`Backup restaurado com sucesso!\n• ${clientsCount} Clientes carregados\n• ${salesCount} Vendas recuperadas\n\nO aplicativo será recarregado agora.`);
-            window.location.reload();
+            // 4. Diálogo de sucesso antes de recarregar
+            setFeedbackDialog({
+              isOpen: true,
+              title: 'Backup Restaurado com Sucesso!',
+              message: `• ${clientsCount} Clientes carregados\n• ${salesCount} Vendas recuperadas\n\nToque em OK para atualizar os dados no aplicativo.`,
+              variant: 'success',
+              onConfirm: () => window.location.reload()
+            });
           } else {
-            alert('Falha ao restaurar dados: ' + (res?.error || 'Erro desconhecido ao salvar.'));
+            setFeedbackDialog({
+              isOpen: true,
+              title: 'Falha na Restauração',
+              message: 'Falha ao restaurar dados: ' + (res?.error || 'Erro desconhecido ao salvar.'),
+              variant: 'danger'
+            });
           }
         } catch (innerErr) {
           console.error('Erro ao processar backup:', innerErr);
-          alert('Erro ao processar dados do arquivo: ' + innerErr.message);
+          setFeedbackDialog({
+            isOpen: true,
+            title: 'Erro de Leitura',
+            message: 'Erro ao processar dados do arquivo: ' + innerErr.message,
+            variant: 'danger'
+          });
         }
       };
 
       reader.onerror = (readErr) => {
-        alert('Erro ao ler o arquivo no dispositivo: ' + (reader.error?.message || 'Falha de leitura.'));
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Erro no Dispositivo',
+          message: 'Erro ao ler o arquivo no dispositivo: ' + (reader.error?.message || 'Falha de leitura.'),
+          variant: 'danger'
+        });
       };
 
       reader.readAsText(file);
     } catch (err) {
-      alert('Erro inesperado: ' + err.message);
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Erro Inesperado',
+        message: 'Erro inesperado: ' + err.message,
+        variant: 'danger'
+      });
     } finally {
       e.target.value = '';
     }
@@ -135,7 +170,12 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
   // Contingência: Restaurar via texto colado
   const handleRestorePastedText = () => {
     if (!pastedJson.trim()) {
-      alert('Cole o código JSON do seu backup antes de confirmar.');
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Código Ausente',
+        message: 'Cole o código JSON do seu backup antes de confirmar.',
+        variant: 'warning'
+      });
       return;
     }
 
@@ -143,18 +183,38 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
       JSON.parse(pastedJson);
       const validation = window.AppState.validateBackup(pastedJson);
       if (!validation.valid) {
-        alert('Código de backup inválido:\n' + validation.error);
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Código Inválido',
+          message: 'Código de backup inválido:\n' + validation.error,
+          variant: 'danger'
+        });
         return;
       }
       const res = window.AppState.restoreBackupData(validation.data);
       if (res && res.success) {
-        alert('Backup restaurado com sucesso! O aplicativo será recarregado.');
-        window.location.reload();
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Backup Restaurado!',
+          message: 'Backup restaurado com sucesso! O aplicativo será recarregado.',
+          variant: 'success',
+          onConfirm: () => window.location.reload()
+        });
       } else {
-        alert('Falha ao restaurar: ' + (res?.error || 'Erro ao gravar dados.'));
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Falha na Gravação',
+          message: 'Falha ao restaurar: ' + (res?.error || 'Erro ao gravar dados.'),
+          variant: 'danger'
+        });
       }
     } catch (e) {
-      alert('Código JSON inválido: ' + e.message);
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Código JSON Inválido',
+        message: 'Código JSON inválido: ' + e.message,
+        variant: 'danger'
+      });
     }
   };
 
@@ -302,11 +362,34 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
               </button>
               <button
                 type="button"
-                onClick={() => {
-                   if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                     navigator.clipboard.writeText(pastedJson);
-                     alert('Código copiado para a área de transferência!');
-                   }
+                onClick={async () => {
+                  let copied = false;
+                  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+                    try {
+                      await navigator.clipboard.writeText(pastedJson);
+                      copied = true;
+                    } catch(e) {}
+                  }
+                  if (!copied) {
+                    try {
+                      const ta = document.createElement('textarea');
+                      ta.value = pastedJson;
+                      ta.style.position = 'fixed';
+                      ta.style.left = '-9999px';
+                      document.body.appendChild(ta);
+                      ta.focus();
+                      ta.select();
+                      document.execCommand('copy');
+                      document.body.removeChild(ta);
+                      copied = true;
+                    } catch(e) {}
+                  }
+                  setFeedbackDialog({
+                    isOpen: true,
+                    title: 'Código Copiado!',
+                    message: 'O código de backup foi copiado com sucesso para a área de transferência.',
+                    variant: 'success'
+                  });
                 }}
                 className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium btn-smooth"
               >
@@ -333,7 +416,7 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
         </div>
       )}
 
-      {/* Modal Genérico de Feedback */}
+      {/* Modal Genérico de Feedback Integrado */}
       <window.ConfirmModal
         isOpen={feedbackDialog.isOpen}
         title={feedbackDialog.title}
@@ -341,7 +424,13 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
         confirmText="OK"
         variant={feedbackDialog.variant}
         showCancel={false}
-        onConfirm={() => setFeedbackDialog({ ...feedbackDialog, isOpen: false })}
+        onConfirm={() => {
+          const cb = feedbackDialog.onConfirm;
+          setFeedbackDialog(prev => ({ ...prev, isOpen: false }));
+          if (typeof cb === 'function') {
+            cb();
+          }
+        }}
       />
     </div>
   );

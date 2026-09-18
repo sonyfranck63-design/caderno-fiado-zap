@@ -7,7 +7,7 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
   const { Crown, Settings, Moon, Sun, Clock, Cloud } = window.Icons || {};
 
   return (
-    <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0e141f]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/70 px-4 py-3 transition-colors duration-200">
+    <header className="sticky top-0 z-30 glass-panel px-4 py-3 transition-colors duration-200">
       <div className="flex items-center justify-between">
         
         {/* Lado Esquerdo: Identidade do App e Estabelecimento */}

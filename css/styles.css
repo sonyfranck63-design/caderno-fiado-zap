@@ -120,7 +120,7 @@ html.light body {
     box-shadow: 
       0 20px 40px -15px rgba(0, 0, 0, 0.5),
       0 0 0 1px rgba(255, 255, 255, 0.06);
-    border-radius: 24px;
+    border-radius: 28px;
     overflow: hidden;
     min-height: calc(100vh - 40px);
     margin-top: 20px;
@@ -134,4 +134,83 @@ html.light body {
       0 0 0 1px rgba(0, 0, 0, 0.06);
   }
 }
+
+/* --- DESIGN SYSTEM FINTECH PREMIUM --- */
+
+/* Glassmorphism para Cabeçalho e Barra Inferior */
+.glass-panel {
+  background: rgba(11, 15, 25, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+html:not(.dark) .glass-panel,
+html.light .glass-panel {
+  background: rgba(255, 255, 255, 0.88);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.glass-bottom-nav {
+  background: rgba(11, 15, 25, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+html:not(.dark) .glass-bottom-nav,
+html.light .glass-bottom-nav {
+  background: rgba(255, 255, 255, 0.92);
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+/* Cards Estilo Fintech (Nubank / MercadoPago / Inter) */
+.fintech-card {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 20px;
+  box-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.fintech-card:hover {
+  border-color: #334155;
+  box-shadow: 0 6px 24px -2px rgba(0, 0, 0, 0.35);
+}
+
+.fintech-card:active {
+  transform: scale(0.99);
+}
+
+html:not(.dark) .fintech-card,
+html.light .fintech-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.04);
+}
+
+html:not(.dark) .fintech-card:hover,
+html.light .fintech-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.07);
+}
+
+/* Toque Tátil para Botões de Ação Rápida */
+.tap-bounce {
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.tap-bounce:active {
+  transform: scale(0.94);
+}
+
+/* Efeito Glow Sutil em Verde Esmeralda */
+.glow-emerald {
+  box-shadow: 0 0 24px -4px rgba(34, 197, 94, 0.35);
+}
+
+/* Gradiente Suave de Destaque */
+.bg-gradient-fintech {
+  background: linear-gradient(135deg, #15803d 0%, #16a34a 50%, #22c55e 100%);
+}
+
 
