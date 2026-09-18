@@ -178,7 +178,7 @@
   </div>
 
   <!-- Script Unificado da Aplicação -->
-  <script type="text/babel" src="js/bundle.js?v=2.0.3"></script>
+  <script type="text/babel" src="js/bundle.js?v=2.0.4"></script>
 
   <!-- Gerenciamento de Cache & Service Worker -->
   <script>
@@ -206,7 +206,7 @@
         } else {
           // No navegador Web (PWA), registra e atualiza
           window.addEventListener('load', function() {
-            navigator.serviceWorker.register('./sw.js?v=2.0.3', { scope: './' })
+            navigator.serviceWorker.register('./sw.js?v=2.0.4', { scope: './' })
               .then(function(reg) {
                 reg.update();
                 console.log('[PWA] Service Worker ativo:', reg.scope);

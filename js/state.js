@@ -1024,8 +1024,8 @@ window.AppState = (function() {
   async function exportBackup() {
     const data = getBackupData();
     const dataStr = JSON.stringify(data, null, 2);
-    const filename = `backup-cadernofiado-${new Date().toISOString().split('T')[0]}.json`;
-    const blob = new Blob([dataStr], { type: 'application/json' });
+    const filename = `backup-cadernofiado-${new Date().toISOString().split('T')[0]}.txt`;
+    const blob = new Blob([dataStr], { type: 'text/plain;charset=utf-8' });
     const isAndroid = /android/i.test(navigator.userAgent || '');
 
     let salesCount = 0;
@@ -1035,10 +1035,14 @@ window.AppState = (function() {
 
     let backupFile = null;
     if (typeof File !== 'undefined') {
-      backupFile = new File([blob], filename, { type: 'application/json' });
+      try {
+        backupFile = new File([blob], filename, { type: 'text/plain' });
+      } catch (e) {
+        backupFile = blob;
+      }
     }
 
-    // 1. Ponte Nativa Android APK (Compartilha nativamente o arquivo para WhatsApp, Drive, etc.)
+    // 1. Ponte Nativa Android APK (Compartilha nativamente o arquivo como texto legível no celular)
     const bridge = (typeof window !== 'undefined')
       ? (window.androidAppProxy && typeof window.androidAppProxy.shareBase64File === 'function' ? window.androidAppProxy :
          window.AndroidBridge && typeof window.AndroidBridge.shareBase64File === 'function' ? window.AndroidBridge : null)
@@ -1047,9 +1051,9 @@ window.AppState = (function() {
     if (bridge) {
       try {
         const b64 = btoa(unescape(encodeURIComponent(dataStr)));
-        const ok = bridge.shareBase64File(b64, filename, 'application/json', 'Backup CadernoFiado', 'Arquivo de backup do CadernoFiado');
+        const ok = bridge.shareBase64File(b64, filename, 'text/plain', 'Backup CadernoFiado', 'Arquivo de backup do CadernoFiado');
         if (ok !== false) {
-          return { success: true, method: 'native_bridge', filename, clientCount: data.clients.length, salesCount };
+          return { success: true, method: 'native_bridge', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
         }
       } catch (bridgeErr) {
         console.warn('[AppState] Falha na ponte nativa para backup:', bridgeErr);
@@ -1059,31 +1063,31 @@ window.AppState = (function() {
     // 2. Web Share API para Android/iOS se suportado
     if (typeof navigator !== 'undefined' && navigator.share && backupFile) {
       try {
-        // Tenta com arquivo primeiro (Android moderno)
+        // Tenta com arquivo de texto primeiro
         const canShareFiles = navigator.canShare ? navigator.canShare({ files: [backupFile] }) : true;
         if (canShareFiles) {
           await navigator.share({
             files: [backupFile],
             title: 'Backup CadernoFiado',
-            text: 'Backup completo dos clientes e fiados do CadernoFiado.'
+            text: 'Backup do CadernoFiado (abra o arquivo ou copie o código para restaurar).'
           });
-          return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount };
+          return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
         }
-        // Tenta compartilhar apenas como texto (fallback para WebViews antigos)
+        // Tenta compartilhar apenas como texto puro
         await navigator.share({
           title: 'Backup CadernoFiado',
           text: dataStr
         });
-        return { success: true, method: 'share_text', filename, clientCount: data.clients.length, salesCount };
+        return { success: true, method: 'share_text', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
       } catch (err) {
         if (err.name === 'AbortError') {
-          return { success: true, method: 'cancelled', filename, clientCount: data.clients.length, salesCount };
+          return { success: true, method: 'cancelled', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
         }
         console.warn('Share API falhou no backup, tentando fallback:', err);
       }
     }
 
-    // 2. Fallback: Download direto via tag <a> (funciona no navegador/desktop)
+    // 3. Fallback: Download direto via tag <a> (funciona no navegador/desktop)
     if (!isAndroid) {
       try {
         const url = URL.createObjectURL(blob);
@@ -1094,14 +1098,13 @@ window.AppState = (function() {
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 60000);
-        return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount };
+        return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
       } catch (e) {
         console.warn('Fallback download <a> falhou:', e);
       }
     }
 
-    // 3. Fallback final: Retornar JSON bruto para copiar na tela
-    // ATENÇÃO: Nunca usar window.location.href com data:application/json no Android WebView (causa Crash)
+    // 4. Fallback final: Retornar texto bruto para copiar na tela
     return { 
       success: true, 
       method: 'raw_json', 

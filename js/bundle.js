@@ -1821,8 +1821,8 @@ window.AppState = (function() {
   async function exportBackup() {
     const data = getBackupData();
     const dataStr = JSON.stringify(data, null, 2);
-    const filename = `backup-cadernofiado-${new Date().toISOString().split('T')[0]}.json`;
-    const blob = new Blob([dataStr], { type: 'application/json' });
+    const filename = `backup-cadernofiado-${new Date().toISOString().split('T')[0]}.txt`;
+    const blob = new Blob([dataStr], { type: 'text/plain;charset=utf-8' });
     const isAndroid = /android/i.test(navigator.userAgent || '');
 
     let salesCount = 0;
@@ -1832,10 +1832,14 @@ window.AppState = (function() {
 
     let backupFile = null;
     if (typeof File !== 'undefined') {
-      backupFile = new File([blob], filename, { type: 'application/json' });
+      try {
+        backupFile = new File([blob], filename, { type: 'text/plain' });
+      } catch (e) {
+        backupFile = blob;
+      }
     }
 
-    // 1. Ponte Nativa Android APK (Compartilha nativamente o arquivo para WhatsApp, Drive, etc.)
+    // 1. Ponte Nativa Android APK (Compartilha nativamente o arquivo como texto legível no celular)
     const bridge = (typeof window !== 'undefined')
       ? (window.androidAppProxy && typeof window.androidAppProxy.shareBase64File === 'function' ? window.androidAppProxy :
          window.AndroidBridge && typeof window.AndroidBridge.shareBase64File === 'function' ? window.AndroidBridge : null)
@@ -1844,9 +1848,9 @@ window.AppState = (function() {
     if (bridge) {
       try {
         const b64 = btoa(unescape(encodeURIComponent(dataStr)));
-        const ok = bridge.shareBase64File(b64, filename, 'application/json', 'Backup CadernoFiado', 'Arquivo de backup do CadernoFiado');
+        const ok = bridge.shareBase64File(b64, filename, 'text/plain', 'Backup CadernoFiado', 'Arquivo de backup do CadernoFiado');
         if (ok !== false) {
-          return { success: true, method: 'native_bridge', filename, clientCount: data.clients.length, salesCount };
+          return { success: true, method: 'native_bridge', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
         }
       } catch (bridgeErr) {
         console.warn('[AppState] Falha na ponte nativa para backup:', bridgeErr);
@@ -1856,31 +1860,31 @@ window.AppState = (function() {
     // 2. Web Share API para Android/iOS se suportado
     if (typeof navigator !== 'undefined' && navigator.share && backupFile) {
       try {
-        // Tenta com arquivo primeiro (Android moderno)
+        // Tenta com arquivo de texto primeiro
         const canShareFiles = navigator.canShare ? navigator.canShare({ files: [backupFile] }) : true;
         if (canShareFiles) {
           await navigator.share({
             files: [backupFile],
             title: 'Backup CadernoFiado',
-            text: 'Backup completo dos clientes e fiados do CadernoFiado.'
+            text: 'Backup do CadernoFiado (abra o arquivo ou copie o código para restaurar).'
           });
-          return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount };
+          return { success: true, method: 'share', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
         }
-        // Tenta compartilhar apenas como texto (fallback para WebViews antigos)
+        // Tenta compartilhar apenas como texto puro
         await navigator.share({
           title: 'Backup CadernoFiado',
           text: dataStr
         });
-        return { success: true, method: 'share_text', filename, clientCount: data.clients.length, salesCount };
+        return { success: true, method: 'share_text', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
       } catch (err) {
         if (err.name === 'AbortError') {
-          return { success: true, method: 'cancelled', filename, clientCount: data.clients.length, salesCount };
+          return { success: true, method: 'cancelled', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
         }
         console.warn('Share API falhou no backup, tentando fallback:', err);
       }
     }
 
-    // 2. Fallback: Download direto via tag <a> (funciona no navegador/desktop)
+    // 3. Fallback: Download direto via tag <a> (funciona no navegador/desktop)
     if (!isAndroid) {
       try {
         const url = URL.createObjectURL(blob);
@@ -1891,14 +1895,13 @@ window.AppState = (function() {
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 60000);
-        return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount };
+        return { success: true, method: 'download', filename, clientCount: data.clients.length, salesCount, rawJson: dataStr };
       } catch (e) {
         console.warn('Fallback download <a> falhou:', e);
       }
     }
 
-    // 3. Fallback final: Retornar JSON bruto para copiar na tela
-    // ATENÇÃO: Nunca usar window.location.href com data:application/json no Android WebView (causa Crash)
+    // 4. Fallback final: Retornar texto bruto para copiar na tela
     return { 
       success: true, 
       method: 'raw_json', 
@@ -6667,24 +6670,111 @@ window.MassBillingModal = function MassBillingModal({ isOpen, onClose, clients, 
 // ==========================================
 /**
  * Modal de Backup Seguro e Sincronização
- * Recurso exclusivo VIP para exportar/importar dados JSON.
+ * Permite exportar (copiar código, compartilhar no WhatsApp, baixar arquivo .txt)
+ * e restaurar dados facilmente no celular ou computador sem depender de seletor de arquivos.
  */
 
 window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPaywall }) {
-  const [pasteBackupOpen, setPasteBackupOpen] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState('export'); // 'export' | 'restore'
+  const [copiedCode, setCopiedCode] = React.useState(false);
+  const [showRawCode, setShowRawCode] = React.useState(false);
   const [pastedJson, setPastedJson] = React.useState('');
-  const [feedbackDialog, setFeedbackDialog] = React.useState({ isOpen: false, title: '', message: '', variant: 'info' });
-  
-  const fileInputRef = React.useRef(null);
-  const { X, Cloud, Download, Upload, ShieldCheck, Lock, Code } = window.Icons || {};
+  const [confirmRestoreData, setConfirmRestoreData] = React.useState(null);
+  const [feedbackDialog, setFeedbackDialog] = React.useState({ isOpen: false, title: '', message: '', variant: 'info', onConfirm: null });
 
-  window.useModalHistory(pasteBackupOpen, () => setPasteBackupOpen(false), 'backupPasteBackup');
+  const fileInputRef = React.useRef(null);
+  const { X, Cloud, Download, Upload, ShieldCheck, Lock, Copy, Check, Share2, FileText, CheckCircle2, AlertTriangle } = window.Icons || {};
+
+  window.useModalHistory(isOpen, onClose, 'backupMainModal');
   window.useModalHistory(feedbackDialog.isOpen, () => setFeedbackDialog(prev => ({ ...prev, isOpen: false })), 'backupFeedback');
+  window.useModalHistory(!!confirmRestoreData, () => setConfirmRestoreData(null), 'backupConfirmRestore');
 
   if (!isOpen) return null;
 
-  // Exportar Backup
-  const handleExportBackup = async () => {
+  // Utilitário robusto para copiar texto no navegador e WebView Android
+  const copyToClipboard = async (text) => {
+    let success = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        success = true;
+      } catch (e) {
+        console.warn('Clipboard API error, trying execCommand fallback:', e);
+      }
+    }
+    if (!success) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, 99999);
+        success = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch (e) {
+        console.error('execCommand copy failed:', e);
+      }
+    }
+    return success;
+  };
+
+  // 1. Copiar Código de Backup para a Área de Transferência
+  const handleCopyBackupCode = async () => {
+    if (!isVip) {
+      onTriggerPaywall('backup');
+      return;
+    }
+    const code = window.AppState.getBackupJsonString();
+    await copyToClipboard(code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 4000);
+
+    setFeedbackDialog({
+      isOpen: true,
+      title: 'Código Copiado com Sucesso!',
+      message: 'O código de backup de todos os seus dados foi copiado para a memória do seu celular!\n\n' +
+               '1. Abra o WhatsApp e cole em uma conversa com você mesmo (ou salve no bloco de notas).\n' +
+               '2. No novo celular, abra este aplicativo, vá na aba "Restaurar" e cole o código.',
+      variant: 'success'
+    });
+  };
+
+  // 2. Compartilhar Código como Mensagem de Texto no WhatsApp
+  const handleShareWhatsApp = async () => {
+    if (!isVip) {
+      onTriggerPaywall('backup');
+      return;
+    }
+    const code = window.AppState.getBackupJsonString();
+    await copyToClipboard(code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 4000);
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Backup CadernoFiado',
+          text: code
+        });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    setFeedbackDialog({
+      isOpen: true,
+      title: 'Código Copiado!',
+      message: 'O código do backup foi copiado para a sua área de transferência!\n\nAbra o WhatsApp na conversa desejada, segure o dedo na caixa de mensagem e toque em "Colar".',
+      variant: 'success'
+    });
+  };
+
+  // 3. Exportar como Arquivo de Texto (.txt)
+  const handleExportFile = async () => {
     if (!isVip) {
       onTriggerPaywall('backup');
       return;
@@ -6694,204 +6784,147 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
       if (!res || !res.success) {
         setFeedbackDialog({
           isOpen: true,
-          title: 'Aviso de Exportação',
-          message: 'Não foi possível gerar o arquivo de backup. Tente usar a opção de copiar código se disponível.',
+          title: 'Aviso',
+          message: 'Não foi possível gerar o arquivo direto. Utilize a opção "Copiar Código de Backup".',
           variant: 'warning'
         });
         return;
       }
-      
-      if (res.method === 'share') {
-        setFeedbackDialog({
-          isOpen: true,
-          title: 'Backup Compartilhado',
-          message: `Arquivo "${res.filename}" enviado para a gaveta de compartilhamento!\n\nSelecione o Google Drive ou WhatsApp para salvar o arquivo com segurança na nuvem.`,
-          variant: 'success'
-        });
-      } else if (res.method === 'raw_json' && res.rawJson) {
-        // Fallback seguro: O dispositivo não suporta download nem share (ex: Android Antigo WebView)
-        setPastedJson(res.rawJson);
-        setPasteBackupOpen(true); // Abre o modal de "Colar" mas preenchido com o texto para ele Copiar!
-        setFeedbackDialog({
-          isOpen: true,
-          title: 'Código Gerado!',
-          message: 'Seu dispositivo bloqueou o download direto. O código do seu backup foi gerado e preenchido na tela. Copie TODO o texto e guarde-o em um lugar seguro (como uma mensagem para si mesmo no WhatsApp).',
-          variant: 'warning'
-        });
-      } else {
-        setFeedbackDialog({
-          isOpen: true,
-          title: 'Backup Salvo',
-          message: `O arquivo "${res.filename}" foi baixado. Guarde-o em um local seguro!`,
-          variant: 'success'
-        });
-      }
+
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Arquivo de Backup Gerado!',
+        message: `Arquivo "${res.filename}" gerado com sucesso!\n\n` +
+                 `Como este é um arquivo de texto (.txt), você pode abri-lo facilmente no celular, Google Drive ou WhatsApp para copiar o código quando precisar.`,
+        variant: 'success'
+      });
     } catch (err) {
       setFeedbackDialog({ isOpen: true, title: 'Erro ao Exportar', message: err.message, variant: 'danger' });
     }
   };
 
-  // Restaurar Backup via FileReader + JSON.parse
-  const handleFileSelect = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-
-    if (!isVip) {
-      e.target.value = '';
-      onTriggerPaywall('backup');
-      return;
-    }
-
-    try {
-      const reader = new FileReader();
-      
-      reader.onload = (event) => {
-        try {
-          const fileContent = event.target.result;
-          if (!fileContent || !fileContent.trim()) {
-            setFeedbackDialog({ isOpen: true, title: 'Arquivo Vazio', message: 'O arquivo selecionado está vazio.', variant: 'warning' });
-            return;
-          }
-
-          // 1. JSON.parse em try/catch conforme especificado
-          let parsedData;
-          try {
-            parsedData = JSON.parse(fileContent);
-          } catch (parseErr) {
-            setFeedbackDialog({
-              isOpen: true,
-              title: 'Formato Inválido',
-              message: 'Erro ao ler o arquivo: o conteúdo não é um JSON válido.\n' + parseErr.message,
-              variant: 'danger'
-            });
-            return;
-          }
-
-          // 2. Validação da estrutura
-          const validation = window.AppState.validateBackup(fileContent);
-          if (!validation.valid) {
-            setFeedbackDialog({
-              isOpen: true,
-              title: 'Arquivo Inválido',
-              message: 'Arquivo de backup inválido:\n' + validation.error,
-              variant: 'danger'
-            });
-            return;
-          }
-
-          // 3. Injeção dos dados restaurados no localStorage / AppState
-          const res = window.AppState.restoreBackupData(validation.data || parsedData);
-          if (res && res.success) {
-            const clientsCount = validation.summary?.clientsCount || (parsedData.clients?.length || 0);
-            const salesCount = validation.summary?.salesCount || 0;
-            
-            // 4. Diálogo de sucesso antes de recarregar
-            setFeedbackDialog({
-              isOpen: true,
-              title: 'Backup Restaurado com Sucesso!',
-              message: `• ${clientsCount} Clientes carregados\n• ${salesCount} Vendas recuperadas\n\nToque em OK para atualizar os dados no aplicativo.`,
-              variant: 'success',
-              onConfirm: () => window.location.reload()
-            });
-          } else {
-            setFeedbackDialog({
-              isOpen: true,
-              title: 'Falha na Restauração',
-              message: 'Falha ao restaurar dados: ' + (res?.error || 'Erro desconhecido ao salvar.'),
-              variant: 'danger'
-            });
-          }
-        } catch (innerErr) {
-          console.error('Erro ao processar backup:', innerErr);
-          setFeedbackDialog({
-            isOpen: true,
-            title: 'Erro de Leitura',
-            message: 'Erro ao processar dados do arquivo: ' + innerErr.message,
-            variant: 'danger'
-          });
+  // 4. Colar da Área de Transferência
+  const handlePasteFromClipboard = async () => {
+    let pasted = false;
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          setPastedJson(text.trim());
+          pasted = true;
         }
-      };
-
-      reader.onerror = (readErr) => {
-        setFeedbackDialog({
-          isOpen: true,
-          title: 'Erro no Dispositivo',
-          message: 'Erro ao ler o arquivo no dispositivo: ' + (reader.error?.message || 'Falha de leitura.'),
-          variant: 'danger'
-        });
-      };
-
-      reader.readAsText(file);
-    } catch (err) {
+      } catch (err) {
+        console.warn('readText clipboard blocked:', err);
+      }
+    }
+    if (!pasted) {
       setFeedbackDialog({
         isOpen: true,
-        title: 'Erro Inesperado',
-        message: 'Erro inesperado: ' + err.message,
-        variant: 'danger'
+        title: 'Como Colar no Celular',
+        message: 'Para colar no seu aparelho:\n\n1. Pressione e segure o dedo dentro da caixa de texto abaixo.\n2. Toque no botão "Colar" que aparecerá.',
+        variant: 'info'
       });
-    } finally {
-      e.target.value = '';
     }
   };
 
-  // Contingência: Restaurar via texto colado
-  const handleRestorePastedText = () => {
+  // 5. Validar e Solicitar Confirmação de Restauração
+  const handlePromptRestore = () => {
     if (!pastedJson.trim()) {
       setFeedbackDialog({
         isOpen: true,
         title: 'Código Ausente',
-        message: 'Cole o código JSON do seu backup antes de confirmar.',
+        message: 'Por favor, cole o código do backup no campo de texto antes de prosseguir.',
         variant: 'warning'
       });
       return;
     }
 
-    try {
-      JSON.parse(pastedJson);
-      const validation = window.AppState.validateBackup(pastedJson);
-      if (!validation.valid) {
-        setFeedbackDialog({
-          isOpen: true,
-          title: 'Código Inválido',
-          message: 'Código de backup inválido:\n' + validation.error,
-          variant: 'danger'
-        });
-        return;
-      }
-      const res = window.AppState.restoreBackupData(validation.data);
-      if (res && res.success) {
-        setFeedbackDialog({
-          isOpen: true,
-          title: 'Backup Restaurado!',
-          message: 'Backup restaurado com sucesso! O aplicativo será recarregado.',
-          variant: 'success',
-          onConfirm: () => window.location.reload()
-        });
-      } else {
-        setFeedbackDialog({
-          isOpen: true,
-          title: 'Falha na Gravação',
-          message: 'Falha ao restaurar: ' + (res?.error || 'Erro ao gravar dados.'),
-          variant: 'danger'
-        });
-      }
-    } catch (e) {
+    const validation = window.AppState.validateBackup(pastedJson);
+    if (!validation.valid) {
       setFeedbackDialog({
         isOpen: true,
-        title: 'Código JSON Inválido',
-        message: 'Código JSON inválido: ' + e.message,
+        title: 'Código Inválido',
+        message: 'O código informado não é um backup válido do CadernoFiado:\n\n' + validation.error,
+        variant: 'danger'
+      });
+      return;
+    }
+
+    setConfirmRestoreData(validation);
+  };
+
+  // 6. Confirmar e Aplicar a Restauração
+  const handleConfirmRestore = () => {
+    if (!confirmRestoreData || !confirmRestoreData.data) return;
+
+    const res = window.AppState.restoreBackupData(confirmRestoreData.data);
+    if (res && res.success) {
+      const summary = confirmRestoreData.summary;
+      setConfirmRestoreData(null);
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Backup Restaurado com Sucesso!',
+        message: `• ${summary.clientsCount} Clientes restaurados\n` +
+                 `• ${summary.salesCount} Vendas recuperadas\n` +
+                 `• Dívida total: R$ ${(summary.totalDebtCents / 100).toFixed(2)}\n\n` +
+                 `Toque em OK para atualizar os dados no aplicativo.`,
+        variant: 'success',
+        onConfirm: () => window.location.reload()
+      });
+    } else {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Falha na Restauração',
+        message: 'Falha ao gravar os dados: ' + (res?.error || 'Erro desconhecido.'),
         variant: 'danger'
       });
     }
   };
 
+  // 7. Seleção de Arquivo (para Desktop / Computador)
+  const handleFileSelect = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target.result;
+        if (!content || !content.trim()) {
+          setFeedbackDialog({ isOpen: true, title: 'Arquivo Vazio', message: 'O arquivo selecionado está vazio.', variant: 'warning' });
+          return;
+        }
+        setPastedJson(content.trim());
+        const validation = window.AppState.validateBackup(content);
+        if (!validation.valid) {
+          setFeedbackDialog({
+            isOpen: true,
+            title: 'Arquivo Inválido',
+            message: 'O arquivo selecionado não contém um backup válido:\n\n' + validation.error,
+            variant: 'danger'
+          });
+          return;
+        }
+        setConfirmRestoreData(validation);
+      };
+      reader.onerror = () => {
+        setFeedbackDialog({ isOpen: true, title: 'Erro de Leitura', message: 'Não foi possível ler o arquivo selecionado.', variant: 'danger' });
+      };
+      reader.readAsText(file);
+    } catch (err) {
+      setFeedbackDialog({ isOpen: true, title: 'Erro', message: err.message, variant: 'danger' });
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-fadeIn">
-      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-pop-in transition-colors">
+      <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-pop-in transition-colors">
         
         {/* Cabeçalho Premium */}
-        <div className="p-5 bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-start justify-between relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10 blur-2xl"></div>
+        <div className="p-4 sm:p-5 bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-start justify-between relative overflow-hidden flex-shrink-0">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none"></div>
           
           <div className="flex items-center space-x-3 relative z-10">
             <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm shadow-inner">
@@ -6899,10 +6932,10 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
             </div>
             <div>
               <h3 className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
-                Backup de Segurança
-                {!isVip && <Lock size={12} className="text-white/70" />}
+                Backup & Sincronização
+                {!isVip && activeTab === 'export' && <Lock size={12} className="text-white/70" />}
               </h3>
-              <p className="text-[11px] text-emerald-100 mt-0.5">Google Drive & WhatsApp</p>
+              <p className="text-[11px] text-emerald-100 mt-0.5">Google Drive, WhatsApp & Celular</p>
             </div>
           </div>
 
@@ -6911,128 +6944,229 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
           </button>
         </div>
 
-        {/* Conteúdo */}
-        <div className="p-5 space-y-4 flex-1">
-          
-          <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/40 space-y-2.5 text-xs text-slate-700 dark:text-slate-300">
-            <div className="flex items-start gap-2.5">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center mt-0.5">1</span>
-              <p className="leading-snug">
-                Clique em <strong>'Exportar Dados'</strong> para gerar o arquivo do seu caderno.
-              </p>
-            </div>
-            <div className="flex items-start gap-2.5">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600 text-white font-bold text-[11px] flex items-center justify-center mt-0.5">2</span>
-              <p className="leading-snug">
-                Compartilhe e salve esse arquivo no <strong>Google Drive</strong> ou no seu <strong>WhatsApp</strong>.
-              </p>
-            </div>
-          </div>
-
-          {/* Botões de Ação Principais */}
-          <div className="space-y-3 pt-1">
-            <button
-              onClick={handleExportBackup}
-              className={`w-full py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center space-x-2 transition-all active:scale-95 shadow-sm btn-smooth ${isVip ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700'}`}
-            >
-              <Download size={18} className={isVip ? '' : 'text-emerald-600'} />
-              <span>Exportar Dados</span>
-            </button>
-
+        {/* Segmented Control de Abas: Exportar vs Restaurar */}
+        <div className="px-4 pt-3 pb-1 bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+          <div className="flex bg-slate-200/70 dark:bg-slate-800/80 p-1 rounded-xl">
             <button
               type="button"
-              onClick={() => {
-                if (!isVip) onTriggerPaywall('backup');
-                else setPasteBackupOpen(true);
-              }}
-              className={`w-full py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center space-x-2 transition-colors btn-smooth ${isVip ? 'bg-slate-800 hover:bg-slate-700 text-white shadow-sm' : 'bg-slate-50 dark:bg-slate-900 text-slate-500 border border-slate-200'}`}
+              onClick={() => setActiveTab('export')}
+              className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === 'export'
+                  ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
             >
-              <Upload size={18} />
-              <span>Restaurar Backup</span>
+              <Download size={14} />
+              <span>1. Salvar Dados</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('restore')}
+              className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === 'restore'
+                  ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Upload size={14} />
+              <span>2. Restaurar</span>
             </button>
           </div>
-
-          {!isVip && (
-            <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-xs text-amber-800 dark:text-amber-300 text-center">
-              <p className="font-semibold flex items-center justify-center gap-1.5"><ShieldCheck size={14} /> Recurso Exclusivo VIP</p>
-            </div>
-          )}
         </div>
-      </div>
 
-      {/* Modal de Restauração Aprimorado (Com suporte a Arquivo e Texto para Mobile/Web) */}
-      {pasteBackupOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/90 animate-fadeIn">
-          <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-2xl animate-pop-in flex flex-col max-h-[90vh]">
-            
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                <Upload size={18} className="text-emerald-600" />
-                Restaurar Backup
-              </h3>
-              <button onClick={() => { setPasteBackupOpen(false); setPastedJson(''); }} className="p-1.5 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="overflow-y-auto space-y-4 flex-1 hide-scrollbar pb-2">
-              {/* Opção 1: Selecionar Arquivo (Funciona no PC) */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800">
-                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Opção 1: Arquivo</h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
-                  Se você está no PC ou seu celular suporta seleção, clique abaixo:
+        {/* Conteúdo com Scroll */}
+        <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 hide-scrollbar">
+          
+          {/* ================= ABA 1: EXPORTAR / SALVAR ================= */}
+          {activeTab === 'export' && (
+            <div className="space-y-3.5 animate-fadeIn">
+              
+              <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/40 text-xs text-slate-700 dark:text-slate-300">
+                <p className="leading-relaxed">
+                  Gere uma cópia segura dos seus clientes e dívidas para guardar no <strong>WhatsApp</strong> ou transferir para um celular novo.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors btn-smooth flex items-center justify-center gap-2"
-                >
-                  <Upload size={14} /> Selecionar arquivo .json
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json,application/json,text/plain"
-                  onChange={(e) => {
-                    handleFileSelect(e);
-                    setPasteBackupOpen(false);
-                  }}
-                  style={{ display: 'none' }}
-                />
               </div>
 
-              {/* Opção 2: Colar Texto (Garante funcionamento no Android WebView) */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800">
-                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Opção 2: Copiar e Colar (WhatsApp)</h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
-                  Se o botão acima não abrir nada no seu celular, siga os passos:<br/>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.</span> Abra o arquivo recebido no WhatsApp (usando Chrome ou leitor HTML).<br/>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">2.</span> Selecione e copie <b>todo</b> o texto do arquivo.<br/>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">3.</span> Cole o texto na caixa abaixo:
-                </p>
-                
+              {/* Botão Destaque Principal: Copiar Código (Zero Dependência de Arquivos) */}
+              <button
+                type="button"
+                onClick={handleCopyBackupCode}
+                className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                {copiedCode ? <Check size={18} className="text-emerald-200" /> : <Copy size={18} />}
+                <span>{copiedCode ? '✅ Código Copiado com Sucesso!' : 'Copiar Código do Backup'}</span>
+              </button>
+              <p className="text-[11px] text-center text-slate-500 dark:text-slate-400 -mt-1 leading-tight">
+                Recomendado para celular: copie e cole em uma mensagem do WhatsApp para guardar com segurança.
+              </p>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* Botão Compartilhar WhatsApp */}
+                <button
+                  type="button"
+                  onClick={handleShareWhatsApp}
+                  className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                >
+                  <Share2 size={15} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>WhatsApp</span>
+                </button>
+
+                {/* Botão Baixar Arquivo .txt */}
+                <button
+                  type="button"
+                  onClick={handleExportFile}
+                  className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                >
+                  <FileText size={15} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>Arquivo .txt</span>
+                </button>
+              </div>
+
+              {/* Opção de Visualizar Código Diretamente na Tela */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowRawCode(!showRawCode)}
+                  className="w-full text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline py-1"
+                >
+                  {showRawCode ? '▲ Ocultar código na tela' : '▼ Ver código de backup na tela'}
+                </button>
+
+                {showRawCode && (
+                  <div className="mt-2 space-y-2 animate-fadeIn">
+                    <textarea
+                      readOnly
+                      value={window.AppState.getBackupJsonString()}
+                      rows={4}
+                      className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-700 dark:text-slate-300 select-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyBackupCode}
+                      className="w-full py-2 rounded-xl bg-slate-800 dark:bg-slate-700 text-white text-xs font-bold hover:bg-slate-700 transition-colors"
+                    >
+                      Copiar Todo o Código
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {!isVip && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-xs text-amber-800 dark:text-amber-300 text-center space-y-1">
+                  <p className="font-semibold flex items-center justify-center gap-1.5">
+                    <ShieldCheck size={14} /> Recurso Exclusivo VIP
+                  </p>
+                  <p className="text-[11px] opacity-90">
+                    O backup garante que você nunca perca o controle dos seus clientes e fiados.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ================= ABA 2: RESTAURAR / RECUPERAR ================= */}
+          {activeTab === 'restore' && (
+            <div className="space-y-3.5 animate-fadeIn">
+              
+              <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                Cole o código de backup gerado no seu celular antigo para restaurar seus clientes, fiados e plano VIP.
+              </div>
+
+              {/* Botões de Apoio para Colar */}
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={handlePasteFromClipboard}
+                  className="py-1.5 px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center gap-1.5"
+                >
+                  <Copy size={13} />
+                  <span>Colar da Área de Transferência</span>
+                </button>
+
+                {pastedJson && (
+                  <button
+                    type="button"
+                    onClick={() => setPastedJson('')}
+                    className="text-[11px] text-rose-500 hover:underline font-medium"
+                  >
+                    Limpar
+                  </button>
+                )}
+              </div>
+
+              {/* Caixa de Texto Principal */}
+              <div>
                 <textarea
                   value={pastedJson}
                   onChange={e => setPastedJson(e.target.value)}
-                  placeholder="Cole o código do backup aqui..."
-                  rows={4}
-                  className="w-full p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-[10px] font-mono text-slate-800 dark:text-slate-300 focus:outline-none focus:border-emerald-500"
+                  placeholder="Pressione e segure aqui para colar o código de backup..."
+                  rows={5}
+                  className="w-full p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 transition-colors"
                 />
-                
-                <button
-                  type="button"
-                  onClick={handleRestorePastedText}
-                  className="w-full mt-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold btn-smooth shadow-sm"
-                >
-                  Restaurar Texto Colado
-                </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Modal Genérico de Feedback Integrado */}
+              {/* Botão de Ação: Restaurar Dados */}
+              <button
+                type="button"
+                onClick={handlePromptRestore}
+                className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Upload size={18} />
+                <span>Restaurar Dados Agora</span>
+              </button>
+
+              {/* Seção Secundária: Para Usuários no Computador */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="text-center">
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500 block mb-2">
+                    Ou selecione um arquivo se estiver no computador:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-slate-700 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <FileText size={14} />
+                    <span>Selecionar arquivo .txt ou .json</span>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".txt,.json,text/plain,application/json"
+                    onChange={handleFileSelect}
+                    style={{ display: 'none' }}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    (No celular, utilize o campo de colar código acima)
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* Confirmação de Substituição de Dados pelo Backup */}
+      <window.ConfirmModal
+        isOpen={!!confirmRestoreData}
+        title="Restaurar Este Backup?"
+        message={confirmRestoreData ? (
+          `Os dados contidos no backup serão aplicados neste aparelho:\n\n` +
+          `• ${confirmRestoreData.summary?.clientsCount || 0} Clientes cadastrados\n` +
+          `• ${confirmRestoreData.summary?.salesCount || 0} Vendas / parcelas\n` +
+          `• R$ ${((confirmRestoreData.summary?.totalDebtCents || 0) / 100).toFixed(2)} em dívidas registradas\n\n` +
+          `Deseja realmente substituir os dados atuais por este backup?`
+        ) : ''}
+        confirmText="Sim, Restaurar Dados"
+        cancelText="Cancelar"
+        variant="warning"
+        onConfirm={handleConfirmRestore}
+        onCancel={() => setConfirmRestoreData(null)}
+      />
+
+      {/* Modal de Feedback Integrado */}
       <window.ConfirmModal
         isOpen={feedbackDialog.isOpen}
         title={feedbackDialog.title}
