@@ -672,9 +672,9 @@ window.PdfService = (function() {
 
   async function downloadPdf(blob, filename) {
     const safeFilename = filename || 'recibo-fiado.pdf';
-    const isAndroid = /android/i.test(navigator.userAgent || '');
+    
     try {
-      // 1. Tenta usar a Web Share API nativa com objeto File
+      // 1. Tenta usar a Web Share API nativa com objeto File (Funciona em Android WebViews modernos)
       let pdfFile = null;
       if (typeof File !== 'undefined') {
         pdfFile = blob instanceof File ? blob : new File([blob], safeFilename, { type: 'application/pdf' });
@@ -698,7 +698,8 @@ window.PdfService = (function() {
         }
       }
 
-      // 2. Fallback 1: Download direto via tag <a> (Apenas Não-Android/Desktop)
+      // 2. Fallback 1: Download direto via tag <a> (Normalmente falha em Android WebView, mas funciona no Desktop/Navegador)
+      const isAndroid = /android/i.test(navigator.userAgent || '');
       if (!isAndroid) {
         try {
           const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
@@ -717,7 +718,7 @@ window.PdfService = (function() {
         }
       }
 
-      // 3. Fallback 2: Converter para Base64 (Data URI) e tentar ponte nativa ou location.href
+      // 3. Fallback 2: Tentar ponte nativa se existir
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -735,22 +736,20 @@ window.PdfService = (function() {
             } catch(e) { console.warn(e); }
           }
           
-          setTimeout(() => {
-            try {
-              window.location.href = reader.result;
-            } catch(e) {}
-          }, 50);
-          resolve({ success: true, method: 'location.href' });
+          // ATENÇÃO: NÃO usar window.location.href = reader.result no Android WebView. 
+          // Isso causa ActivityNotFoundException e FECHA o aplicativo!
+          // Retornamos falso para forçar a interface a mostrar os fallbacks limpos.
+          resolve({ success: false, method: 'no_native_bridge', error: 'Download direto de PDF não suportado neste dispositivo. Use a opção de compartilhar pelo WhatsApp.' });
         };
         reader.onerror = () => {
-          resolve({ success: true, method: 'silent_fail' });
+          resolve({ success: false, method: 'file_read_error', error: 'Erro ao ler o arquivo PDF gerado.' });
         };
         reader.readAsDataURL(blob);
       });
 
     } catch(err) {
-      console.error('Falha silenciosa ao processar o PDF:', err);
-      return { success: true, method: 'silent_fail' };
+      console.error('Falha ao processar o PDF:', err);
+      return { success: false, method: 'error', error: err.message };
     }
   }
 
@@ -1738,7 +1737,8 @@ window.AppState = (function() {
       }
     }
 
-    // 2. Fallback 1: Download direto via tag <a> (Apenas Não-Android/Desktop)
+    // 2. Fallback 1: Download direto via tag <a> (Normalmente funciona no navegador/desktop)
+    const isAndroid = /android/i.test(navigator.userAgent || '');
     if (!isAndroid) {
       try {
         const url = URL.createObjectURL(blob);
@@ -1755,20 +1755,16 @@ window.AppState = (function() {
       }
     }
 
-    // 3. Fallback 2: Data URI convertendo no FileReader
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setTimeout(() => {
-          try { window.location.href = reader.result; } catch(e){}
-        }, 50);
-        resolve({ success: true, method: 'location.href', filename, clientCount: data.clients.length, salesCount });
-      };
-      reader.onerror = () => {
-        resolve({ success: false, error: 'Falha completa na exportação do arquivo.' });
-      };
-      reader.readAsDataURL(blob);
-    });
+    // 3. Fallback 2: Retornar o JSON Bruto (Raw) para que a UI ofereça a cópia
+    // ATENÇÃO: Nunca usar window.location.href com data:application/json no Android WebView (causa Crash)
+    return { 
+      success: true, 
+      method: 'raw_json', 
+      rawJson: jsonString, 
+      filename, 
+      clientCount: data.clients.length, 
+      salesCount 
+    };
   }
 
   /**
@@ -2848,7 +2844,15 @@ window.WhatsAppModal = function WhatsAppModal({
     const url = cleanPhone 
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(activeMessage)}`
       : `https://wa.me/?text=${encodeURIComponent(activeMessage)}`;
-    window.open(url, '_blank');
+    
+    // Método seguro para WebView no Android (evita bloqueio de window.open)
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   return (
@@ -3856,14 +3860,21 @@ window.ClientDetailModal = function ClientDetailModal({
     setPdfModalData(result);
   };
 
-  // Compartilhamento e Envio Direto do Arquivo PDF (WhatsApp / Apps)
   const handleSharePdfFile = async () => {
     if (!pdfModalData || !pdfModalData.blob) return;
 
     try {
-      // Apenas aciona a exportação universal sem popups de erro
       const fileName = pdfModalData.filename || `recibo_${(client.name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      await window.PdfService.downloadPdf(pdfModalData.blob, fileName);
+      const result = await window.PdfService.downloadPdf(pdfModalData.blob, fileName);
+      if (result && !result.success) {
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Erro ao Salvar',
+          message: 'Não foi possível baixar/compartilhar o arquivo PDF automaticamente no seu aparelho.\nRecomendamos enviar o extrato em formato de texto pelo WhatsApp.',
+          variant: 'warning'
+        });
+        return; // não fecha o pdfModalData para ele poder clicar em 'Enviar Extrato em Texto'
+      }
       setPdfModalData(null);
     } catch (err) {
       console.error('Erro silencioso no PDF:', err);
@@ -4444,8 +4455,12 @@ window.ClientDetailModal = function ClientDetailModal({
                   type="button"
                   onClick={async () => {
                     if (window.PdfService && pdfModalData?.blob) {
-                      await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      setPdfModalData(null);
+                      const res = await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      if (res && !res.success) {
+                        alert(res.error || 'Não foi possível salvar o arquivo.');
+                      } else {
+                        setPdfModalData(null);
+                      }
                     }
                   }}
                   className="w-full p-2.5 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium flex items-center justify-between transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
@@ -6570,23 +6585,34 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
         setFeedbackDialog({
           isOpen: true,
           title: 'Aviso de Exportação',
-          message: 'Não foi possível gerar o arquivo de backup. Tente a opção de copiar código.',
+          message: 'Não foi possível gerar o arquivo de backup. Tente usar a opção de copiar código se disponível.',
           variant: 'warning'
         });
         return;
       }
+      
       if (res.method === 'share') {
         setFeedbackDialog({
           isOpen: true,
-          title: 'Backup Gerado com Sucesso',
-          message: `Arquivo "${res.filename}" criado!\n\nSelecione o Google Drive ou WhatsApp para salvar o arquivo com segurança na nuvem.`,
+          title: 'Backup Compartilhado',
+          message: `Arquivo "${res.filename}" enviado para a gaveta de compartilhamento!\n\nSelecione o Google Drive ou WhatsApp para salvar o arquivo com segurança na nuvem.`,
           variant: 'success'
+        });
+      } else if (res.method === 'raw_json' && res.rawJson) {
+        // Fallback seguro: O dispositivo não suporta download nem share (ex: Android Antigo WebView)
+        setPastedJson(res.rawJson);
+        setPasteBackupOpen(true); // Abre o modal de "Colar" mas preenchido com o texto para ele Copiar!
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Código Gerado!',
+          message: 'Seu dispositivo bloqueou o download direto. O código do seu backup foi gerado e preenchido na tela. Copie TODO o texto e guarde-o em um lugar seguro (como uma mensagem para si mesmo no WhatsApp).',
+          variant: 'warning'
         });
       } else {
         setFeedbackDialog({
           isOpen: true,
           title: 'Backup Salvo',
-          message: `O arquivo "${res.filename}" foi gerado. Salve-o no seu Google Drive ou envie para o seu WhatsApp!`,
+          message: `O arquivo "${res.filename}" foi baixado. Guarde-o em um local seguro!`,
           variant: 'success'
         });
       }
@@ -6795,13 +6821,13 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
         </div>
       </div>
 
-      {/* Modal de Contingência: Colar Código JSON */}
+      {/* Modal de Contingência: Colar/Copiar Código JSON */}
       {pasteBackupOpen && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
           <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-3 shadow-2xl animate-pop-in">
-            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Colar Código JSON</h3>
+            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Código de Backup (JSON)</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Cole abaixo o texto completo do arquivo de backup:
+              Copie o código abaixo para salvar, ou cole um código existente para restaurar:
             </p>
             <textarea
               value={pastedJson}
@@ -6810,20 +6836,35 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
               rows={6}
               className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
             />
+            
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setPasteBackupOpen(false)}
-                className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium btn-smooth"
+                onClick={() => {
+                   if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                     navigator.clipboard.writeText(pastedJson);
+                     alert('Código copiado para a área de transferência!');
+                   }
+                }}
+                className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium btn-smooth"
               >
-                Cancelar
+                Copiar
+              </button>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => { setPasteBackupOpen(false); setPastedJson(''); }}
+                className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-medium btn-smooth"
+              >
+                Fechar
               </button>
               <button
                 type="button"
                 onClick={handleRestorePastedText}
                 className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold btn-smooth shadow-sm"
               >
-                Confirmar
+                Restaurar
               </button>
             </div>
           </div>

@@ -948,7 +948,8 @@ window.AppState = (function() {
       }
     }
 
-    // 2. Fallback 1: Download direto via tag <a> (Apenas Não-Android/Desktop)
+    // 2. Fallback 1: Download direto via tag <a> (Normalmente funciona no navegador/desktop)
+    const isAndroid = /android/i.test(navigator.userAgent || '');
     if (!isAndroid) {
       try {
         const url = URL.createObjectURL(blob);
@@ -965,20 +966,16 @@ window.AppState = (function() {
       }
     }
 
-    // 3. Fallback 2: Data URI convertendo no FileReader
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setTimeout(() => {
-          try { window.location.href = reader.result; } catch(e){}
-        }, 50);
-        resolve({ success: true, method: 'location.href', filename, clientCount: data.clients.length, salesCount });
-      };
-      reader.onerror = () => {
-        resolve({ success: false, error: 'Falha completa na exportação do arquivo.' });
-      };
-      reader.readAsDataURL(blob);
-    });
+    // 3. Fallback 2: Retornar o JSON Bruto (Raw) para que a UI ofereça a cópia
+    // ATENÇÃO: Nunca usar window.location.href com data:application/json no Android WebView (causa Crash)
+    return { 
+      success: true, 
+      method: 'raw_json', 
+      rawJson: jsonString, 
+      filename, 
+      clientCount: data.clients.length, 
+      salesCount 
+    };
   }
 
   /**

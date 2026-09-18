@@ -115,7 +115,15 @@ window.WhatsAppModal = function WhatsAppModal({
     const url = cleanPhone 
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(activeMessage)}`
       : `https://wa.me/?text=${encodeURIComponent(activeMessage)}`;
-    window.open(url, '_blank');
+    
+    // Método seguro para WebView no Android (evita bloqueio de window.open)
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   return (

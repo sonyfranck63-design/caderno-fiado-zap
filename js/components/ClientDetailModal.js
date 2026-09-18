@@ -162,14 +162,21 @@ window.ClientDetailModal = function ClientDetailModal({
     setPdfModalData(result);
   };
 
-  // Compartilhamento e Envio Direto do Arquivo PDF (WhatsApp / Apps)
   const handleSharePdfFile = async () => {
     if (!pdfModalData || !pdfModalData.blob) return;
 
     try {
-      // Apenas aciona a exportação universal sem popups de erro
       const fileName = pdfModalData.filename || `recibo_${(client.name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      await window.PdfService.downloadPdf(pdfModalData.blob, fileName);
+      const result = await window.PdfService.downloadPdf(pdfModalData.blob, fileName);
+      if (result && !result.success) {
+        setFeedbackModal({
+          isOpen: true,
+          title: 'Erro ao Salvar',
+          message: 'Não foi possível baixar/compartilhar o arquivo PDF automaticamente no seu aparelho.\nRecomendamos enviar o extrato em formato de texto pelo WhatsApp.',
+          variant: 'warning'
+        });
+        return; // não fecha o pdfModalData para ele poder clicar em 'Enviar Extrato em Texto'
+      }
       setPdfModalData(null);
     } catch (err) {
       console.error('Erro silencioso no PDF:', err);
@@ -750,8 +757,12 @@ window.ClientDetailModal = function ClientDetailModal({
                   type="button"
                   onClick={async () => {
                     if (window.PdfService && pdfModalData?.blob) {
-                      await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
-                      setPdfModalData(null);
+                      const res = await window.PdfService.downloadPdf(pdfModalData.blob, pdfModalData.filename);
+                      if (res && !res.success) {
+                        alert(res.error || 'Não foi possível salvar o arquivo.');
+                      } else {
+                        setPdfModalData(null);
+                      }
                     }
                   }}
                   className="w-full p-2.5 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium flex items-center justify-between transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"

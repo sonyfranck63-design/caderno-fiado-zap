@@ -28,23 +28,34 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
         setFeedbackDialog({
           isOpen: true,
           title: 'Aviso de Exportação',
-          message: 'Não foi possível gerar o arquivo de backup. Tente a opção de copiar código.',
+          message: 'Não foi possível gerar o arquivo de backup. Tente usar a opção de copiar código se disponível.',
           variant: 'warning'
         });
         return;
       }
+      
       if (res.method === 'share') {
         setFeedbackDialog({
           isOpen: true,
-          title: 'Backup Gerado com Sucesso',
-          message: `Arquivo "${res.filename}" criado!\n\nSelecione o Google Drive ou WhatsApp para salvar o arquivo com segurança na nuvem.`,
+          title: 'Backup Compartilhado',
+          message: `Arquivo "${res.filename}" enviado para a gaveta de compartilhamento!\n\nSelecione o Google Drive ou WhatsApp para salvar o arquivo com segurança na nuvem.`,
           variant: 'success'
+        });
+      } else if (res.method === 'raw_json' && res.rawJson) {
+        // Fallback seguro: O dispositivo não suporta download nem share (ex: Android Antigo WebView)
+        setPastedJson(res.rawJson);
+        setPasteBackupOpen(true); // Abre o modal de "Colar" mas preenchido com o texto para ele Copiar!
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Código Gerado!',
+          message: 'Seu dispositivo bloqueou o download direto. O código do seu backup foi gerado e preenchido na tela. Copie TODO o texto e guarde-o em um lugar seguro (como uma mensagem para si mesmo no WhatsApp).',
+          variant: 'warning'
         });
       } else {
         setFeedbackDialog({
           isOpen: true,
           title: 'Backup Salvo',
-          message: `O arquivo "${res.filename}" foi gerado. Salve-o no seu Google Drive ou envie para o seu WhatsApp!`,
+          message: `O arquivo "${res.filename}" foi baixado. Guarde-o em um local seguro!`,
           variant: 'success'
         });
       }
@@ -253,13 +264,13 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
         </div>
       </div>
 
-      {/* Modal de Contingência: Colar Código JSON */}
+      {/* Modal de Contingência: Colar/Copiar Código JSON */}
       {pasteBackupOpen && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
           <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-3 shadow-2xl animate-pop-in">
-            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Colar Código JSON</h3>
+            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Código de Backup (JSON)</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Cole abaixo o texto completo do arquivo de backup:
+              Copie o código abaixo para salvar, ou cole um código existente para restaurar:
             </p>
             <textarea
               value={pastedJson}
@@ -268,20 +279,35 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
               rows={6}
               className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
             />
+            
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setPasteBackupOpen(false)}
-                className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium btn-smooth"
+                onClick={() => {
+                   if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                     navigator.clipboard.writeText(pastedJson);
+                     alert('Código copiado para a área de transferência!');
+                   }
+                }}
+                className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium btn-smooth"
               >
-                Cancelar
+                Copiar
+              </button>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => { setPasteBackupOpen(false); setPastedJson(''); }}
+                className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-medium btn-smooth"
+              >
+                Fechar
               </button>
               <button
                 type="button"
                 onClick={handleRestorePastedText}
                 className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold btn-smooth shadow-sm"
               >
-                Confirmar
+                Restaurar
               </button>
             </div>
           </div>

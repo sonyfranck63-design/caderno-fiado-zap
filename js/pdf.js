@@ -519,9 +519,9 @@ window.PdfService = (function() {
 
   async function downloadPdf(blob, filename) {
     const safeFilename = filename || 'recibo-fiado.pdf';
-    const isAndroid = /android/i.test(navigator.userAgent || '');
+    
     try {
-      // 1. Tenta usar a Web Share API nativa com objeto File
+      // 1. Tenta usar a Web Share API nativa com objeto File (Funciona em Android WebViews modernos)
       let pdfFile = null;
       if (typeof File !== 'undefined') {
         pdfFile = blob instanceof File ? blob : new File([blob], safeFilename, { type: 'application/pdf' });
@@ -545,7 +545,8 @@ window.PdfService = (function() {
         }
       }
 
-      // 2. Fallback 1: Download direto via tag <a> (Apenas Não-Android/Desktop)
+      // 2. Fallback 1: Download direto via tag <a> (Normalmente falha em Android WebView, mas funciona no Desktop/Navegador)
+      const isAndroid = /android/i.test(navigator.userAgent || '');
       if (!isAndroid) {
         try {
           const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
@@ -564,7 +565,7 @@ window.PdfService = (function() {
         }
       }
 
-      // 3. Fallback 2: Converter para Base64 (Data URI) e tentar ponte nativa ou location.href
+      // 3. Fallback 2: Tentar ponte nativa se existir
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -582,22 +583,20 @@ window.PdfService = (function() {
             } catch(e) { console.warn(e); }
           }
           
-          setTimeout(() => {
-            try {
-              window.location.href = reader.result;
-            } catch(e) {}
-          }, 50);
-          resolve({ success: true, method: 'location.href' });
+          // ATENÇÃO: NÃO usar window.location.href = reader.result no Android WebView. 
+          // Isso causa ActivityNotFoundException e FECHA o aplicativo!
+          // Retornamos falso para forçar a interface a mostrar os fallbacks limpos.
+          resolve({ success: false, method: 'no_native_bridge', error: 'Download direto de PDF não suportado neste dispositivo. Use a opção de compartilhar pelo WhatsApp.' });
         };
         reader.onerror = () => {
-          resolve({ success: true, method: 'silent_fail' });
+          resolve({ success: false, method: 'file_read_error', error: 'Erro ao ler o arquivo PDF gerado.' });
         };
         reader.readAsDataURL(blob);
       });
 
     } catch(err) {
-      console.error('Falha silenciosa ao processar o PDF:', err);
-      return { success: true, method: 'silent_fail' };
+      console.error('Falha ao processar o PDF:', err);
+      return { success: false, method: 'error', error: err.message };
     }
   }
 
