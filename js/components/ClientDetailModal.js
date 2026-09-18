@@ -167,19 +167,32 @@ window.ClientDetailModal = function ClientDetailModal({
 
     try {
       const fileName = pdfModalData.filename || `recibo_${(client.name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      const result = await window.PdfService.downloadPdf(pdfModalData.blob, fileName);
-      if (result && !result.success) {
-        setFeedbackModal({
-          isOpen: true,
-          title: 'Erro ao Salvar',
-          message: 'Não foi possível baixar/compartilhar o arquivo PDF automaticamente no seu aparelho.\nRecomendamos enviar o extrato em formato de texto pelo WhatsApp.',
-          variant: 'warning'
-        });
-        return; // não fecha o pdfModalData para ele poder clicar em 'Enviar Extrato em Texto'
+      const title = `Recibo Fiado - ${client.name}`;
+      const text = `Extrato detalhado de fiado de ${client.name} - CadernoFiado`;
+
+      // 1. Tenta compartilhamento nativo direto (WhatsApp / Share Sheet)
+      const shareResult = await window.PdfService.sharePdfFile(pdfModalData.blob, fileName, title, text);
+      if (shareResult && shareResult.success) {
+        setPdfModalData(null);
+        return;
       }
-      setPdfModalData(null);
+
+      // 2. Se o compartilhamento falhar, tenta salvar / baixar
+      const downResult = await window.PdfService.downloadPdf(pdfModalData.blob, fileName);
+      if (downResult && downResult.success) {
+        setPdfModalData(null);
+        return;
+      }
+
+      // 3. Fallback informativo caso o aparelho tenha restrições
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Aviso',
+        message: 'Não foi possível compartilhar o arquivo diretamente no dispositivo. Recomendamos enviar o extrato em formato de texto pelo WhatsApp.',
+        variant: 'warning'
+      });
     } catch (err) {
-      console.error('Erro silencioso no PDF:', err);
+      console.error('[ClientDetailModal] Erro ao compartilhar PDF:', err);
       setPdfModalData(null);
     }
   };
@@ -966,36 +979,25 @@ window.ClientDetailModal = function ClientDetailModal({
                 // Converte em objeto File válido e passa para a Web Share API
                 const cleanClientName = (client.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
                 const filename = `Acordo_Anticalote_${cleanClientName}.pdf`;
-                const pdfFile = new File([result.blob], filename, { type: 'application/pdf' });
+                const title = `Acordo Anticalote - ${client.name}`;
+                const text = `Olá ${client.name}! Segue o Acordo de Confissão de Dívida formalizado e assinado.`;
 
-                if (typeof navigator !== 'undefined' && navigator.share) {
-                  try {
-                    await navigator.share({
-                      files: [pdfFile],
-                      title: `Acordo Anticalote - ${client.name}`,
-                      text: `Olá ${client.name}! Segue o Acordo de Confissão de Dívida formalizado e assinado.`
-                    });
-                    setFeedbackModal({
-                      isOpen: true,
-                      title: 'Acordo Formalizado!',
-                      message: 'A gaveta de compartilhamento foi aberta com sucesso. Envie o documento diretamente no WhatsApp do cliente.',
-                      variant: 'success'
-                    });
-                    return;
-                  } catch (shareErr) {
-                    if (shareErr.name === 'AbortError') {
-                      // Usuário fechou a gaveta, sem erro
-                      return;
-                    }
-                    console.warn('navigator.share com arquivo falhou, abrindo fallback:', shareErr);
-                  }
+                // Compartilhamento com suporte nativo Android e Web Share API
+                const shareRes = await window.PdfService.sharePdfFile(result.blob, filename, title, text);
+                if (shareRes && shareRes.success) {
+                  setFeedbackModal({
+                    isOpen: true,
+                    title: 'Acordo Formalizado!',
+                    message: 'A gaveta de compartilhamento foi aberta com sucesso. Envie o documento diretamente no WhatsApp do cliente.',
+                    variant: 'success'
+                  });
+                  return;
                 }
 
-                // Fallback com visualizador e opções caso navigator.share não esteja disponível
+                // Fallback com modal de opções caso o compartilhamento direto não abra
                 setPdfModalData({
                   ...result,
-                  filename,
-                  file: pdfFile
+                  filename
                 });
               } else {
                 setFeedbackModal({

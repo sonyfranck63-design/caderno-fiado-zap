@@ -640,129 +640,123 @@ window.PdfService = (function() {
   }
 
   /**
-   * Compartilha o arquivo PDF através da Web Share API nativa a partir de um gesto direto
+   * Obtém a ponte nativa Android se disponível no aplicativo
+   */
+  function getNativeBridge() {
+    if (typeof window !== 'undefined') {
+      if (window.androidAppProxy && typeof window.androidAppProxy.saveBase64File === 'function') {
+        return window.androidAppProxy;
+      }
+      if (window.AndroidBridge && typeof window.AndroidBridge.saveBase64File === 'function') {
+        return window.AndroidBridge;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Compartilha o arquivo PDF através da Ponte Nativa Android ou Web Share API
    */
   async function sharePdfFile(blob, filename, title, text) {
     const safeFilename = filename || 'recibo-fiado.pdf';
-    if (typeof navigator === 'undefined' || !navigator.share) {
-      return { success: false, reason: 'unsupported', error: 'Seu navegador não suporta compartilhamento direto.' };
-    }
-    try {
-      let file;
-      if (blob instanceof File) {
-        file = blob;
-      } else if (typeof File !== 'undefined' && blob) {
-        file = new File([blob], safeFilename, { type: 'application/pdf' });
-      } else {
-        return { success: false, error: 'Arquivo PDF inválido para compartilhamento.' };
-      }
+    const safeTitle = title || 'Recibo / Acordo Fiado';
+    const safeText = text || 'Documento em PDF gerado pelo CadernoFiado.';
 
-      await navigator.share({
-        files: [file],
-        title: title || 'Recibo / Acordo Fiado',
-        text: text || 'Documento em PDF gerado pelo CadernoFiado.'
-      });
-      return { success: true };
-    } catch(err) {
-      if (err.name === 'AbortError') return { success: true, cancelled: true };
-      console.warn('Falha no navigator.share com arquivos:', err);
-      return { success: false, error: err.message };
+    // 1. Ponte Nativa Android APK (Alta Prioridade - Abre gaveta nativa do Android para WhatsApp, Drive, etc.)
+    const bridge = getNativeBridge();
+    if (bridge && typeof bridge.shareBase64File === 'function') {
+      try {
+        const b64 = await blobToBase64(blob);
+        const ok = bridge.shareBase64File(b64, safeFilename, 'application/pdf', safeTitle, safeText);
+        if (ok !== false) {
+          return { success: true, method: 'native_bridge' };
+        }
+      } catch (bridgeErr) {
+        console.warn('[PdfService] Erro na ponte nativa shareBase64File:', bridgeErr);
+      }
     }
+
+    // 2. Web Share API nativa (Chrome Android, Safari iOS)
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        let file;
+        if (blob instanceof File) {
+          file = blob;
+        } else if (typeof File !== 'undefined' && blob) {
+          file = new File([blob], safeFilename, { type: 'application/pdf' });
+        }
+
+        if (file) {
+          const canShare = (typeof navigator.canShare === 'function')
+            ? navigator.canShare({ files: [file] })
+            : true;
+          
+          if (canShare) {
+            await navigator.share({
+              files: [file],
+              title: safeTitle,
+              text: safeText
+            });
+            return { success: true, method: 'navigator.share' };
+          }
+        }
+      } catch(err) {
+        if (err.name === 'AbortError') return { success: true, cancelled: true };
+        console.warn('[PdfService] navigator.share falhou:', err);
+      }
+    }
+
+    // 3. Se não conseguir compartilhar, tenta salvar/baixar como fallback
+    return downloadPdf(blob, safeFilename);
   }
 
+  /**
+   * Baixa e salva o arquivo PDF no aparelho (Downloads)
+   */
   async function downloadPdf(blob, filename) {
     const safeFilename = filename || 'recibo-fiado.pdf';
     
     try {
-      let pdfFile = null;
-      if (typeof File !== 'undefined') {
-        pdfFile = blob instanceof File ? blob : new File([blob], safeFilename, { type: 'application/pdf' });
-      }
-      
-      // 1. Web Share API - tenta sempre que disponível, sem depender de canShare
-      if (typeof navigator !== 'undefined' && navigator.share && pdfFile) {
+      // 1. Ponte Nativa Android APK (Salva diretamente na pasta Downloads pública do celular)
+      const bridge = getNativeBridge();
+      if (bridge && typeof bridge.saveBase64File === 'function') {
         try {
-          // Primeiro: tenta com arquivo (Android moderno)
-          const canShareFiles = navigator.canShare ? navigator.canShare({ files: [pdfFile] }) : true;
-          if (canShareFiles) {
-            await navigator.share({
-              files: [pdfFile],
-              title: 'Documento Fiado',
-              text: 'Aqui está o seu documento em PDF.'
-            });
-            return { success: true, method: 'navigator.share' };
+          const b64 = await blobToBase64(blob);
+          const ok = bridge.saveBase64File(b64, safeFilename, 'application/pdf');
+          if (ok !== false) {
+            return { success: true, method: 'native_bridge' };
           }
-        } catch(shareErr) {
-          if (shareErr.name === 'AbortError') {
-             return { success: true, method: 'cancelled' };
-          }
-          console.warn('Share com arquivo falhou:', shareErr);
-        }
-        
-        // Segunda tentativa: share sem arquivo, apenas texto (WebViews antigos)
-        try {
-          await navigator.share({
-            title: 'Documento Fiado',
-            text: 'Seu extrato de fiado foi gerado. Por favor, solicite ao estabelecimento o envio pelo WhatsApp.'
-          });
-          return { success: true, method: 'share_text' };
-        } catch(shareTextErr) {
-          if (shareTextErr.name === 'AbortError') {
-            return { success: true, method: 'cancelled' };
-          }
-          console.warn('Share texto falhou:', shareTextErr);
+        } catch (bridgeErr) {
+          console.warn('[PdfService] Erro na ponte nativa saveBase64File:', bridgeErr);
         }
       }
 
-      // 2. Fallback: Download via <a> (funciona no navegador/desktop)
-      const isAndroid = /android/i.test(navigator.userAgent || '');
-      if (!isAndroid) {
-        try {
-          const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = safeFilename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          if (typeof blob !== 'string') {
-            setTimeout(() => URL.revokeObjectURL(url), 60000);
-          }
-          return { success: true, method: 'browser_download' };
-        } catch (openErr) {
-          console.warn('Download <a> falhou:', openErr);
+      // 2. Download via tag <a> (Navegadores desktop e navegadores web mobile)
+      try {
+        const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = safeFilename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        if (typeof blob !== 'string') {
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
         }
+        return { success: true, method: 'browser_download' };
+      } catch (aErr) {
+        console.warn('[PdfService] Download via <a> falhou:', aErr);
       }
 
-      // 3. Fallback nativo: ponte Android se existir
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const bridge = (typeof window.AndroidBridge !== 'undefined' && window.AndroidBridge.saveBase64File) 
-                         ? window.AndroidBridge 
-                         : (typeof window.androidAppProxy !== 'undefined' && window.androidAppProxy.saveBase64File)
-                         ? window.androidAppProxy : null;
-          
-          if (bridge) {
-            try {
-               const b64 = reader.result.split(',')[1] || reader.result;
-               bridge.saveBase64File(b64, safeFilename, 'application/pdf');
-               resolve({ success: true, method: 'native_bridge' });
-               return;
-            } catch(e) { console.warn(e); }
-          }
-          
-          // Nenhum método disponível — retornar falso para UI mostrar fallback de texto
-          resolve({ success: false, method: 'no_native_bridge', error: 'Download de PDF não suportado neste aparelho. Use "Enviar extrato em texto pelo WhatsApp".' });
-        };
-        reader.onerror = () => {
-          resolve({ success: false, method: 'file_read_error', error: 'Erro ao ler o arquivo PDF.' });
-        };
-        reader.readAsDataURL(blob);
-      });
+      return { 
+        success: false, 
+        method: 'failed', 
+        error: 'Não foi possível salvar o arquivo automaticamente no aparelho. Use a opção de enviar extrato em texto pelo WhatsApp.' 
+      };
 
     } catch(err) {
-      console.error('Falha ao processar o PDF:', err);
+      console.error('[PdfService] Falha ao processar o PDF:', err);
       return { success: false, method: 'error', error: err.message };
     }
   }
@@ -1732,7 +1726,25 @@ window.AppState = (function() {
       backupFile = new File([blob], filename, { type: 'application/json' });
     }
 
-    // 1. Web Share API para Android/iOS se suportado
+    // 1. Ponte Nativa Android APK (Compartilha nativamente o arquivo para WhatsApp, Drive, etc.)
+    const bridge = (typeof window !== 'undefined')
+      ? (window.androidAppProxy && typeof window.androidAppProxy.shareBase64File === 'function' ? window.androidAppProxy :
+         window.AndroidBridge && typeof window.AndroidBridge.shareBase64File === 'function' ? window.AndroidBridge : null)
+      : null;
+
+    if (bridge) {
+      try {
+        const b64 = btoa(unescape(encodeURIComponent(dataStr)));
+        const ok = bridge.shareBase64File(b64, filename, 'application/json', 'Backup CadernoFiado', 'Arquivo de backup do CadernoFiado');
+        if (ok !== false) {
+          return { success: true, method: 'native_bridge', filename, clientCount: data.clients.length, salesCount };
+        }
+      } catch (bridgeErr) {
+        console.warn('[AppState] Falha na ponte nativa para backup:', bridgeErr);
+      }
+    }
+
+    // 2. Web Share API para Android/iOS se suportado
     if (typeof navigator !== 'undefined' && navigator.share && backupFile) {
       try {
         // Tenta com arquivo primeiro (Android moderno)
@@ -1928,6 +1940,7 @@ window.AppState = (function() {
     getBackupData,
     getBackupJsonString,
     exportBackup,
+    exportData: exportBackup,
     validateBackup,
     restoreBackupData,
     importBackup,
@@ -3886,19 +3899,32 @@ window.ClientDetailModal = function ClientDetailModal({
 
     try {
       const fileName = pdfModalData.filename || `recibo_${(client.name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      const result = await window.PdfService.downloadPdf(pdfModalData.blob, fileName);
-      if (result && !result.success) {
-        setFeedbackModal({
-          isOpen: true,
-          title: 'Erro ao Salvar',
-          message: 'Não foi possível baixar/compartilhar o arquivo PDF automaticamente no seu aparelho.\nRecomendamos enviar o extrato em formato de texto pelo WhatsApp.',
-          variant: 'warning'
-        });
-        return; // não fecha o pdfModalData para ele poder clicar em 'Enviar Extrato em Texto'
+      const title = `Recibo Fiado - ${client.name}`;
+      const text = `Extrato detalhado de fiado de ${client.name} - CadernoFiado`;
+
+      // 1. Tenta compartilhamento nativo direto (WhatsApp / Share Sheet)
+      const shareResult = await window.PdfService.sharePdfFile(pdfModalData.blob, fileName, title, text);
+      if (shareResult && shareResult.success) {
+        setPdfModalData(null);
+        return;
       }
-      setPdfModalData(null);
+
+      // 2. Se o compartilhamento falhar, tenta salvar / baixar
+      const downResult = await window.PdfService.downloadPdf(pdfModalData.blob, fileName);
+      if (downResult && downResult.success) {
+        setPdfModalData(null);
+        return;
+      }
+
+      // 3. Fallback informativo caso o aparelho tenha restrições
+      setFeedbackModal({
+        isOpen: true,
+        title: 'Aviso',
+        message: 'Não foi possível compartilhar o arquivo diretamente no dispositivo. Recomendamos enviar o extrato em formato de texto pelo WhatsApp.',
+        variant: 'warning'
+      });
     } catch (err) {
-      console.error('Erro silencioso no PDF:', err);
+      console.error('[ClientDetailModal] Erro ao compartilhar PDF:', err);
       setPdfModalData(null);
     }
   };
@@ -4685,36 +4711,25 @@ window.ClientDetailModal = function ClientDetailModal({
                 // Converte em objeto File válido e passa para a Web Share API
                 const cleanClientName = (client.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
                 const filename = `Acordo_Anticalote_${cleanClientName}.pdf`;
-                const pdfFile = new File([result.blob], filename, { type: 'application/pdf' });
+                const title = `Acordo Anticalote - ${client.name}`;
+                const text = `Olá ${client.name}! Segue o Acordo de Confissão de Dívida formalizado e assinado.`;
 
-                if (typeof navigator !== 'undefined' && navigator.share) {
-                  try {
-                    await navigator.share({
-                      files: [pdfFile],
-                      title: `Acordo Anticalote - ${client.name}`,
-                      text: `Olá ${client.name}! Segue o Acordo de Confissão de Dívida formalizado e assinado.`
-                    });
-                    setFeedbackModal({
-                      isOpen: true,
-                      title: 'Acordo Formalizado!',
-                      message: 'A gaveta de compartilhamento foi aberta com sucesso. Envie o documento diretamente no WhatsApp do cliente.',
-                      variant: 'success'
-                    });
-                    return;
-                  } catch (shareErr) {
-                    if (shareErr.name === 'AbortError') {
-                      // Usuário fechou a gaveta, sem erro
-                      return;
-                    }
-                    console.warn('navigator.share com arquivo falhou, abrindo fallback:', shareErr);
-                  }
+                // Compartilhamento com suporte nativo Android e Web Share API
+                const shareRes = await window.PdfService.sharePdfFile(result.blob, filename, title, text);
+                if (shareRes && shareRes.success) {
+                  setFeedbackModal({
+                    isOpen: true,
+                    title: 'Acordo Formalizado!',
+                    message: 'A gaveta de compartilhamento foi aberta com sucesso. Envie o documento diretamente no WhatsApp do cliente.',
+                    variant: 'success'
+                  });
+                  return;
                 }
 
-                // Fallback com visualizador e opções caso navigator.share não esteja disponível
+                // Fallback com modal de opções caso o compartilhamento direto não abra
                 setPdfModalData({
                   ...result,
-                  filename,
-                  file: pdfFile
+                  filename
                 });
               } else {
                 setFeedbackModal({
@@ -6859,6 +6874,25 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
             />
             
             <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.readText) {
+                    try {
+                      const text = await navigator.clipboard.readText();
+                      if (text) {
+                        setPastedJson(text);
+                        return;
+                      }
+                    } catch(e) {
+                      console.warn('Clipboard read failed:', e);
+                    }
+                  }
+                }}
+                className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium btn-smooth"
+              >
+                Colar
+              </button>
               <button
                 type="button"
                 onClick={() => {

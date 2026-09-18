@@ -6,7 +6,7 @@ if (-not (Test-Path $chromePath)) {
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $chromePath
-$psi.Arguments = "--headless=new --virtual-time-budget=20000 --dump-dom http://localhost:3000/tests/test_audit.html"
+$psi.Arguments = "--headless=new --virtual-time-budget=60000 --dump-dom http://localhost:3000/tests/test_audit.html"
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 $psi.UseShellExecute = $false

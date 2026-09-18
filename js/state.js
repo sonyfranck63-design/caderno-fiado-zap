@@ -929,7 +929,25 @@ window.AppState = (function() {
       backupFile = new File([blob], filename, { type: 'application/json' });
     }
 
-    // 1. Web Share API para Android/iOS se suportado
+    // 1. Ponte Nativa Android APK (Compartilha nativamente o arquivo para WhatsApp, Drive, etc.)
+    const bridge = (typeof window !== 'undefined')
+      ? (window.androidAppProxy && typeof window.androidAppProxy.shareBase64File === 'function' ? window.androidAppProxy :
+         window.AndroidBridge && typeof window.AndroidBridge.shareBase64File === 'function' ? window.AndroidBridge : null)
+      : null;
+
+    if (bridge) {
+      try {
+        const b64 = btoa(unescape(encodeURIComponent(dataStr)));
+        const ok = bridge.shareBase64File(b64, filename, 'application/json', 'Backup CadernoFiado', 'Arquivo de backup do CadernoFiado');
+        if (ok !== false) {
+          return { success: true, method: 'native_bridge', filename, clientCount: data.clients.length, salesCount };
+        }
+      } catch (bridgeErr) {
+        console.warn('[AppState] Falha na ponte nativa para backup:', bridgeErr);
+      }
+    }
+
+    // 2. Web Share API para Android/iOS se suportado
     if (typeof navigator !== 'undefined' && navigator.share && backupFile) {
       try {
         // Tenta com arquivo primeiro (Android moderno)
@@ -1125,6 +1143,7 @@ window.AppState = (function() {
     getBackupData,
     getBackupJsonString,
     exportBackup,
+    exportData: exportBackup,
     validateBackup,
     restoreBackupData,
     importBackup,

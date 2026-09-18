@@ -61,6 +61,13 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $buildDir)) {
     exit 1
 }
 
+# 4.1 Injetar pontes nativas Android (PDF, Download, Share, FileProvider, estabilidade)
+$nativePatchDir = Join-Path $root "native_patch"
+if (Test-Path $nativePatchDir) {
+    Write-Host "[3.5/7] Injetando pontes nativas Android (PDF, Download, Share, FileProvider)..." -ForegroundColor Yellow
+    Copy-Item "$nativePatchDir\*" $buildDir -Recurse -Force
+}
+
 # 5. Aplicar personalizações nativas (Nome, Cores, Ícones e Configurações)
 Write-Host "[4/7] Aplicando identidade visual, ícones e permissões do CadernoFiado..." -ForegroundColor Yellow
 

@@ -389,6 +389,38 @@
       const balanceFifo = window.AppState.computeBalance(clientFifo);
       assert("Cenário 16.4: computeBalance reflete saldo devedor exato de R$ 50.00", Math.abs(balanceFifo - 50.00) < 0.001);
 
+      // ==========================================
+      // Cenário 17: Teste da Ponte Nativa Android (saveBase64File & shareBase64File)
+      // ==========================================
+      log("\n--- Cenário 17: Integração com Ponte Nativa Android ---");
+      let mockSavedFile = null;
+      let mockSharedFile = null;
+      window.androidAppProxy = {
+        saveBase64File: function(b64, fname, mime) {
+          mockSavedFile = { b64, fname, mime };
+          return true;
+        },
+        shareBase64File: function(b64, fname, mime, title, text) {
+          mockSharedFile = { b64, fname, mime, title, text };
+          return true;
+        }
+      };
+
+      const testBlob = new Blob(['Conteúdo de teste PDF'], { type: 'application/pdf' });
+      const dlResult = await window.PdfService.downloadPdf(testBlob, 'recibo_teste.pdf');
+      assert("Cenário 17.1: downloadPdf aciona saveBase64File da ponte nativa com sucesso", dlResult.success === true && dlResult.method === 'native_bridge');
+      assert("Cenário 17.2: Parâmetros corretos passados para saveBase64File", mockSavedFile && mockSavedFile.fname === 'recibo_teste.pdf' && mockSavedFile.mime === 'application/pdf');
+
+      const shareResult = await window.PdfService.sharePdfFile(testBlob, 'acordo_teste.pdf', 'Acordo', 'Mensagem teste');
+      assert("Cenário 17.3: sharePdfFile aciona shareBase64File da ponte nativa com sucesso", shareResult.success === true && shareResult.method === 'native_bridge');
+      assert("Cenário 17.4: Parâmetros corretos passados para shareBase64File", mockSharedFile && mockSharedFile.fname === 'acordo_teste.pdf' && mockSharedFile.title === 'Acordo');
+
+      const backupExp = await window.AppState.exportData();
+      assert("Cenário 17.5: exportData utiliza shareBase64File no APK nativo", backupExp.success === true && backupExp.method === 'native_bridge');
+
+      // Limpeza do mock
+      delete window.androidAppProxy;
+
         log(`\n==========================================`);
         log(`RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`, passedTests === totalTests);
         log(`==========================================`);
