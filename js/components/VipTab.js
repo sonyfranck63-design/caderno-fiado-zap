@@ -269,9 +269,9 @@ window.VipTab = function VipTab({
               <input
                 type="text"
                 value={licenseCode}
-                onChange={(e) => setLicenseCode(e.target.value.trim().toUpperCase())}
+                onChange={(e) => setLicenseCode(e.target.value.trim())}
                 placeholder="Ex: VIP-M-C5A6-6A19-9B2F4E"
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl py-2.5 px-3.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-emerald-500 uppercase"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl py-2.5 px-3.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-emerald-500"
               />
 
               {activationMessage && (

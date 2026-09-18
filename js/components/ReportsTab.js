@@ -1,13 +1,11 @@
 /**
  * Aba de Relatórios de Caixa & Saúde Financeira
- * Indicadores claros, projeção de recebimentos e ranking de clientes pontuais.
- * Suporte completo a tema Claro e Escuro com transição suave.
+ * Lapidação Visual Premium, UX moderna e profissional.
  */
 
 window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSelectClient }) {
   const {
-    BarChart3, DollarSign, AlertTriangle, CheckCircle2, Clock,
-    Crown, Sparkles, TrendingUp, Users, ChevronRight, ShieldCheck
+    BarChart3, TrendingUp, Clock, Crown, Users, CheckCircle2, AlertTriangle, ShieldCheck
   } = window.Icons || {};
 
   // Métricas gerais
@@ -24,7 +22,6 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
 
   let forecast7Days = 0;
   let forecast30Days = 0;
-  const upcomingClients = [];
 
   clients.forEach(c => {
     const debt = window.AppState ? window.AppState.computeBalance(c) : 0;
@@ -41,7 +38,6 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
           // Em atraso
         } else if (s.dueDate <= next7DaysStr) {
           forecast7Days += Math.min(debt, parseFloat(s.amount) || 0);
-          upcomingClients.push({ client: c, amount: parseFloat(s.amount) || 0, dueDate: s.dueDate });
         } else if (s.dueDate <= next30DaysStr) {
           forecast30Days += Math.min(debt, parseFloat(s.amount) || 0);
         }
@@ -60,15 +56,12 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
     }
   });
 
-  // Inadimplência
   const defaultRate = totalReceivables > 0 
     ? Math.round((totalOverdue / totalReceivables) * 100) 
     : 0;
 
-  // Ticket Médio
   const avgTicket = totalSalesCount > 0 ? (totalSalesEver / totalSalesCount) : 0;
 
-  // Ranking de Bons Pagadores
   const bestPayers = [...clients]
     .map(c => {
       const paid = (c.transactions || [])
@@ -82,207 +75,177 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
     .slice(0, 5);
 
   return (
-    <div className="space-y-4 pb-24 tab-enter">
+    <div className="space-y-5 pb-28 tab-enter px-1">
       
-      {/* Top Banner de Resumo de Caixa */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 transition-colors">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <BarChart3 size={18} />
+      {/* Resumo Financeiro Premium */}
+      <div className="relative rounded-[24px] overflow-hidden shadow-2xl border border-slate-200/50 dark:border-slate-800/80">
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-900 opacity-95"></div>
+        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 rounded-full bg-emerald-400 opacity-20 blur-3xl mix-blend-screen pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-48 h-48 rounded-full bg-emerald-800 opacity-40 blur-3xl mix-blend-multiply pointer-events-none"></div>
+        
+        <div className="relative p-5 text-white">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 rounded-[10px] bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner">
+                <BarChart3 size={16} strokeWidth={2.5} className="text-white" />
+              </div>
+              <span className="font-bold text-sm tracking-wide text-emerald-50">Resumo Financeiro</span>
             </div>
-            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Relatório de Caixa & Fiados</h3>
-          </div>
-
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-            Atualizado Hoje
-          </span>
-        </div>
-
-        {/* Grade 2x2 de Indicadores */}
-        <div className="grid grid-cols-2 gap-2.5 pt-1">
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/90 transition-colors">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-              Total a Receber
-            </span>
-            <span className="text-base font-black text-emerald-600 dark:text-emerald-400 font-mono block mt-0.5">
-              R$ {totalReceivables.toFixed(2).replace('.', ',')}
-            </span>
-            <span className="text-[9px] text-slate-400 dark:text-slate-500">Capital na rua</span>
-          </div>
-
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/90 transition-colors">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-              Total Já Recebido
-            </span>
-            <span className="text-base font-black text-emerald-600 dark:text-emerald-400 font-mono block mt-0.5">
-              R$ {totalPaidEver.toFixed(2).replace('.', ',')}
-            </span>
-            <span className="text-[9px] text-slate-400 dark:text-slate-500">Recuperado com sucesso</span>
-          </div>
-
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-rose-200 dark:border-slate-800/90 transition-colors">
-            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider block">
-              Inadimplência
-            </span>
-            <span className="text-base font-black text-rose-600 dark:text-rose-400 font-mono block mt-0.5">
-              {defaultRate}%
-            </span>
-            <span className="text-[9px] text-rose-500 dark:text-rose-300/80">
-              R$ {totalOverdue.toFixed(2).replace('.', ',')} vencidos
+            <span className="text-[10px] uppercase tracking-wider font-extrabold px-2.5 py-1 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm">
+              Hoje
             </span>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/90 transition-colors">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-              Ticket Médio Fiado
-            </span>
-            <span className="text-base font-black text-slate-800 dark:text-slate-200 font-mono block mt-0.5">
-              R$ {avgTicket.toFixed(2).replace('.', ',')}
-            </span>
-            <span className="text-[9px] text-slate-400 dark:text-slate-500">Por venda anotada</span>
+          <div className="space-y-1">
+            <span className="text-xs text-emerald-200/80 font-medium uppercase tracking-wider">Capital na Rua (A Receber)</span>
+            <div className="flex items-end gap-2">
+              <span className="text-sm font-bold text-emerald-300">R$</span>
+              <span className="text-4xl font-black tracking-tight leading-none drop-shadow-sm">
+                {totalReceivables.toFixed(2).replace('.', ',')}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/10 shadow-inner">
+              <span className="text-[10px] text-emerald-200 uppercase tracking-widest font-semibold block mb-1">Recebido</span>
+              <span className="font-mono text-lg font-bold">R$ {totalPaidEver.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/10 shadow-inner relative overflow-hidden">
+              <span className="text-[10px] text-emerald-200 uppercase tracking-widest font-semibold block mb-1">Ticket Médio</span>
+              <span className="font-mono text-lg font-bold">R$ {avgTicket.toFixed(2).replace('.', ',')}</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Gráfico Visual de Distribuição da Inadimplência */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-sm transition-colors">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-            <TrendingUp size={14} className="text-emerald-600 dark:text-emerald-400" />
-            Distribuição dos Valores a Receber
+      <div className="p-5 rounded-[24px] bg-white dark:bg-slate-900 shadow-xl border border-slate-100 dark:border-slate-800 relative overflow-hidden transition-colors">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/[0.03] dark:bg-rose-500/[0.05] rounded-bl-full pointer-events-none"></div>
+        
+        <div className="flex items-center justify-between mb-4 relative z-10">
+          <h4 className="text-[13px] font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2 tracking-tight">
+            <TrendingUp size={16} className="text-emerald-500" />
+            Saúde do Caixa
           </h4>
-          <span className="text-[10px] text-slate-400">Total: 100%</span>
+          <span className="text-[10px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded-md">
+            {defaultRate}% Atraso
+          </span>
         </div>
 
-        {/* Barra Proporcional */}
-        <div className="w-full h-3.5 bg-slate-100 dark:bg-slate-950 rounded-full overflow-hidden flex border border-slate-200 dark:border-slate-800 p-0.5">
+        <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex shadow-inner relative z-10">
           {totalReceivables > 0 ? (
             <>
               <div
-                title={`Em Dia: R$ ${totalOnTime.toFixed(2)}`}
-                className="bg-emerald-500 h-full rounded-l-full transition-all duration-500"
+                className="bg-emerald-500 transition-all duration-700 ease-out relative"
                 style={{ width: `${(totalOnTime / totalReceivables) * 100}%` }}
-              />
+              >
+                <div className="absolute inset-0 bg-white/20"></div>
+              </div>
               <div
-                title={`Em Atraso: R$ ${totalOverdue.toFixed(2)}`}
-                className="bg-rose-500 h-full rounded-r-full transition-all duration-500"
+                className="bg-rose-500 transition-all duration-700 ease-out relative"
                 style={{ width: `${(totalOverdue / totalReceivables) * 100}%` }}
-              />
+              ></div>
             </>
           ) : (
-            <div className="bg-emerald-500 w-full h-full rounded-full" />
+            <div className="bg-emerald-500/50 w-full h-full rounded-full" />
           )}
         </div>
 
-        {/* Legenda Explicativa */}
-        <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
-          <div className="flex items-center space-x-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 transition-colors">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 flex-shrink-0" />
-            <div className="min-w-0">
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">No Prazo / Em Dia</span>
-              <span className="font-bold text-slate-900 dark:text-white font-mono text-xs">
-                R$ {totalOnTime.toFixed(2).replace('.', ',')}
-              </span>
-            </div>
+        <div className="grid grid-cols-2 gap-3 mt-4 text-xs relative z-10">
+          <div className="flex flex-col space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" /> No Prazo
+            </span>
+            <span className="font-bold text-slate-900 dark:text-white font-mono text-sm">
+              R$ {totalOnTime.toFixed(2).replace('.', ',')}
+            </span>
           </div>
 
-          <div className="flex items-center space-x-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 transition-colors">
-            <div className="w-3 h-3 rounded-full bg-rose-500 flex-shrink-0" />
-            <div className="min-w-0">
-              <span className="text-[10px] text-rose-600 dark:text-rose-300 block truncate">Atrasados</span>
-              <span className="font-bold text-rose-600 dark:text-rose-400 font-mono text-xs">
-                R$ {totalOverdue.toFixed(2).replace('.', ',')}
-              </span>
-            </div>
+          <div className="flex flex-col space-y-1">
+            <span className="text-[10px] font-bold text-rose-500/80 uppercase tracking-wider flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-rose-500" /> Atrasados
+            </span>
+            <span className="font-bold text-rose-600 dark:text-rose-400 font-mono text-sm">
+              R$ {totalOverdue.toFixed(2).replace('.', ',')}
+            </span>
           </div>
         </div>
       </div>
 
       {/* Previsão de Entradas Acordadas */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-sm transition-colors">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-            <Clock size={14} className="text-amber-500 dark:text-amber-400" />
-            Previsão de Entradas (Vencimentos Acordados)
-          </h4>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="p-4 rounded-[20px] bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-900/20 dark:to-amber-900/5 border border-amber-200/50 dark:border-amber-500/20 shadow-sm relative overflow-hidden transition-colors group">
+          <div className="absolute -right-4 -top-4 w-16 h-16 bg-amber-200/50 dark:bg-amber-500/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
+          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest block mb-1">
+            Próx. 7 Dias
+          </span>
+          <span className="text-base font-black text-slate-800 dark:text-slate-100 font-mono block mb-1">
+            R$ {forecast7Days.toFixed(2).replace('.', ',')}
+          </span>
+          <span className="text-[9px] text-amber-700/60 dark:text-amber-500/60 font-medium">Entradas previstas</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 transition-colors">
-            <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 uppercase block">
-              Próximos 7 Dias
-            </span>
-            <span className="text-sm font-extrabold text-amber-600 dark:text-amber-400 font-mono block mt-1">
-              R$ {forecast7Days.toFixed(2).replace('.', ',')}
-            </span>
-            <span className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5 block">Entradas previstas</span>
-          </div>
-
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 transition-colors">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
-              Próximos 30 Dias
-            </span>
-            <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200 font-mono block mt-1">
-              R$ {(forecast7Days + forecast30Days).toFixed(2).replace('.', ',')}
-            </span>
-            <span className="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5 block">Total previsto no mês</span>
-          </div>
+        <div className="p-4 rounded-[20px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden transition-colors">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+            Próx. 30 Dias
+          </span>
+          <span className="text-base font-black text-slate-800 dark:text-slate-100 font-mono block mb-1">
+            R$ {(forecast7Days + forecast30Days).toFixed(2).replace('.', ',')}
+          </span>
+          <span className="text-[9px] text-slate-400 font-medium">Total previsto no mês</span>
         </div>
       </div>
 
       {/* Ranking dos Melhores Pagadores */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-sm transition-colors">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-            <Crown size={15} className="text-amber-500" />
-            Ranking: Clientes Mais Pontuais
+      <div className="p-5 rounded-[24px] bg-white dark:bg-slate-900 shadow-xl border border-slate-100 dark:border-slate-800 transition-colors">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-[13px] font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2 tracking-tight">
+            <Crown size={16} className="text-amber-500" />
+            Top 5 Clientes Fiéis
           </h4>
-          <span className="text-[10px] text-slate-400">Honraram compromissos</span>
         </div>
 
         {bestPayers.length === 0 ? (
-          <div className="text-center py-6 px-4 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/80">
-            <Users size={28} className="text-slate-400 mx-auto mb-1.5" />
-            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Nenhum pagamento registrado ainda</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Conforme os clientes forem abatendo suas dívidas, o ranking de pontualidade aparecerá aqui.
-            </p>
+          <div className="text-center py-8 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-dashed border-slate-300 dark:border-slate-700">
+            <Users size={28} className="text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Sem pagamentos ainda</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {bestPayers.map((item, idx) => {
               const posBadge = `${idx + 1}º`;
               return (
                 <div
                   key={item.client.id}
                   onClick={() => onSelectClient(item.client.id)}
-                  className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-950/60 dark:hover:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between cursor-pointer transition-colors btn-smooth"
+                  className="group relative flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50 hover:bg-white dark:hover:bg-slate-900 border border-slate-100 dark:border-slate-800 hover:border-emerald-500/30 hover:shadow-md cursor-pointer transition-all duration-300"
                 >
-                  <div className="flex items-center space-x-2.5 min-w-0">
-                    <span className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center flex-shrink-0 ${
-                      idx === 0 ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30' :
-                      idx === 1 ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700' :
-                      idx === 2 ? 'bg-amber-700/20 text-amber-700 dark:text-amber-400 border border-amber-700/30' :
-                      'bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400'
+                  <div className="flex items-center space-x-3 min-w-0 z-10">
+                    <span className={`w-8 h-8 rounded-[10px] text-[11px] font-black flex items-center justify-center flex-shrink-0 shadow-sm ${
+                      idx === 0 ? 'bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 border border-amber-400' :
+                      idx === 1 ? 'bg-gradient-to-br from-slate-200 to-slate-400 text-slate-800 border border-slate-300' :
+                      idx === 2 ? 'bg-gradient-to-br from-amber-700 to-amber-900 text-amber-100 border border-amber-800' :
+                      'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                     }`}>
                       {posBadge}
                     </span>
                     <div className="min-w-0">
-                      <span className="font-bold text-xs text-slate-900 dark:text-white block truncate">
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                         {item.client.name}
                       </span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        {item.status === 'quitado' ? 'Tudo pago no dia' : 'Pagamentos em dia'}
+                      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                        {item.status === 'quitado' ? <CheckCircle2 size={10} className="text-emerald-500"/> : null}
+                        {item.status === 'quitado' ? 'Tudo pago' : 'Pagamentos em dia'}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-right flex-shrink-0">
-                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono block">
+                  <div className="text-right flex-shrink-0 z-10">
+                    <span className="text-sm font-black text-slate-900 dark:text-white font-mono block tracking-tight">
                       R$ {item.totalPaid.toFixed(2).replace('.', ',')}
                     </span>
-                    <span className="text-[9px] text-slate-400 dark:text-slate-500">total honrado</span>
+                    <span className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-500 uppercase tracking-wider">Pago</span>
                   </div>
                 </div>
               );
@@ -294,3 +257,4 @@ window.ReportsTab = function ReportsTab({ clients, isVip, onTriggerPaywall, onSe
     </div>
   );
 };
+
