@@ -23,15 +23,53 @@ window.VipTab = function VipTab({
 
   const installationId = vipInfo.installationId || (window.AppState ? window.AppState.getInstallationId() : '');
 
-  // Copia o ID do aparelho
+  // Copia o ID do aparelho (com fallback para WebView Android)
   const handleCopyId = () => {
-    navigator.clipboard.writeText(installationId);
-    setCopiedId(true);
-    setTimeout(() => setCopiedId(false), 2000);
+    const text = installationId;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          setCopiedId(true);
+          try { navigator.vibrate && navigator.vibrate(50); } catch(e) {}
+          setTimeout(() => setCopiedId(false), 2000);
+        }).catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
+    } catch(e) {
+      fallbackCopy(text);
+    }
+  };
+
+  const fallbackCopy = (text) => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopiedId(true);
+      try { navigator.vibrate && navigator.vibrate(50); } catch(e) {}
+      setTimeout(() => setCopiedId(false), 2000);
+    } catch(err) {
+      alert('Não foi possível copiar. Anote o ID manualmente: ' + text);
+    }
   };
 
   // Dispara pedido de assinatura no WhatsApp do Dono
   const handleOrderViaWhatsApp = (planKey = selectedPlan) => {
+    const ownerPhone = (shopSettings?.supportPhone || '').replace(/\D/g, '');
+    if (!ownerPhone || ownerPhone.length < 10) {
+      setActivationMessage({
+        success: false,
+        text: 'Configure seu WhatsApp nas Configurações do app primeiro. Depois, entre em contato com o suporte para solicitar seu código.'
+      });
+      return;
+    }
+
     const plansInfo = {
       monthly: { name: 'Plano VIP Mensal', price: 'R$ 9,90/mês' },
       annual: { name: 'Plano VIP Anual', price: 'R$ 59,90/ano' },
@@ -41,9 +79,7 @@ window.VipTab = function VipTab({
 
     const message = `Olá! Quero assinar o *${current.name} (${current.price})* do CadernoFiado.\n\n📲 *ID do meu aparelho:* \`${installationId}\`\n\nPode me enviar a chave PIX para eu fazer o pagamento e liberar meu código de ativação? Obrigado!`;
 
-    const ownerPhone = (shopSettings?.supportPhone || '51985661499').replace(/\D/g, '');
     const cleanPhone = ownerPhone.startsWith('55') ? ownerPhone : '55' + ownerPhone;
-
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 

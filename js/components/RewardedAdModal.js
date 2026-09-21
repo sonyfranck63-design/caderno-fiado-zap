@@ -60,10 +60,10 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
         {/* Topo com Contador e Selo AdMob */}
         <div className="p-3.5 flex items-center justify-between border-b border-slate-800 bg-slate-950/50">
           <div className="flex items-center space-x-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-              Rewarded Ad • AdMob
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              Teste Grátis
             </span>
-            <span className="text-xs text-slate-400">Vídeo Premiado</span>
+            <span className="text-xs text-slate-400">Desbloqueio VIP 24h</span>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -93,10 +93,10 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
                   <window.Icons.Zap size={32} />
                 </div>
                 <h3 className="text-base font-bold text-white mt-3">
-                  InfinitePay & Ton Brasil
+                  CadernoFiado PRO
                 </h3>
                 <p className="text-xs text-slate-300 mt-1 max-w-[220px]">
-                  A maquininha com a menor taxa do Brasil para autônomos. Sem mensalidade e com PIX no visor.
+                  PIX automático, recibos em PDF, cobrança em massa e zero banners. Tudo liberado por 24 horas.
                 </p>
                 
                 {/* Simulação de ondas sonoras/reprodução */}
@@ -105,7 +105,7 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
                   <div className="w-1 h-5 bg-brand-500 rounded-full animate-pulse delay-75"></div>
                   <div className="w-1 h-4 bg-brand-300 rounded-full animate-pulse delay-150"></div>
                   <div className="w-1 h-6 bg-brand-400 rounded-full animate-pulse"></div>
-                  <span className="text-[10px] text-slate-400 ml-2 font-mono">Reproduzindo anúncio...</span>
+                  <span className="text-[10px] text-slate-400 ml-2 font-mono">Preparando recursos...</span>
                 </div>
               </div>
 

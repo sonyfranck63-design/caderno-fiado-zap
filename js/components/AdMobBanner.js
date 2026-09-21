@@ -1,118 +1,127 @@
 /**
- * Componente de Banner AdMob Adaptativo Simulado
+ * Componente de Banner Promocional Interno
  * Exibido no rodapé apenas para usuários do Plano Gratuito.
  * Desaparece 100% no modo VIP ou com Passe 24h ativo.
+ * Usa apenas conteúdo próprio do app (sem marcas de terceiros).
  */
+
+// Banners internos do app (fora do componente para evitar re-render)
+const INTERNAL_BANNERS = [
+  {
+    tag: 'Dica',
+    headline: 'Configure sua Chave PIX',
+    description: 'Cobranças com PIX automático direto no WhatsApp do cliente.',
+    cta: 'Configurar',
+    action: 'settings',
+    accent: 'text-emerald-400'
+  },
+  {
+    tag: 'Pro',
+    headline: 'Extratos e Recibos em PDF Timbrados',
+    description: 'Gere comprovantes profissionais com a logo do seu negócio.',
+    cta: 'Conhecer',
+    action: 'vip',
+    accent: 'text-amber-400'
+  },
+  {
+    tag: 'Segurança',
+    headline: 'Faça Backup dos Seus Dados',
+    description: 'Proteja seus clientes e fiados contra perda do celular.',
+    cta: 'Salvar',
+    action: 'backup',
+    accent: 'text-blue-400'
+  },
+  {
+    tag: 'Pro',
+    headline: 'Cobranças em Massa pelo WhatsApp',
+    description: 'Cobre todos os clientes atrasados de uma vez — recurso VIP.',
+    cta: 'Desbloquear',
+    action: 'vip',
+    accent: 'text-purple-400'
+  }
+];
 
 window.AdMobBanner = function AdMobBanner({ isVip, onOpenVip, onWatchRewarded }) {
   const [adIndex, setAdIndex] = React.useState(0);
-  const { Crown, Play, X } = window.Icons;
+  const { Crown, Play } = window.Icons;
 
-  // Anúncios realistas voltados para o público de autônomos e pequenos comerciantes
-  const ads = [
-    {
-      sponsor: 'Stone & Ton',
-      headline: 'Maquininha com Taxa Zero no 1º Mês',
-      description: 'Receba na hora na sua conta e venda em até 18x.',
-      cta: 'Pedir Maquininha',
-      tag: 'Patrocinado',
-      accent: 'from-emerald-950/60 to-slate-900 border-emerald-600/40 text-emerald-400'
-    },
-    {
-      sponsor: 'Distribuidora Cosméticos Brasil',
-      headline: 'Atacado de Esmaltes e Perfumes com 50% OFF',
-      description: 'Preços de fábrica direto para manicures e revendedoras.',
-      cta: 'Ver Catálogo',
-      tag: 'Oferta MEI',
-      accent: 'from-purple-950/60 to-slate-900 border-purple-600/40 text-purple-400'
-    },
-    {
-      sponsor: 'Banco Inter Empresas',
-      headline: 'Conta PJ 100% Gratuita com PIX Ilimitado',
-      description: 'Emita boletos sem taxa e gerencie seu fluxo de caixa.',
-      cta: 'Abrir Conta',
-      tag: 'Finanças',
-      accent: 'from-amber-950/60 to-slate-900 border-amber-600/40 text-amber-400'
-    }
-  ];
-
-  // Alterna o anúncio a cada 15 segundos
+  // Alterna o banner a cada 12 segundos
   React.useEffect(() => {
     if (isVip) return;
     const interval = setInterval(() => {
-      setAdIndex(prev => (prev + 1) % ads.length);
-    }, 15000);
+      setAdIndex(prev => (prev + 1) % INTERNAL_BANNERS.length);
+    }, 12000);
     return () => clearInterval(interval);
-  }, [isVip, ads.length]);
+  }, [isVip]);
 
   // Se o usuário for VIP ou tiver passe de 24h, o banner NUNCA é renderizado
   if (isVip) {
     return null;
   }
 
-  const currentAd = ads[adIndex];
+  const currentBanner = INTERNAL_BANNERS[adIndex];
 
   return (
     <div className="fixed bottom-[60px] left-0 right-0 z-30 max-w-md mx-auto px-2 pointer-events-auto">
       <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-700/80 shadow-lg p-2.5 backdrop-blur-md">
         
-        {/* Cabeçalho do Banner com Selo AdMob */}
+        {/* Cabeçalho do Banner */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center space-x-1.5">
-            <span className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-              AdMob • {currentAd.tag}
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium truncate max-w-[150px]">
-              {currentAd.sponsor}
+            <span className={`text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-slate-800 ${currentBanner.accent} border border-slate-700`}>
+              {currentBanner.tag}
             </span>
           </div>
 
-          {/* Botão de Remover Anúncios via VIP */}
+          {/* Botão de Remover Banners via VIP */}
           <button
             onClick={onOpenVip}
             className="flex items-center space-x-1 text-[10px] text-slate-400 hover:text-amber-400 transition-colors"
-            title="Remover anúncios com VIP Pro"
+            title="Remover banners com VIP Pro"
           >
             <Crown size={11} className="text-amber-400" />
-            <span className="font-semibold text-amber-400/90">Remover Anúncios</span>
+            <span className="font-semibold text-amber-400/90">Remover</span>
           </button>
         </div>
 
-        {/* Conteúdo do Anúncio */}
+        {/* Conteúdo do Banner */}
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
             <h4 className="text-xs font-bold text-white truncate">
-              {currentAd.headline}
+              {currentBanner.headline}
             </h4>
             <p className="text-[11px] text-slate-300 truncate mt-0.5">
-              {currentAd.description}
+              {currentBanner.description}
             </p>
           </div>
 
           <div className="flex items-center space-x-1.5 flex-shrink-0">
-            {/* Botão de Ação do Anúncio */}
             <button
-              onClick={() => alert(`Simulação de clique no anúncio: ${currentAd.sponsor} - Redirecionando para oferta.`)}
+              onClick={() => {
+                if (currentBanner.action === 'vip') onOpenVip();
+              }}
               className="px-2.5 py-1 rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 text-[11px] font-bold shadow-sm active:scale-95 transition-all"
             >
-              {currentAd.cta}
+              {currentBanner.cta}
             </button>
           </div>
         </div>
 
-        {/* Barra sutil de incentivo para o Vídeo Premiado */}
-        <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
-          <span className="text-slate-400 flex items-center gap-1">
-            💡 Quer usar sem anúncios hoje?
-          </span>
-          <button
-            onClick={onWatchRewarded}
-            className="text-brand-400 hover:text-brand-300 font-bold flex items-center gap-1 hover:underline active:scale-95"
-          >
-            <Play size={10} className="fill-brand-400" />
-            Assistir vídeo (VIP 24h Grátis)
-          </button>
-        </div>
+        {/* Barra sutil de incentivo para o Teste 24h */}
+        {onWatchRewarded && (
+          <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
+            <span className="text-slate-400 flex items-center gap-1">
+              💡 Quer usar tudo liberado hoje?
+            </span>
+            <button
+              onClick={onWatchRewarded}
+              className="text-brand-400 hover:text-brand-300 font-bold flex items-center gap-1 hover:underline active:scale-95"
+            >
+              <Play size={10} className="fill-brand-400" />
+              Testar VIP Grátis por 24h
+            </button>
+          </div>
+        )}
 
       </div>
     </div>

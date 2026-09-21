@@ -317,8 +317,8 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
                 <div>
                   <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">Tipo de Chave:</label>
                   <select
-                    value={formData.pixType || 'telefone'}
-                    onChange={e => handleChange('pixType', e.target.value)}
+                    value={formData.pixKeyType || 'telefone'}
+                    onChange={e => handleChange('pixKeyType', e.target.value)}
                     className="w-full px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="telefone">Celular / WhatsApp</option>
@@ -371,7 +371,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
         <div className="p-3.5 bg-slate-50 dark:bg-slate-950/90 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors">
           <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
             <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
-            Dados 100% seguros
+            Dados 100% seguros • v2.1.0
           </span>
 
           <button

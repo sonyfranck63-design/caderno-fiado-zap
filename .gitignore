@@ -12,6 +12,16 @@ inspect_*.ps1
 tools/dex_urls.txt
 tools/smali_out.txt
 
+# Chaves de licenciamento e dados sensíveis
+tools/license-keys.json
+
+# Artefatos de inspeção e debug
+apk_inspect/
+chrome_out.txt
+dump.html
+test_pix_dom.txt
+scratch/
+
 # Arquivos de sistema e SO
 .DS_Store
 Thumbs.db

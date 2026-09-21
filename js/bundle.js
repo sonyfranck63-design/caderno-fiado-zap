@@ -1131,13 +1131,13 @@ window.AppState = (function() {
   };
 
   const DEFAULT_SETTINGS = {
-    shopName: 'Meu Caderno',
+    shopName: '',
     ownerName: '',
     phone: '',
     pixKeyType: 'telefone',
     pixKey: '',
     city: '',
-    supportPhone: '51985661499'
+    supportPhone: ''
   };
 
   // Listeners de mudança de estado para render reativo
@@ -1209,7 +1209,7 @@ window.AppState = (function() {
     const debt = computeBalance(client);
     if (debt <= 0.01) return 'quitado';
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date(getEffectiveTime()).toISOString().split('T')[0];
     const openSales = (client.transactions || []).filter(t => t.type === 'sale');
     const isOverdue = openSales.some(s => s.dueDate && s.dueDate < todayStr);
 
@@ -1373,7 +1373,7 @@ window.AppState = (function() {
   function getInstallmentDetails(client, saleItem) {
     if (!client || !saleItem || saleItem.type !== 'sale') return null;
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date(getEffectiveTime()).toISOString().split('T')[0];
     const transactions = Array.isArray(client.transactions) ? client.transactions : [];
 
     // Clona e ordena todas as vendas cronologicamente pela data de CRIAÇÃO (FIFO) para abatimento de pagamentos genéricos.
@@ -1502,22 +1502,18 @@ window.AppState = (function() {
       const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
       if (!raw) return { ...DEFAULT_SETTINGS };
       const parsed = JSON.parse(raw);
-      if (parsed.ownerName === 'Cristina Alves' || parsed.shopName === 'Espaço & Cantinho da Cris') {
-        const cleaned = {
-          ...DEFAULT_SETTINGS,
-          supportPhone: (parsed.supportPhone && parsed.supportPhone.trim()) ? parsed.supportPhone : DEFAULT_SETTINGS.supportPhone
-        };
-        localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(cleaned));
-        return cleaned;
-      }
       return { 
         ...DEFAULT_SETTINGS, 
-        ...parsed,
-        supportPhone: (parsed.supportPhone && parsed.supportPhone.trim()) ? parsed.supportPhone : DEFAULT_SETTINGS.supportPhone
+        ...parsed
       };
     } catch(e) {
       return { ...DEFAULT_SETTINGS };
     }
+  }
+
+  function isFirstUse() {
+    const settings = getSettings();
+    return !settings.shopName || settings.shopName === 'Meu Caderno' || settings.shopName.trim() === '';
   }
 
   function saveSettings(newSettings) {
@@ -2237,6 +2233,10 @@ window.AppState = (function() {
     localStorage.removeItem(STORAGE_KEY_VIP);
     localStorage.removeItem(STORAGE_KEY_REWARDED);
     localStorage.removeItem(STORAGE_KEY_TRIAL_USED);
+    localStorage.removeItem(STORAGE_KEY_LAST_SEEN_TIME);
+    localStorage.removeItem(STORAGE_KEY_TIME_OFFSET);
+    sessionBaseTime = Date.now();
+    timeOffsetMs = 0;
     notify();
   }
 
@@ -2271,7 +2271,8 @@ window.AppState = (function() {
     validateBackup,
     restoreBackupData,
     importBackup,
-    resetAll
+    resetAll,
+    isFirstUse
   };
 })();
 
@@ -2618,120 +2619,129 @@ window.ConfirmModal = function ConfirmModal({
 // Arquivo: js\components\AdMobBanner.js
 // ==========================================
 /**
- * Componente de Banner AdMob Adaptativo Simulado
+ * Componente de Banner Promocional Interno
  * Exibido no rodapé apenas para usuários do Plano Gratuito.
  * Desaparece 100% no modo VIP ou com Passe 24h ativo.
+ * Usa apenas conteúdo próprio do app (sem marcas de terceiros).
  */
+
+// Banners internos do app (fora do componente para evitar re-render)
+const INTERNAL_BANNERS = [
+  {
+    tag: 'Dica',
+    headline: 'Configure sua Chave PIX',
+    description: 'Cobranças com PIX automático direto no WhatsApp do cliente.',
+    cta: 'Configurar',
+    action: 'settings',
+    accent: 'text-emerald-400'
+  },
+  {
+    tag: 'Pro',
+    headline: 'Extratos e Recibos em PDF Timbrados',
+    description: 'Gere comprovantes profissionais com a logo do seu negócio.',
+    cta: 'Conhecer',
+    action: 'vip',
+    accent: 'text-amber-400'
+  },
+  {
+    tag: 'Segurança',
+    headline: 'Faça Backup dos Seus Dados',
+    description: 'Proteja seus clientes e fiados contra perda do celular.',
+    cta: 'Salvar',
+    action: 'backup',
+    accent: 'text-blue-400'
+  },
+  {
+    tag: 'Pro',
+    headline: 'Cobranças em Massa pelo WhatsApp',
+    description: 'Cobre todos os clientes atrasados de uma vez — recurso VIP.',
+    cta: 'Desbloquear',
+    action: 'vip',
+    accent: 'text-purple-400'
+  }
+];
 
 window.AdMobBanner = function AdMobBanner({ isVip, onOpenVip, onWatchRewarded }) {
   const [adIndex, setAdIndex] = React.useState(0);
-  const { Crown, Play, X } = window.Icons;
+  const { Crown, Play } = window.Icons;
 
-  // Anúncios realistas voltados para o público de autônomos e pequenos comerciantes
-  const ads = [
-    {
-      sponsor: 'Stone & Ton',
-      headline: 'Maquininha com Taxa Zero no 1º Mês',
-      description: 'Receba na hora na sua conta e venda em até 18x.',
-      cta: 'Pedir Maquininha',
-      tag: 'Patrocinado',
-      accent: 'from-emerald-950/60 to-slate-900 border-emerald-600/40 text-emerald-400'
-    },
-    {
-      sponsor: 'Distribuidora Cosméticos Brasil',
-      headline: 'Atacado de Esmaltes e Perfumes com 50% OFF',
-      description: 'Preços de fábrica direto para manicures e revendedoras.',
-      cta: 'Ver Catálogo',
-      tag: 'Oferta MEI',
-      accent: 'from-purple-950/60 to-slate-900 border-purple-600/40 text-purple-400'
-    },
-    {
-      sponsor: 'Banco Inter Empresas',
-      headline: 'Conta PJ 100% Gratuita com PIX Ilimitado',
-      description: 'Emita boletos sem taxa e gerencie seu fluxo de caixa.',
-      cta: 'Abrir Conta',
-      tag: 'Finanças',
-      accent: 'from-amber-950/60 to-slate-900 border-amber-600/40 text-amber-400'
-    }
-  ];
-
-  // Alterna o anúncio a cada 15 segundos
+  // Alterna o banner a cada 12 segundos
   React.useEffect(() => {
     if (isVip) return;
     const interval = setInterval(() => {
-      setAdIndex(prev => (prev + 1) % ads.length);
-    }, 15000);
+      setAdIndex(prev => (prev + 1) % INTERNAL_BANNERS.length);
+    }, 12000);
     return () => clearInterval(interval);
-  }, [isVip, ads.length]);
+  }, [isVip]);
 
   // Se o usuário for VIP ou tiver passe de 24h, o banner NUNCA é renderizado
   if (isVip) {
     return null;
   }
 
-  const currentAd = ads[adIndex];
+  const currentBanner = INTERNAL_BANNERS[adIndex];
 
   return (
     <div className="fixed bottom-[60px] left-0 right-0 z-30 max-w-md mx-auto px-2 pointer-events-auto">
       <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-700/80 shadow-lg p-2.5 backdrop-blur-md">
         
-        {/* Cabeçalho do Banner com Selo AdMob */}
+        {/* Cabeçalho do Banner */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center space-x-1.5">
-            <span className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-              AdMob • {currentAd.tag}
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium truncate max-w-[150px]">
-              {currentAd.sponsor}
+            <span className={`text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-slate-800 ${currentBanner.accent} border border-slate-700`}>
+              {currentBanner.tag}
             </span>
           </div>
 
-          {/* Botão de Remover Anúncios via VIP */}
+          {/* Botão de Remover Banners via VIP */}
           <button
             onClick={onOpenVip}
             className="flex items-center space-x-1 text-[10px] text-slate-400 hover:text-amber-400 transition-colors"
-            title="Remover anúncios com VIP Pro"
+            title="Remover banners com VIP Pro"
           >
             <Crown size={11} className="text-amber-400" />
-            <span className="font-semibold text-amber-400/90">Remover Anúncios</span>
+            <span className="font-semibold text-amber-400/90">Remover</span>
           </button>
         </div>
 
-        {/* Conteúdo do Anúncio */}
+        {/* Conteúdo do Banner */}
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
             <h4 className="text-xs font-bold text-white truncate">
-              {currentAd.headline}
+              {currentBanner.headline}
             </h4>
             <p className="text-[11px] text-slate-300 truncate mt-0.5">
-              {currentAd.description}
+              {currentBanner.description}
             </p>
           </div>
 
           <div className="flex items-center space-x-1.5 flex-shrink-0">
-            {/* Botão de Ação do Anúncio */}
             <button
-              onClick={() => alert(`Simulação de clique no anúncio: ${currentAd.sponsor} - Redirecionando para oferta.`)}
+              onClick={() => {
+                if (currentBanner.action === 'vip') onOpenVip();
+              }}
               className="px-2.5 py-1 rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 text-[11px] font-bold shadow-sm active:scale-95 transition-all"
             >
-              {currentAd.cta}
+              {currentBanner.cta}
             </button>
           </div>
         </div>
 
-        {/* Barra sutil de incentivo para o Vídeo Premiado */}
-        <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
-          <span className="text-slate-400 flex items-center gap-1">
-            💡 Quer usar sem anúncios hoje?
-          </span>
-          <button
-            onClick={onWatchRewarded}
-            className="text-brand-400 hover:text-brand-300 font-bold flex items-center gap-1 hover:underline active:scale-95"
-          >
-            <Play size={10} className="fill-brand-400" />
-            Assistir vídeo (VIP 24h Grátis)
-          </button>
-        </div>
+        {/* Barra sutil de incentivo para o Teste 24h */}
+        {onWatchRewarded && (
+          <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
+            <span className="text-slate-400 flex items-center gap-1">
+              💡 Quer usar tudo liberado hoje?
+            </span>
+            <button
+              onClick={onWatchRewarded}
+              className="text-brand-400 hover:text-brand-300 font-bold flex items-center gap-1 hover:underline active:scale-95"
+            >
+              <Play size={10} className="fill-brand-400" />
+              Testar VIP Grátis por 24h
+            </button>
+          </div>
+        )}
 
       </div>
     </div>
@@ -2884,8 +2894,8 @@ window.BottomNav = function BottomNav({ activeTab, onSelectTab, overdueCount, is
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 glass-bottom-nav max-w-md mx-auto transition-colors duration-200">
-      <div className="grid grid-cols-4 px-1 py-2 safe-area-bottom">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 glass-bottom-nav transition-colors duration-200">
+      <div className="grid grid-cols-4 px-1 py-2 safe-area-bottom max-w-md mx-auto">
         {tabs.map(tab => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
@@ -2991,10 +3001,10 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
         {/* Topo com Contador e Selo AdMob */}
         <div className="p-3.5 flex items-center justify-between border-b border-slate-800 bg-slate-950/50">
           <div className="flex items-center space-x-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-              Rewarded Ad • AdMob
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              Teste Grátis
             </span>
-            <span className="text-xs text-slate-400">Vídeo Premiado</span>
+            <span className="text-xs text-slate-400">Desbloqueio VIP 24h</span>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -3024,10 +3034,10 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
                   <window.Icons.Zap size={32} />
                 </div>
                 <h3 className="text-base font-bold text-white mt-3">
-                  InfinitePay & Ton Brasil
+                  CadernoFiado PRO
                 </h3>
                 <p className="text-xs text-slate-300 mt-1 max-w-[220px]">
-                  A maquininha com a menor taxa do Brasil para autônomos. Sem mensalidade e com PIX no visor.
+                  PIX automático, recibos em PDF, cobrança em massa e zero banners. Tudo liberado por 24 horas.
                 </p>
                 
                 {/* Simulação de ondas sonoras/reprodução */}
@@ -3036,7 +3046,7 @@ window.RewardedAdModal = function RewardedAdModal({ isOpen, onClose, onRewardGra
                   <div className="w-1 h-5 bg-brand-500 rounded-full animate-pulse delay-75"></div>
                   <div className="w-1 h-4 bg-brand-300 rounded-full animate-pulse delay-150"></div>
                   <div className="w-1 h-6 bg-brand-400 rounded-full animate-pulse"></div>
-                  <span className="text-[10px] text-slate-400 ml-2 font-mono">Reproduzindo anúncio...</span>
+                  <span className="text-[10px] text-slate-400 ml-2 font-mono">Preparando recursos...</span>
                 </div>
               </div>
 
@@ -3955,8 +3965,8 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
                 <div>
                   <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">Tipo de Chave:</label>
                   <select
-                    value={formData.pixType || 'telefone'}
-                    onChange={e => handleChange('pixType', e.target.value)}
+                    value={formData.pixKeyType || 'telefone'}
+                    onChange={e => handleChange('pixKeyType', e.target.value)}
                     className="w-full px-2.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="telefone">Celular / WhatsApp</option>
@@ -4009,7 +4019,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
         <div className="p-3.5 bg-slate-50 dark:bg-slate-950/90 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors">
           <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
             <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
-            Dados 100% seguros
+            Dados 100% seguros • v2.1.0
           </span>
 
           <button
@@ -4207,6 +4217,10 @@ window.ClientDetailModal = function ClientDetailModal({
       setPayNotes('');
       setTargetSaleId(null);
       setActiveSubTab('extrato');
+
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([50, 40, 50]); } catch(e){}
+      }
 
       if (val >= debt) {
         setFeedbackModal({
@@ -5574,14 +5588,56 @@ window.NewRecordTab = function NewRecordTab({
     setDueDate(d.toISOString().split('T')[0]);
   };
 
-  // Upload de Foto / Comprovante
+  // Upload e compressão de Foto / Comprovante (protege localStorage de estourar quota)
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // M3: Validação de tamanho máximo (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Arquivo Muito Grande',
+        message: 'A imagem selecionada excede 5MB. Por favor, escolha uma imagem menor ou tire uma foto direto pelo app.',
+        variant: 'warning'
+      });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
-      setPhotoPreview(event.target.result);
+      // Comprime e redimensiona para max 800px, JPEG 60%
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const MAX_SIZE = 800;
+          let w = img.width;
+          let h = img.height;
+          if (w > MAX_SIZE || h > MAX_SIZE) {
+            if (w > h) {
+              h = Math.round(h * MAX_SIZE / w);
+              w = MAX_SIZE;
+            } else {
+              w = Math.round(w * MAX_SIZE / h);
+              h = MAX_SIZE;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', 0.6);
+          setPhotoPreview(compressed);
+        } catch(err) {
+          // Fallback: usa original se compressão falhar
+          setPhotoPreview(event.target.result);
+        }
+      };
+      img.onerror = () => {
+        setPhotoPreview(event.target.result);
+      };
+      img.src = event.target.result;
     };
     reader.readAsDataURL(file);
   };
@@ -5633,6 +5689,10 @@ window.NewRecordTab = function NewRecordTab({
       setPhotoPreview(null);
       setIsInstallment(false);
 
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([40, 30, 40]); } catch(e){}
+      }
+
       onRecordCreated(selectedClientId);
     } catch(err) {
       setFeedbackDialog({
@@ -5657,9 +5717,21 @@ window.NewRecordTab = function NewRecordTab({
       return;
     }
 
+    // Validação de telefone: mínimo 10 dígitos numéricos (DDD + número)
+    const cleanPhone = clientPhone.replace(/\D/g, '');
+    if (cleanPhone.length > 0 && cleanPhone.length < 10) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'WhatsApp Inválido',
+        message: 'O número do WhatsApp precisa ter pelo menos 10 dígitos (DDD + número). Exemplo: 11987654321.',
+        variant: 'warning'
+      });
+      return;
+    }
+
     const newClient = window.AppState.addClient({
       name: clientName,
-      phone: clientPhone,
+      phone: cleanPhone,
       address: clientAddress,
       creditLimit: clientLimit
     });
@@ -5668,6 +5740,10 @@ window.NewRecordTab = function NewRecordTab({
     setClientPhone('');
     setClientAddress('');
     setClientLimit('350');
+
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate(50); } catch(e){}
+    }
 
     onClientCreated(newClient.id);
   };
@@ -6362,15 +6438,53 @@ window.VipTab = function VipTab({
 
   const installationId = vipInfo.installationId || (window.AppState ? window.AppState.getInstallationId() : '');
 
-  // Copia o ID do aparelho
+  // Copia o ID do aparelho (com fallback para WebView Android)
   const handleCopyId = () => {
-    navigator.clipboard.writeText(installationId);
-    setCopiedId(true);
-    setTimeout(() => setCopiedId(false), 2000);
+    const text = installationId;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          setCopiedId(true);
+          try { navigator.vibrate && navigator.vibrate(50); } catch(e) {}
+          setTimeout(() => setCopiedId(false), 2000);
+        }).catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
+    } catch(e) {
+      fallbackCopy(text);
+    }
+  };
+
+  const fallbackCopy = (text) => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopiedId(true);
+      try { navigator.vibrate && navigator.vibrate(50); } catch(e) {}
+      setTimeout(() => setCopiedId(false), 2000);
+    } catch(err) {
+      alert('Não foi possível copiar. Anote o ID manualmente: ' + text);
+    }
   };
 
   // Dispara pedido de assinatura no WhatsApp do Dono
   const handleOrderViaWhatsApp = (planKey = selectedPlan) => {
+    const ownerPhone = (shopSettings?.supportPhone || '').replace(/\D/g, '');
+    if (!ownerPhone || ownerPhone.length < 10) {
+      setActivationMessage({
+        success: false,
+        text: 'Configure seu WhatsApp nas Configurações do app primeiro. Depois, entre em contato com o suporte para solicitar seu código.'
+      });
+      return;
+    }
+
     const plansInfo = {
       monthly: { name: 'Plano VIP Mensal', price: 'R$ 9,90/mês' },
       annual: { name: 'Plano VIP Anual', price: 'R$ 59,90/ano' },
@@ -6380,9 +6494,7 @@ window.VipTab = function VipTab({
 
     const message = `Olá! Quero assinar o *${current.name} (${current.price})* do CadernoFiado.\n\n📲 *ID do meu aparelho:* \`${installationId}\`\n\nPode me enviar a chave PIX para eu fazer o pagamento e liberar meu código de ativação? Obrigado!`;
 
-    const ownerPhone = (shopSettings?.supportPhone || '51985661499').replace(/\D/g, '');
     const cleanPhone = ownerPhone.startsWith('55') ? ownerPhone : '55' + ownerPhone;
-
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
@@ -7646,6 +7758,300 @@ window.SignatureModal = function SignatureModal({ isOpen, onClose, onConfirmSign
 
 
 // ==========================================
+// Arquivo: js\components\OnboardingFlow.js
+// ==========================================
+/**
+ * Onboarding de Primeiro Uso: Configuração Inicial do Estabelecimento
+ * Exibido apenas quando o lojista abre o app pela primeira vez.
+ * Coleta nome do negócio, chave PIX e WhatsApp comercial em 3 etapas.
+ */
+
+window.OnboardingFlow = function OnboardingFlow({ onComplete }) {
+  const [step, setStep] = React.useState(1);
+  const [shopName, setShopName] = React.useState('');
+  const [ownerName, setOwnerName] = React.useState('');
+  const [phone, setPhone] = React.useState('');
+  const [pixKeyType, setPixKeyType] = React.useState('telefone');
+  const [pixKey, setPixKey] = React.useState('');
+  const [city, setCity] = React.useState('');
+
+  const { Check, ChevronRight, Store, QrCode, Sparkles } = window.Icons || {};
+
+  const totalSteps = 3;
+
+  const handleFinish = () => {
+    const settings = {
+      shopName: shopName.trim() || 'Meu Negócio',
+      ownerName: ownerName.trim(),
+      phone: phone.replace(/\D/g, ''),
+      pixKeyType,
+      pixKey: pixKey.trim(),
+      city: city.trim(),
+      supportPhone: phone.replace(/\D/g, '')
+    };
+    window.AppState.saveSettings(settings);
+    onComplete();
+  };
+
+  const handleNext = () => {
+    if (step === 1) {
+      if (!shopName.trim()) return;
+      setStep(2);
+    } else if (step === 2) {
+      setStep(3);
+    } else {
+      handleFinish();
+    }
+  };
+
+  const handleSkipPix = () => {
+    setStep(3);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-5 font-sans">
+      <div className="w-full max-w-sm space-y-6 animate-pop-in">
+        
+        {/* Logo e Boas-vindas */}
+        <div className="text-center space-y-2">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 border border-emerald-500/40 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/>
+              <path d="M6 6h10"/><path d="M6 10h7"/>
+              <polygon points="17 12 14 17 17 17 16 21 21 15 18 15 19 12" fill="#34d399" stroke="none"/>
+            </svg>
+          </div>
+          <h1 className="text-xl font-extrabold text-white tracking-tight">
+            CadernoFiado <span className="text-emerald-400">Pro</span>
+          </h1>
+          <p className="text-xs text-slate-400">
+            Vamos configurar o seu negócio em menos de 1 minuto.
+          </p>
+        </div>
+
+        {/* Indicador de Etapas */}
+        <div className="flex items-center justify-center gap-2">
+          {[1, 2, 3].map(s => (
+            <div key={s} className={`h-1.5 rounded-full transition-all duration-300 ${
+              s <= step ? 'bg-emerald-500 w-10' : 'bg-slate-800 w-6'
+            }`} />
+          ))}
+        </div>
+
+        {/* Etapa 1: Nome do Negócio */}
+        {step === 1 && (
+          <div className="space-y-4 animate-pop-in">
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+                  {Store ? <Store size={18} /> : <span>🏪</span>}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Seu Negócio</h3>
+                  <p className="text-[11px] text-slate-400">Essas informações aparecem no topo do app e nas cobranças.</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Nome do Estabelecimento *
+                  </label>
+                  <input
+                    type="text"
+                    value={shopName}
+                    onChange={e => setShopName(e.target.value)}
+                    placeholder="Ex: Mercadinho do João / Espaço Beleza"
+                    autoFocus
+                    className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Seu Nome (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={ownerName}
+                    onChange={e => setOwnerName(e.target.value)}
+                    placeholder="Ex: João Silva"
+                    className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    WhatsApp Comercial com DDD *
+                  </label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    placeholder="Ex: 11987654321"
+                    className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors font-mono"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Será usado para receber pedidos de assinatura e suporte.
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Etapa 2: Chave PIX */}
+        {step === 2 && (
+          <div className="space-y-4 animate-pop-in">
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+                  {QrCode ? <QrCode size={18} /> : <span>⚡</span>}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Chave PIX para Receber</h3>
+                  <p className="text-[11px] text-slate-400">O app gera QR Code e Copia e Cola automáticos.</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Tipo de Chave PIX</label>
+                  <select
+                    value={pixKeyType}
+                    onChange={e => setPixKeyType(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="telefone">Celular / WhatsApp</option>
+                    <option value="cpf">CPF / CNPJ</option>
+                    <option value="email">E-mail</option>
+                    <option value="aleatoria">Chave Aleatória (EVP)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Chave PIX</label>
+                  <input
+                    type="text"
+                    value={pixKey}
+                    onChange={e => setPixKey(e.target.value)}
+                    placeholder="Cole sua chave PIX aqui"
+                    autoFocus
+                    className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Cidade</label>
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={e => setCity(e.target.value)}
+                    placeholder="Ex: São Paulo"
+                    className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSkipPix}
+              className="w-full text-center text-xs text-slate-500 hover:text-slate-300 transition-colors py-1"
+            >
+              Pular por agora (posso configurar depois)
+            </button>
+          </div>
+        )}
+
+        {/* Etapa 3: Confirmação */}
+        {step === 3 && (
+          <div className="space-y-4 animate-pop-in">
+            <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-4 shadow-lg shadow-emerald-500/10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  {Sparkles ? <Sparkles size={18} /> : <span>✨</span>}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Tudo pronto!</h3>
+                  <p className="text-[11px] text-slate-400">Confira os dados antes de começar:</p>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between p-2.5 rounded-lg bg-slate-950/80 border border-slate-800">
+                  <span className="text-slate-400">Negócio</span>
+                  <span className="font-bold text-white">{shopName || '—'}</span>
+                </div>
+                {ownerName && (
+                  <div className="flex justify-between p-2.5 rounded-lg bg-slate-950/80 border border-slate-800">
+                    <span className="text-slate-400">Responsável</span>
+                    <span className="font-bold text-white">{ownerName}</span>
+                  </div>
+                )}
+                {phone && (
+                  <div className="flex justify-between p-2.5 rounded-lg bg-slate-950/80 border border-slate-800">
+                    <span className="text-slate-400">WhatsApp</span>
+                    <span className="font-mono font-bold text-emerald-400">{phone}</span>
+                  </div>
+                )}
+                {pixKey && (
+                  <div className="flex justify-between p-2.5 rounded-lg bg-slate-950/80 border border-slate-800">
+                    <span className="text-slate-400">Chave PIX</span>
+                    <span className="font-mono font-bold text-emerald-400 truncate max-w-[180px]">{pixKey}</span>
+                  </div>
+                )}
+                {!pixKey && (
+                  <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px]">
+                    ⚠️ Chave PIX não configurada — você pode adicionar depois em Configurações.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Botão de Ação Principal */}
+        <button
+          type="button"
+          onClick={handleNext}
+          disabled={step === 1 && !shopName.trim()}
+          className={`w-full py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md ${
+            (step === 1 && !shopName.trim())
+              ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
+          }`}
+        >
+          {step < totalSteps ? (
+            <>
+              <span>Continuar</span>
+              {ChevronRight && <ChevronRight size={18} />}
+            </>
+          ) : (
+            <>
+              {Check && <Check size={18} />}
+              <span>Começar a Usar</span>
+            </>
+          )}
+        </button>
+
+        {step > 1 && (
+          <button
+            type="button"
+            onClick={() => setStep(step - 1)}
+            className="w-full text-center text-xs text-slate-500 hover:text-slate-300 transition-colors py-1"
+          >
+            ← Voltar
+          </button>
+        )}
+
+      </div>
+    </div>
+  );
+};
+
+
+// ==========================================
 // Arquivo: js\app.js
 // ==========================================
 /**
@@ -7654,6 +8060,7 @@ window.SignatureModal = function SignatureModal({ isOpen, onClose, onConfirmSign
  */
 
 function App() {
+  const [showOnboarding, setShowOnboarding] = React.useState(() => window.AppState.isFirstUse());
   const [activeTab, setActiveTab] = React.useState('clients');
   const [clients, setClients] = React.useState(() => window.AppState.getClients());
   const [shopSettings, setShopSettings] = React.useState(() => window.AppState.getSettings());
@@ -7748,7 +8155,16 @@ function App() {
   return (
     <div className={`min-h-screen transition-colors duration-200 ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>
       
-      {/* Container Principal Mobile-First com Estilo de App Nativo */}
+      {/* Onboarding de Primeiro Uso */}
+      {showOnboarding ? (
+        <window.OnboardingFlow
+          onComplete={() => {
+            setShopSettings(window.AppState.getSettings());
+            setShowOnboarding(false);
+          }}
+        />
+      ) : (
+      /* Container Principal Mobile-First com Estilo de App Nativo */
       <div className={`app-container relative min-h-screen flex flex-col transition-colors duration-200 shadow-2xl ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
         
         {/* Top Header */}
@@ -7917,6 +8333,7 @@ function App() {
         />
 
       </div>
+      )}
     </div>
   );
 }

@@ -242,13 +242,13 @@ window.AppState = (function() {
   };
 
   const DEFAULT_SETTINGS = {
-    shopName: 'Meu Caderno',
+    shopName: '',
     ownerName: '',
     phone: '',
     pixKeyType: 'telefone',
     pixKey: '',
     city: '',
-    supportPhone: '51985661499'
+    supportPhone: ''
   };
 
   // Listeners de mudança de estado para render reativo
@@ -320,7 +320,7 @@ window.AppState = (function() {
     const debt = computeBalance(client);
     if (debt <= 0.01) return 'quitado';
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date(getEffectiveTime()).toISOString().split('T')[0];
     const openSales = (client.transactions || []).filter(t => t.type === 'sale');
     const isOverdue = openSales.some(s => s.dueDate && s.dueDate < todayStr);
 
@@ -484,7 +484,7 @@ window.AppState = (function() {
   function getInstallmentDetails(client, saleItem) {
     if (!client || !saleItem || saleItem.type !== 'sale') return null;
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date(getEffectiveTime()).toISOString().split('T')[0];
     const transactions = Array.isArray(client.transactions) ? client.transactions : [];
 
     // Clona e ordena todas as vendas cronologicamente pela data de CRIAÇÃO (FIFO) para abatimento de pagamentos genéricos.
@@ -613,22 +613,18 @@ window.AppState = (function() {
       const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
       if (!raw) return { ...DEFAULT_SETTINGS };
       const parsed = JSON.parse(raw);
-      if (parsed.ownerName === 'Cristina Alves' || parsed.shopName === 'Espaço & Cantinho da Cris') {
-        const cleaned = {
-          ...DEFAULT_SETTINGS,
-          supportPhone: (parsed.supportPhone && parsed.supportPhone.trim()) ? parsed.supportPhone : DEFAULT_SETTINGS.supportPhone
-        };
-        localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(cleaned));
-        return cleaned;
-      }
       return { 
         ...DEFAULT_SETTINGS, 
-        ...parsed,
-        supportPhone: (parsed.supportPhone && parsed.supportPhone.trim()) ? parsed.supportPhone : DEFAULT_SETTINGS.supportPhone
+        ...parsed
       };
     } catch(e) {
       return { ...DEFAULT_SETTINGS };
     }
+  }
+
+  function isFirstUse() {
+    const settings = getSettings();
+    return !settings.shopName || settings.shopName === 'Meu Caderno' || settings.shopName.trim() === '';
   }
 
   function saveSettings(newSettings) {
@@ -1348,6 +1344,10 @@ window.AppState = (function() {
     localStorage.removeItem(STORAGE_KEY_VIP);
     localStorage.removeItem(STORAGE_KEY_REWARDED);
     localStorage.removeItem(STORAGE_KEY_TRIAL_USED);
+    localStorage.removeItem(STORAGE_KEY_LAST_SEEN_TIME);
+    localStorage.removeItem(STORAGE_KEY_TIME_OFFSET);
+    sessionBaseTime = Date.now();
+    timeOffsetMs = 0;
     notify();
   }
 
@@ -1382,6 +1382,7 @@ window.AppState = (function() {
     validateBackup,
     restoreBackupData,
     importBackup,
-    resetAll
+    resetAll,
+    isFirstUse
   };
 })();

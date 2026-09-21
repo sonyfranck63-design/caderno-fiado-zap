@@ -59,14 +59,56 @@ window.NewRecordTab = function NewRecordTab({
     setDueDate(d.toISOString().split('T')[0]);
   };
 
-  // Upload de Foto / Comprovante
+  // Upload e compressão de Foto / Comprovante (protege localStorage de estourar quota)
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // M3: Validação de tamanho máximo (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Arquivo Muito Grande',
+        message: 'A imagem selecionada excede 5MB. Por favor, escolha uma imagem menor ou tire uma foto direto pelo app.',
+        variant: 'warning'
+      });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
-      setPhotoPreview(event.target.result);
+      // Comprime e redimensiona para max 800px, JPEG 60%
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const MAX_SIZE = 800;
+          let w = img.width;
+          let h = img.height;
+          if (w > MAX_SIZE || h > MAX_SIZE) {
+            if (w > h) {
+              h = Math.round(h * MAX_SIZE / w);
+              w = MAX_SIZE;
+            } else {
+              w = Math.round(w * MAX_SIZE / h);
+              h = MAX_SIZE;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', 0.6);
+          setPhotoPreview(compressed);
+        } catch(err) {
+          // Fallback: usa original se compressão falhar
+          setPhotoPreview(event.target.result);
+        }
+      };
+      img.onerror = () => {
+        setPhotoPreview(event.target.result);
+      };
+      img.src = event.target.result;
     };
     reader.readAsDataURL(file);
   };
@@ -118,6 +160,10 @@ window.NewRecordTab = function NewRecordTab({
       setPhotoPreview(null);
       setIsInstallment(false);
 
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([40, 30, 40]); } catch(e){}
+      }
+
       onRecordCreated(selectedClientId);
     } catch(err) {
       setFeedbackDialog({
@@ -142,9 +188,21 @@ window.NewRecordTab = function NewRecordTab({
       return;
     }
 
+    // Validação de telefone: mínimo 10 dígitos numéricos (DDD + número)
+    const cleanPhone = clientPhone.replace(/\D/g, '');
+    if (cleanPhone.length > 0 && cleanPhone.length < 10) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'WhatsApp Inválido',
+        message: 'O número do WhatsApp precisa ter pelo menos 10 dígitos (DDD + número). Exemplo: 11987654321.',
+        variant: 'warning'
+      });
+      return;
+    }
+
     const newClient = window.AppState.addClient({
       name: clientName,
-      phone: clientPhone,
+      phone: cleanPhone,
       address: clientAddress,
       creditLimit: clientLimit
     });
@@ -153,6 +211,10 @@ window.NewRecordTab = function NewRecordTab({
     setClientPhone('');
     setClientAddress('');
     setClientLimit('350');
+
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate(50); } catch(e){}
+    }
 
     onClientCreated(newClient.id);
   };

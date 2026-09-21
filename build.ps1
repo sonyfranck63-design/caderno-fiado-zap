@@ -24,6 +24,7 @@ $files = @(
     "js\components\MassBillingModal.js",
     "js\components\BackupModal.js",
     "js\components\SignatureModal.js",
+    "js\components\OnboardingFlow.js",
     "js\app.js"
 )
 

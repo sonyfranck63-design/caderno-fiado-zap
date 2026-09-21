@@ -4,6 +4,7 @@
  */
 
 function App() {
+  const [showOnboarding, setShowOnboarding] = React.useState(() => window.AppState.isFirstUse());
   const [activeTab, setActiveTab] = React.useState('clients');
   const [clients, setClients] = React.useState(() => window.AppState.getClients());
   const [shopSettings, setShopSettings] = React.useState(() => window.AppState.getSettings());
@@ -98,7 +99,16 @@ function App() {
   return (
     <div className={`min-h-screen transition-colors duration-200 ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>
       
-      {/* Container Principal Mobile-First com Estilo de App Nativo */}
+      {/* Onboarding de Primeiro Uso */}
+      {showOnboarding ? (
+        <window.OnboardingFlow
+          onComplete={() => {
+            setShopSettings(window.AppState.getSettings());
+            setShowOnboarding(false);
+          }}
+        />
+      ) : (
+      /* Container Principal Mobile-First com Estilo de App Nativo */
       <div className={`app-container relative min-h-screen flex flex-col transition-colors duration-200 shadow-2xl ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
         
         {/* Top Header */}
@@ -267,6 +277,7 @@ function App() {
         />
 
       </div>
+      )}
     </div>
   );
 }

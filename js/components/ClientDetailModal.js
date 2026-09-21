@@ -92,6 +92,10 @@ window.ClientDetailModal = function ClientDetailModal({
       setTargetSaleId(null);
       setActiveSubTab('extrato');
 
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([50, 40, 50]); } catch(e){}
+      }
+
       if (val >= debt) {
         setFeedbackModal({
           isOpen: true,

@@ -16,12 +16,27 @@ $proc = [System.Diagnostics.Process]::Start($psi)
 $stdout = $proc.StandardOutput.ReadToEnd()
 $stderr = $proc.StandardError.ReadToEnd()
 $proc.WaitForExit(20000)
+Set-Content -Path "dump_tests_stdout.txt" -Value $stdout -Encoding UTF8
 
 if ($stdout -match "RESULTADO FINAL: (\d+)/(\d+) TESTES PASSARAM COM SUCESSO!") {
-    $passed = $Matches[1]
-    $total = $Matches[2]
-    Write-Host "SUCESSO: $passed/$total testes passaram com sucesso!" -ForegroundColor Green
-    exit 0
+    $passed = [int]$Matches[1]
+    $total = [int]$Matches[2]
+    if ($passed -eq $total) {
+        Write-Host "SUCESSO: $passed/$total testes passaram com sucesso!" -ForegroundColor Green
+        exit 0
+    } else {
+        Write-Host "ATENÇÃO: $passed/$total testes passaram ($($total - $passed) FALHARAM)" -ForegroundColor Red
+        if ($stdout -match '(?s)<div id="results"[^>]*>(.*?)</div>') {
+            $lines = $Matches[1] -split '</div>'
+            foreach ($l in $lines) {
+                if ($l -match 'FALHOU|FAIL') {
+                    $clean = $l -replace '<[^>]+>', '' -replace '&gt;', '>' -replace '&lt;', '<'
+                    Write-Host $clean -ForegroundColor Red
+                }
+            }
+        }
+        exit 1
+    }
 } else {
     Write-Host "Verificando saída completa de results:"
     if ($stdout -match '(?s)<div id="results"[^>]*>(.*?)</div>') {
