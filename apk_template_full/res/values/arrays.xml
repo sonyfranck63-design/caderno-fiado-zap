@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="url_match">
+        <item>host|equals|github.com</item>
+        <item>host|endsWith|html5test.co</item>
+        <item>host|equals|192.168.2.127</item>
+    </string-array>
+    <string-array name="url_skip">
+        <item>path|endsWith|.epub</item>
+        <item>query|contains|type=epub</item>
+    </string-array>
+</resources>
