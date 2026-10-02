@@ -188,10 +188,22 @@
 
         self.ensureGisLoaded().then(function(oauth2) {
           try {
+            var hasResponded = false;
+            var safetyTimer = setTimeout(function() {
+              if (!hasResponded) {
+                hasResponded = true;
+                reject(new Error('Tempo limite excedido na janela do Google. No aplicativo instalado no celular, utilize a aba "Salvar" para enviar sua cópia diretamente ao Google Drive nativo com 1 toque.'));
+              }
+            }, 35000);
+
             var tokenClient = oauth2.initTokenClient({
               client_id: clientId,
               scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
               callback: function(tokenResponse) {
+                if (hasResponded) return;
+                hasResponded = true;
+                clearTimeout(safetyTimer);
+
                 if (tokenResponse.error) {
                   var errText = tokenResponse.error_description || tokenResponse.error;
                   if (tokenResponse.error === 'popup_closed_by_user') {
