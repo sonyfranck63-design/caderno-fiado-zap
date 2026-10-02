@@ -39,6 +39,41 @@ function formatDeviceId(val) {
   return clean ? `CF-${clean}` : '';
 }
 
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+const COMPACT_KEY_SALT = 'CFZAP_2026_COMPACT_KEY_SALT_B84';
+
+async function computeCompactChecksum(cleanDeviceId, plan) {
+  const data = `${COMPACT_KEY_SALT}:${cleanDeviceId}:${plan}`;
+  const hash = await sha256Hex(data);
+  return hash.substring(0, 6);
+}
+
+function normalizeCompactPlanKey(plan) {
+  const p = (plan || 'L').toString().toUpperCase().trim();
+  if (p === '30D' || p === 'M' || p.startsWith('MENSAL')) return 'M';
+  if (p === '365D' || p === 'A' || p.startsWith('ANUAL')) return 'A';
+  if (p === 'LIFETIME' || p === 'L' || p.startsWith('VITAL')) return 'L';
+  return ['M', 'A', 'L'].includes(p.charAt(0)) ? p.charAt(0) : 'L';
+}
+
+async function generateCompactLicenseKey(targetDeviceId, plan) {
+  let cleanId = (targetDeviceId || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^CF/, '');
+  if (cleanId.length < 8) {
+    cleanId = cleanId.padEnd(8, '0');
+  } else if (cleanId.length > 8) {
+    cleanId = cleanId.substring(0, 8);
+  }
+  const planKey = normalizeCompactPlanKey(plan);
+  const checksum = await computeCompactChecksum(cleanId, planKey);
+  const part1 = cleanId.substring(0, 4);
+  const part2 = cleanId.substring(4, 8);
+  return `VIP-${planKey}-${part1}-${part2}-${checksum}`;
+}
+
 async function createSignedToken(deviceId, planType, privateKeyJwk) {
   const cleanId = formatDeviceId(deviceId);
   const now = Date.now();
@@ -56,32 +91,7 @@ async function createSignedToken(deviceId, planType, privateKeyJwk) {
     planName = 'Plano VIP Vitalício';
   }
 
-  const payload = {
-    d: cleanId,
-    p: planType,
-    e: expiresAt,
-    t: now
-  };
-
-  const payloadStr = JSON.stringify(payload);
-  const payloadB64 = stringToBase64Url(payloadStr);
-
-  const privateKey = await crypto.subtle.importKey(
-    "jwk",
-    privateKeyJwk,
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign"]
-  );
-
-  const sigBuffer = await crypto.subtle.sign(
-    { name: "ECDSA", hash: { name: "SHA-256" } },
-    privateKey,
-    new TextEncoder().encode(payloadB64)
-  );
-
-  const sigB64 = toBase64Url(new Uint8Array(sigBuffer));
-  const fullToken = `CFVIP.${payloadB64}.${sigB64}`;
+  const fullToken = await generateCompactLicenseKey(deviceId, planType);
 
   return {
     token: fullToken,
