@@ -72,8 +72,8 @@ if (Test-Path $nativePatchDir) {
 Write-Host "[4/7] Aplicando identidade visual, ícones e permissões do CadernoFiado..." -ForegroundColor Yellow
 
 # A. Atualizar Versão do Aplicativo (versionCode e versionName) para forçar atualização no Android
-$targetVersionCode = 43
-$targetVersionName = "2.1.0"
+$targetVersionCode = 44
+$targetVersionName = "2.1.1"
 
 $ymlPath = Join-Path $buildDir "apktool.yml"
 if (Test-Path $ymlPath) {
@@ -96,7 +96,7 @@ if (Test-Path $manifestPath) {
 $stringsPath = Join-Path $buildDir "res\values\strings.xml"
 if (Test-Path $stringsPath) {
     $stringsXml = [System.IO.File]::ReadAllText($stringsPath, [System.Text.Encoding]::UTF8)
-    $stringsXml = $stringsXml -replace '<string name="app_name">.*?</string>', '<string name="app_name">CadernoFiado</string>'
+    $stringsXml = $stringsXml -replace '<string name="app_name">.*?</string>', '<string name="app_name">Caderno Fiado</string>'
     [System.IO.File]::WriteAllText($stringsPath, $stringsXml, [System.Text.Encoding]::UTF8)
 }
 
@@ -111,7 +111,9 @@ if (Test-Path $colorsPath) {
 # D. Configurar Ícones PNG de Alta Resolução e Ícone Adaptativo Android
 $icon192 = Join-Path $root "icons\icon-192.png"
 $icon512 = Join-Path $root "icons\icon-512.png"
+$iconSafe = Join-Path $root "icons\icon-foreground-safe.png"
 $iconSource = if (Test-Path $icon512) { $icon512 } else { $icon192 }
+$foregroundSource = if (Test-Path $iconSafe) { $iconSafe } else { $iconSource }
 
 if (Test-Path $iconSource) {
     # 1. Atualizar ícones bitmap em todas as densidades (para telas e launchers legacy)
@@ -124,7 +126,7 @@ if (Test-Path $iconSource) {
 
         $drawableDir = Join-Path $buildDir "res\drawable-$d"
         if (-not (Test-Path $drawableDir)) { New-Item -ItemType Directory -Path $drawableDir | Out-Null }
-        Copy-Item $iconSource (Join-Path $drawableDir "ic_launcher_foreground.png") -Force
+        Copy-Item $foregroundSource (Join-Path $drawableDir "ic_launcher_foreground.png") -Force
     }
 
     # 2. Remover ic_launcher_foreground.xml vetorial do template base para não sobrepor o PNG do CadernoFiado

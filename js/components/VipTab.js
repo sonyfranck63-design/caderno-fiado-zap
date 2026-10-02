@@ -59,16 +59,14 @@ window.VipTab = function VipTab({
     }
   };
 
-  // Dispara pedido de assinatura no WhatsApp do Dono
+  // Dispara pedido de assinatura no WhatsApp oficial do Dono / Criador do App
   const handleOrderViaWhatsApp = (planKey = selectedPlan) => {
-    const ownerPhone = (shopSettings?.supportPhone || '').replace(/\D/g, '');
-    if (!ownerPhone || ownerPhone.length < 10) {
-      setActivationMessage({
-        success: false,
-        text: 'Configure seu WhatsApp nas Configurações do app primeiro. Depois, entre em contato com o suporte para solicitar seu código.'
-      });
-      return;
-    }
+    const rawTargetPhone = (typeof window.AppState?.getAdminWhatsApp === 'function'
+      ? window.AppState.getAdminWhatsApp()
+      : (window.CF_ADMIN_WHATSAPP || '5551985661499')
+    ).replace(/\D/g, '');
+
+    const targetPhone = rawTargetPhone.startsWith('55') ? rawTargetPhone : '55' + rawTargetPhone;
 
     const plansInfo = {
       monthly: { name: 'Plano VIP Mensal', price: 'R$ 9,90/mês' },
@@ -76,11 +74,11 @@ window.VipTab = function VipTab({
       lifetime: { name: 'Plano VIP Vitalício', price: 'R$ 97,00 (Acesso Único)' }
     };
     const current = plansInfo[planKey] || plansInfo.monthly;
+    const shopName = shopSettings?.shopName || 'Meu Estabelecimento';
 
-    const message = `Olá! Quero assinar o *${current.name} (${current.price})* do CadernoFiado.\n\n📲 *ID do meu aparelho:* \`${installationId}\`\n\nPode me enviar a chave PIX para eu fazer o pagamento e liberar meu código de ativação? Obrigado!`;
+    const message = `Olá! Quero assinar o *${current.name} (${current.price})* do CadernoFiado.\n\n🏪 *Estabelecimento:* ${shopName}\n📲 *ID do meu aparelho:* \`${installationId}\`\n\nPode me enviar a chave PIX para eu fazer o pagamento e liberar meu código de ativação? Obrigado!`;
 
-    const cleanPhone = ownerPhone.startsWith('55') ? ownerPhone : '55' + ownerPhone;
-    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+    window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   // Ativação assíncrona do código digitado via Web Crypto ECDSA
@@ -117,7 +115,7 @@ window.VipTab = function VipTab({
               {triggerReason === 'pix' && 'Cobrança PIX Automática é um recurso VIP!'}
               {triggerReason === 'pdf' && 'Emissão de Recibos em PDF é um recurso VIP!'}
               {triggerReason === 'signature' && 'A Assinatura de Termos é um recurso VIP!'}
-              {triggerReason === 'backup' && 'O Backup de Segurança é um recurso VIP!'}
+              {triggerReason === 'backup' && 'O Backup Automático no Google Drive é um recurso VIP!'}
               {triggerReason === 'mass_billing' && 'A Cobrança em Massa é um recurso VIP!'}
               {(!triggerReason || !['pix', 'pdf', 'signature', 'backup', 'mass_billing'].includes(triggerReason)) && 'Esse é um recurso VIP exclusivo!'}
             </span>
@@ -205,7 +203,7 @@ window.VipTab = function VipTab({
               <ul className="text-left text-xs text-slate-700 dark:text-slate-300 mt-3 mx-auto max-w-xs space-y-2">
                 <li className="flex items-center gap-2"><FileText size={14} className="text-emerald-500" /> Extratos em PDF com a Logo do negócio</li>
                 <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> Assinatura de Termo de Compromisso</li>
-                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-emerald-500" /> Backup de segurança na nuvem</li>
+                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-emerald-500" /> Backup automático no Google Drive</li>
                 <li className="flex items-center gap-2"><Star size={14} className="text-emerald-500" /> Zero propagandas no aplicativo</li>
               </ul>
             </div>

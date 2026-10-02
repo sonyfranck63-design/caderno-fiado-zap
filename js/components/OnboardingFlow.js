@@ -25,7 +25,7 @@ window.OnboardingFlow = function OnboardingFlow({ onComplete }) {
       pixKeyType,
       pixKey: pixKey.trim(),
       city: city.trim(),
-      supportPhone: phone.replace(/\D/g, '')
+      supportPhone: ''
     };
     window.AppState.saveSettings(settings);
     onComplete();

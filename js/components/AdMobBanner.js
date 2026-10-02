@@ -10,32 +10,32 @@ const INTERNAL_BANNERS = [
   {
     tag: 'Dica',
     headline: 'Configure sua Chave PIX',
-    description: 'Cobranças com PIX automático direto no WhatsApp do cliente.',
+    description: 'Receba direto na sua conta bancária via WhatsApp.',
     cta: 'Configurar',
     action: 'settings',
     accent: 'text-emerald-400'
   },
   {
     tag: 'Pro',
-    headline: 'Extratos e Recibos em PDF Timbrados',
-    description: 'Gere comprovantes profissionais com a logo do seu negócio.',
+    headline: 'Extratos e Recibos em PDF',
+    description: 'Comprovantes profissionais com a logo do seu negócio.',
     cta: 'Conhecer',
     action: 'vip',
     accent: 'text-amber-400'
   },
   {
-    tag: 'Segurança',
-    headline: 'Faça Backup dos Seus Dados',
-    description: 'Proteja seus clientes e fiados contra perda do celular.',
+    tag: 'Nuvem',
+    headline: 'Backup no Google Drive',
+    description: 'Mantenha seus clientes e fiados 100% seguros.',
     cta: 'Salvar',
     action: 'backup',
     accent: 'text-blue-400'
   },
   {
     tag: 'Pro',
-    headline: 'Cobranças em Massa pelo WhatsApp',
-    description: 'Cobre todos os clientes atrasados de uma vez — recurso VIP.',
-    cta: 'Desbloquear',
+    headline: 'Cobrança em Massa no WhatsApp',
+    description: 'Cobre todos os clientes atrasados em 1 toque.',
+    cta: 'Liberar',
     action: 'vip',
     accent: 'text-purple-400'
   }

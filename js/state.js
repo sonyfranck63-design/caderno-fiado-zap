@@ -251,12 +251,27 @@ window.AppState = (function() {
     supportPhone: ''
   };
 
+  // WhatsApp oficial do Dono / Criador do aplicativo para solicitações de licença VIP
+  const OFFICIAL_ADMIN_WHATSAPP = '5551985661499';
+
+  function getAdminWhatsApp() {
+    if (window.CF_ADMIN_WHATSAPP && String(window.CF_ADMIN_WHATSAPP).trim()) {
+      return String(window.CF_ADMIN_WHATSAPP).trim();
+    }
+    return OFFICIAL_ADMIN_WHATSAPP;
+  }
+
   // Listeners de mudança de estado para render reativo
   const listeners = [];
   function notify() {
     listeners.forEach(fn => {
       try { fn(); } catch(e) { console.error('Erro em subscriber do AppState:', e); }
     });
+    try {
+      if (window.GoogleDriveService && typeof window.GoogleDriveService.scheduleAutoSync === 'function') {
+        window.GoogleDriveService.scheduleAutoSync();
+      }
+    } catch(e) {}
   }
 
   function subscribe(listener) {
@@ -1351,6 +1366,67 @@ window.AppState = (function() {
     notify();
   }
 
+  // --- MÉTODOS DE INTEGRAÇÃO COM GOOGLE DRIVE ---
+  function getGoogleDriveStatus() {
+    if (!window.GoogleDriveService) {
+      return { configured: false, connected: false, user: null, lastSync: null, autoSyncEnabled: false, clientId: '' };
+    }
+    return {
+      configured: window.GoogleDriveService.isConfigured(),
+      connected: window.GoogleDriveService.isConnected(),
+      user: window.GoogleDriveService.getUser(),
+      lastSync: window.GoogleDriveService.getLastSync(),
+      autoSyncEnabled: window.GoogleDriveService.isAutoSyncEnabled(),
+      clientId: window.GoogleDriveService.getClientId()
+    };
+  }
+
+  async function connectGoogleDrive(customClientId) {
+    if (!window.GoogleDriveService) throw new Error('Serviço Google Drive indisponível.');
+    const res = await window.GoogleDriveService.connect(customClientId);
+    notify();
+    return res;
+  }
+
+  function disconnectGoogleDrive() {
+    if (window.GoogleDriveService) {
+      window.GoogleDriveService.disconnect();
+      notify();
+    }
+  }
+
+  async function syncToGoogleDrive() {
+    if (!window.GoogleDriveService) throw new Error('Serviço Google Drive indisponível.');
+    const data = getBackupData();
+    const res = await window.GoogleDriveService.uploadBackup(data);
+    notify();
+    return res;
+  }
+
+  async function restoreFromGoogleDrive() {
+    if (!window.GoogleDriveService) throw new Error('Serviço Google Drive indisponível.');
+    const res = await window.GoogleDriveService.downloadBackup();
+    if (!res || !res.dataText) throw new Error('Dados vazios ou inválidos no Google Drive.');
+    const valResult = validateBackup(res.dataText);
+    if (!valResult.valid) {
+      return { valid: false, error: valResult.error };
+    }
+    return { valid: true, summary: valResult.summary, data: valResult.data, fileInfo: res.fileInfo };
+  }
+
+  function setGoogleDriveClientId(id) {
+    if (!window.GoogleDriveService) return false;
+    const ok = window.GoogleDriveService.setClientId(id);
+    notify();
+    return ok;
+  }
+
+  function setGoogleDriveAutoSync(enabled) {
+    if (!window.GoogleDriveService) return;
+    window.GoogleDriveService.setAutoSyncEnabled(enabled);
+    notify();
+  }
+
   return {
     subscribe,
     getClients,
@@ -1382,6 +1458,15 @@ window.AppState = (function() {
     validateBackup,
     restoreBackupData,
     importBackup,
+    // Google Drive
+    getGoogleDriveStatus,
+    connectGoogleDrive,
+    disconnectGoogleDrive,
+    syncToGoogleDrive,
+    restoreFromGoogleDrive,
+    setGoogleDriveClientId,
+    setGoogleDriveAutoSync,
+    getAdminWhatsApp,
     resetAll,
     isFirstUse
   };

@@ -15,6 +15,7 @@
 
   <script src="../js/pix.js"></script>
   <script src="../js/pdf.js"></script>
+  <script src="../js/googleDrive.js"></script>
   <script src="../js/state.js"></script>
 
   <script>
@@ -420,6 +421,37 @@
 
       // Limpeza do mock
       delete window.androidAppProxy;
+
+      // ==========================================
+      // Cenário 18: Google Drive & Backup em Nuvem
+      // ==========================================
+      log("\n--- Cenário 18: Google Drive & Backup em Nuvem ---");
+      assert("Cenário 18.1: GoogleDriveService está disponível globalmente", typeof window.GoogleDriveService === 'object' && window.GoogleDriveService !== null);
+      
+      const testClientId = "999888777-teste.apps.googleusercontent.com";
+      window.AppState.setGoogleDriveClientId(testClientId);
+      assert("Cenário 18.2: setGoogleDriveClientId e getGoogleDriveStatus persistem o Client ID", window.AppState.getGoogleDriveStatus().clientId === testClientId);
+      assert("Cenário 18.3: isConfigured reconhece Client ID válido customizado", window.GoogleDriveService.isConfigured() === true);
+
+      window.AppState.setGoogleDriveAutoSync(false);
+      assert("Cenário 18.4: setGoogleDriveAutoSync desativa auto-sync corretamente", window.GoogleDriveService.isAutoSyncEnabled() === false);
+      window.AppState.setGoogleDriveAutoSync(true);
+      assert("Cenário 18.5: setGoogleDriveAutoSync ativa auto-sync corretamente", window.GoogleDriveService.isAutoSyncEnabled() === true);
+
+      window.AppState.disconnectGoogleDrive();
+      const statusAfterDisc = window.AppState.getGoogleDriveStatus();
+      assert("Cenário 18.6: disconnectGoogleDrive limpa conexão e status reflete desconectado", statusAfterDisc.connected === false && statusAfterDisc.user === null);
+
+      // ==========================================
+      // Cenário 19: Roteamento Seguro de WhatsApp VIP
+      // ==========================================
+      log("\n--- Cenário 19: Roteamento Seguro de WhatsApp VIP ---");
+      assert("Cenário 19.1: getAdminWhatsApp retorna o número oficial do dono do app por padrão", window.AppState.getAdminWhatsApp() === '5551985661499');
+      
+      window.CF_ADMIN_WHATSAPP = '5511999998888';
+      assert("Cenário 19.2: getAdminWhatsApp respeita override customizado quando definido", window.AppState.getAdminWhatsApp() === '5511999998888');
+      delete window.CF_ADMIN_WHATSAPP;
+      assert("Cenário 19.3: getAdminWhatsApp restaura fallback oficial quando override é removido", window.AppState.getAdminWhatsApp() === '5551985661499');
 
         log(`\n==========================================`);
         log(`RESULTADO FINAL: ${passedTests}/${totalTests} TESTES PASSARAM COM SUCESSO!`, passedTests === totalTests);

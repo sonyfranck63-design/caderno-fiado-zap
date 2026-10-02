@@ -252,6 +252,7 @@ function App() {
           onClose={() => setSettingsModalOpen(false)}
           shopSettings={shopSettings}
           onSaveSettings={(newSettings) => window.AppState.saveSettings(newSettings)}
+          onOpenBackup={() => setBackupModalOpen(true)}
         />
 
         {/* Modal de Instalação do Aplicativo (PWA) */}

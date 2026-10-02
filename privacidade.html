@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Política de Privacidade — CadernoFiado & Cobrança Zap</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="vendor/tailwindcss.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#ecfdf5', 500: '#10b981', 600: '#059669', 700: '#047857' }
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans selection:bg-emerald-500 selection:text-white antialiased">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-900/30">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-white">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+        </div>
+        <span class="font-extrabold text-base tracking-tight text-white">CadernoFiado <span class="text-emerald-400">Zap</span></span>
+      </div>
+      <a href="index.html" class="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors">Voltar ao App &rarr;</a>
+    </div>
+  </header>
+
+  <!-- Conteúdo Principal -->
+  <main class="max-w-3xl mx-auto px-4 py-12 space-y-8">
+    <div class="space-y-2 text-center sm:text-left">
+      <span class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+        Conformidade com LGPD & Google API
+      </span>
+      <h1 class="text-3xl font-extrabold text-white tracking-tight">Política de Privacidade</h1>
+      <p class="text-xs text-slate-400">Última atualização: 2 de outubro de 2026</p>
+    </div>
+
+    <!-- Introdução -->
+    <section class="space-y-3 p-5 rounded-2xl bg-slate-900/70 border border-slate-800 text-sm leading-relaxed text-slate-300">
+      <p>
+        O <strong>CadernoFiado & Cobrança Zap</strong> valoriza profundamente a privacidade e a segurança dos dados dos seus usuários (lojistas, autônomos e pequenos comerciantes). Esta Política de Privacidade descreve de forma transparente como as informações são tratadas dentro do aplicativo.
+      </p>
+      <p>
+        O aplicativo foi desenvolvido sob o princípio de <strong>Privacidade por Design (Privacy by Design)</strong>: todos os dados de vendas, nomes de clientes e valores são armazenados exclusivamente de forma local no seu próprio dispositivo, sem tráfego em servidores de terceiros.
+      </p>
+    </section>
+
+    <!-- Google Drive API Disclosure (Exigência do Google) -->
+    <section class="space-y-4 p-6 rounded-2xl bg-gradient-to-br from-emerald-950/40 to-slate-900 border border-emerald-500/30">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">☁️</div>
+        <h2 class="text-lg font-bold text-white">Uso dos Serviços da Google Drive API</h2>
+      </div>
+      <div class="space-y-3 text-sm leading-relaxed text-slate-300">
+        <p>
+          O CadernoFiado oferece a funcionalidade opcional de <strong>Backup Automático no Google Drive</strong>. Caso você opte por conectar sua conta Google:
+        </p>
+        <ul class="list-disc pl-5 space-y-1.5 text-slate-300">
+          <li>
+            <strong>Escopo Mínimo e Estrito:</strong> O aplicativo solicita exclusivamente a permissão <code>https://www.googleapis.com/auth/drive.file</code>.
+          </li>
+          <li>
+            <strong>Acesso Restrito Exclusivo:</strong> O CadernoFiado <strong>NÃO</strong> possui acesso a nenhuma de suas fotos, documentos, planilhas ou pastas pessoais no seu Google Drive. O app pode apenas criar e atualizar o seu próprio arquivo de backup (denominado <code>cadernofiado_backup.json</code>).
+          </li>
+          <li>
+            <strong>Finalidade Exclusiva:</strong> Os dados transferidos para o Google Drive destinam-se exclusivamente a permitir que você mesmo restaure suas vendas e contatos caso troque ou formate seu smartphone.
+          </li>
+          <li>
+            <strong>Não Compartilhamento:</strong> O CadernoFiado não compartilha, não vende e não repassa quaisquer dados obtidos através das APIs do Google para terceiros, ferramentas de publicidade ou modelos de inteligência artificial.
+          </li>
+          <li>
+            <strong>Política de Dados de Usuário do Google:</strong> O uso e a transferência de informações recebidas das APIs do Google pelo CadernoFiado aderem estritamente à <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" class="text-emerald-400 underline">Google API Services User Data Policy</a>, incluindo os requisitos de <em>Uso Limitado (Limited Use)</em>.
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Dados Coletados -->
+    <section class="space-y-3 text-sm text-slate-300 leading-relaxed">
+      <h2 class="text-lg font-bold text-white">1. Informações Processadas pelo Aplicativo</h2>
+      <p>
+        Para fornecer o serviço de controle de fiados e emissão de cobranças, o usuário insere voluntariamente no app:
+      </p>
+      <ul class="list-disc pl-5 space-y-1 text-slate-400">
+        <li>Nome e telefone de clientes (para envio de mensagens via WhatsApp);</li>
+        <li>Registros de vendas, produtos, datas de vencimento e parcelas;</li>
+        <li>Chave PIX e nome do estabelecimento comercial (para inclusão nos recibos em PDF e QR Codes).</li>
+      </ul>
+      <p>
+        Essas informações permanecem salvas na memória local (Local Storage) do seu navegador ou celular e <strong>não</strong> são enviadas para servidores externos.
+      </p>
+    </section>
+
+    <!-- Armazenamento e Exclusão -->
+    <section class="space-y-3 text-sm text-slate-300 leading-relaxed">
+      <h2 class="text-lg font-bold text-white">2. Controle e Exclusão de Dados</h2>
+      <p>
+        Você tem controle total sobre suas informações a qualquer momento:
+      </p>
+      <ul class="list-disc pl-5 space-y-1 text-slate-400">
+        <li><strong>Exclusão Local:</strong> Nas Configurações do app, você pode apagar todos os registros com 1 clique no botão "Limpar todos os dados locais".</li>
+        <li><strong>Desconexão do Google Drive:</strong> No menu de Backup, você pode desconectar sua conta Google a qualquer momento, revogando o acesso imediatamente.</li>
+        <li><strong>Exclusão do Arquivo no Drive:</strong> Caso queira remover o backup das nuvens do Google, basta abrir o seu aplicativo do Google Drive e deletar o arquivo <code>cadernofiado_backup.json</code>.</li>
+      </ul>
+    </section>
+
+    <!-- Contato -->
+    <section class="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-2 text-sm">
+      <h2 class="text-base font-bold text-white">3. Contato com o Desenvolvedor</h2>
+      <p class="text-slate-400 leading-relaxed">
+        Se você tiver qualquer dúvida ou solicitação a respeito desta Política de Privacidade ou do tratamento de dados no CadernoFiado, entre em contato diretamente com o responsável técnico:
+      </p>
+      <p class="text-emerald-400 font-semibold">
+        E-mail: <a href="mailto:matheusfranck2013@gmail.com" class="underline">matheusfranck2013@gmail.com</a>
+      </p>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
+    <p>&copy; 2026 CadernoFiado & Cobrança Zap. Todos os direitos reservados.</p>
+  </footer>
+
+</body>
+</html>

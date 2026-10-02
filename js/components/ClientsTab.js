@@ -148,7 +148,7 @@ window.ClientsTab = function ClientsTab({
         </div>
 
         {/* Filtros em Pílula */}
-        <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5">
+        <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5 pr-4">
           <button
             onClick={() => setStatusFilter('todos')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all btn-smooth ${

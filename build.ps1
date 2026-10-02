@@ -5,6 +5,7 @@ if (-not $root) { $root = (Get-Location).Path }
 $files = @(
     "js\pix.js",
     "js\pdf.js",
+    "js\googleDrive.js",
     "js\state.js",
     "js\components\Icons.js",
     "js\components\ConfirmModal.js",

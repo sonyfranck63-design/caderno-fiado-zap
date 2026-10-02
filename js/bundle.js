@@ -885,6 +885,468 @@ window.PdfService = (function() {
 
 
 // ==========================================
+// Arquivo: js\googleDrive.js
+// ==========================================
+/**
+ * GoogleDriveService - Serviço de Backup Automático e Sincronização em Nuvem
+ * Integração com Google Identity Services (GIS) e Google Drive REST API v3
+ */
+
+(function() {
+  'use strict';
+
+  var STORAGE_KEYS = {
+    CLIENT_ID: 'cf_gdrive_client_id',
+    ACCESS_TOKEN: 'cf_gdrive_token',
+    TOKEN_EXPIRES: 'cf_gdrive_token_expires',
+    USER: 'cf_gdrive_user',
+    LAST_SYNC: 'cf_gdrive_last_sync',
+    AUTO_SYNC_ENABLED: 'cf_gdrive_autosync_enabled'
+  };
+
+  var BACKUP_FILENAME = 'cadernofiado_backup.json';
+  var BACKUP_MIME_TYPE = 'application/json';
+
+  // ID padrão oficial configurado no Google Cloud Console
+  var DEFAULT_CLIENT_ID = '580165153784-3dulo8ltdg2efainliufacl2karedfle.apps.googleusercontent.com';
+
+  var autoSyncTimer = null;
+  var isSyncing = false;
+
+  var GoogleDriveService = {
+    /**
+     * Obtém o Client ID configurado (salvo no localStorage ou padrão)
+     */
+    getClientId: function() {
+      try {
+        var saved = localStorage.getItem(STORAGE_KEYS.CLIENT_ID);
+        if (saved && saved.trim()) return saved.trim();
+      } catch (e) {}
+      return window.CF_GOOGLE_CLIENT_ID || DEFAULT_CLIENT_ID;
+    },
+
+    /**
+     * Define e persiste um novo Client ID
+     */
+    setClientId: function(id) {
+      try {
+        if (!id || !id.trim()) {
+          localStorage.removeItem(STORAGE_KEYS.CLIENT_ID);
+        } else {
+          localStorage.setItem(STORAGE_KEYS.CLIENT_ID, id.trim());
+        }
+        return true;
+      } catch (e) {
+        console.error('[GoogleDrive] Erro ao salvar Client ID:', e);
+        return false;
+      }
+    },
+
+    /**
+     * Verifica se o serviço está configurado com um Client ID válido
+     */
+    isConfigured: function() {
+      var id = this.getClientId();
+      return !!(id && id.indexOf('.apps.googleusercontent.com') !== -1);
+    },
+
+    /**
+     * Verifica se o usuário já realizou login e tem token salvo
+     */
+    isConnected: function() {
+      try {
+        var token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+        var user = localStorage.getItem(STORAGE_KEYS.USER);
+        return !!(token && user);
+      } catch (e) {
+        return false;
+      }
+    },
+
+    /**
+     * Obtém dados do usuário conectado (nome, email, foto)
+     */
+    getUser: function() {
+      try {
+        var data = localStorage.getItem(STORAGE_KEYS.USER);
+        return data ? JSON.parse(data) : null;
+      } catch (e) {
+        return null;
+      }
+    },
+
+    /**
+     * Data e hora do último backup enviado
+     */
+    getLastSync: function() {
+      try {
+        return localStorage.getItem(STORAGE_KEYS.LAST_SYNC) || null;
+      } catch (e) {
+        return null;
+      }
+    },
+
+    /**
+     * Status de auto-sync ativado
+     */
+    isAutoSyncEnabled: function() {
+      try {
+        var val = localStorage.getItem(STORAGE_KEYS.AUTO_SYNC_ENABLED);
+        return val === null ? true : val === 'true';
+      } catch (e) {
+        return true;
+      }
+    },
+
+    setAutoSyncEnabled: function(enabled) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.AUTO_SYNC_ENABLED, enabled ? 'true' : 'false');
+      } catch (e) {}
+    },
+
+    /**
+     * Obtém o token atual, se não expirado
+     */
+    getValidToken: function() {
+      try {
+        var token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+        var expires = localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRES);
+        if (!token) return null;
+        if (expires && Date.now() > parseInt(expires, 10)) {
+          console.warn('[GoogleDrive] Token expirado');
+          return null;
+        }
+        return token;
+      } catch (e) {
+        return null;
+      }
+    },
+
+    /**
+     * Garante que o script do Google Identity Services (GIS) esteja carregado
+     */
+    ensureGisLoaded: function() {
+      return new Promise(function(resolve, reject) {
+        if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+          resolve(window.google.accounts.oauth2);
+          return;
+        }
+
+        var existingScript = document.getElementById('google-gsi-client');
+        if (!existingScript) {
+          existingScript = document.createElement('script');
+          existingScript.id = 'google-gsi-client';
+          existingScript.src = 'https://accounts.google.com/gsi/client';
+          existingScript.async = true;
+          existingScript.defer = true;
+          document.head.appendChild(existingScript);
+        }
+
+        var timeout = setTimeout(function() {
+          reject(new Error('Tempo limite excedido ao carregar os serviços de autenticação do Google. Verifique sua conexão com a internet.'));
+        }, 10000);
+
+        existingScript.onload = function() {
+          clearTimeout(timeout);
+          if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+            resolve(window.google.accounts.oauth2);
+          } else {
+            reject(new Error('Biblioteca do Google Identity Services não foi inicializada corretamente.'));
+          }
+        };
+
+        existingScript.onerror = function() {
+          clearTimeout(timeout);
+          reject(new Error('Falha ao conectar aos servidores do Google. Verifique se o aparelho possui conexão à internet.'));
+        };
+      });
+    },
+
+    /**
+     * Abre o fluxo de autenticação do Google e salva o token
+     */
+    connect: function(customClientId) {
+      var self = this;
+      var clientId = customClientId || self.getClientId();
+
+      return new Promise(function(resolve, reject) {
+        if (!clientId) {
+          reject(new Error('Por favor, configure o seu Client ID do Google Cloud Console antes de conectar.'));
+          return;
+        }
+
+        self.ensureGisLoaded().then(function(oauth2) {
+          try {
+            var tokenClient = oauth2.initTokenClient({
+              client_id: clientId,
+              scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
+              callback: function(tokenResponse) {
+                if (tokenResponse.error) {
+                  var errText = tokenResponse.error_description || tokenResponse.error;
+                  if (tokenResponse.error === 'popup_closed_by_user') {
+                    errText = 'O login foi cancelado antes de ser concluído.';
+                  } else if (tokenResponse.error === 'access_denied') {
+                    errText = 'Permissão de acesso ao Google Drive negada pelo usuário.';
+                  }
+                  reject(new Error(errText));
+                  return;
+                }
+
+                var token = tokenResponse.access_token;
+                var expiresIn = parseInt(tokenResponse.expires_in, 10) || 3600;
+                var expiresAt = Date.now() + (expiresIn * 1000) - (60 * 1000); // margem de 1min
+
+                localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
+                localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRES, expiresAt.toString());
+
+                // Buscar perfil do usuário para exibir na tela
+                self.fetchUserInfo(token).then(function(user) {
+                  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+                  // Dispara primeiro sync automático
+                  if (window.AppState && typeof window.AppState.getBackupData === 'function') {
+                    self.uploadBackup(window.AppState.getBackupData()).catch(function(e) {
+                      console.warn('[GoogleDrive] Sync inicial falhou silenciosamente:', e);
+                    });
+                  }
+                  resolve({ success: true, user: user });
+                }).catch(function(err) {
+                  // Fallback se perfil falhar, ainda salva com email genérico
+                  var fallbackUser = { email: 'Conta Conectada', name: 'Usuário Google' };
+                  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(fallbackUser));
+                  resolve({ success: true, user: fallbackUser });
+                });
+              },
+              error_callback: function(err) {
+                console.error('[GoogleDrive] Erro GIS:', err);
+                reject(new Error(err.message || 'Erro ao inicializar janela do Google'));
+              }
+            });
+
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+          } catch (e) {
+            reject(new Error('Erro ao iniciar login Google: ' + e.message));
+          }
+        }).catch(reject);
+      });
+    },
+
+    /**
+     * Busca dados básicos do perfil do usuário no Google
+     */
+    fetchUserInfo: function(token) {
+      return fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(function(res) {
+        if (!res.ok) throw new Error('Não foi possível obter dados da conta Google');
+        return res.json();
+      }).then(function(data) {
+        return {
+          email: data.email || 'Email não disponível',
+          name: data.name || data.given_name || 'Comerciante',
+          picture: data.picture || null
+        };
+      });
+    },
+
+    /**
+     * Localiza o arquivo de backup existente no Google Drive
+     */
+    findExistingBackupFile: function(token) {
+      var query = encodeURIComponent("name = '" + BACKUP_FILENAME + "' and trashed = false");
+      var url = 'https://www.googleapis.com/drive/v3/files?q=' + query + '&fields=files(id,name,modifiedTime,size)&spaces=drive';
+
+      return fetch(url, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(function(res) {
+        if (!res.ok) {
+          if (res.status === 401) throw new Error('AUTH_EXPIRED');
+          throw new Error('Falha ao buscar arquivo no Google Drive (status ' + res.status + ')');
+        }
+        return res.json();
+      }).then(function(data) {
+        if (data.files && data.files.length > 0) {
+          return data.files[0];
+        }
+        return null;
+      });
+    },
+
+    /**
+     * Envia os dados de backup para o Google Drive (cria ou atualiza)
+     */
+    uploadBackup: function(backupData) {
+      var self = this;
+      if (isSyncing) return Promise.resolve({ skipped: true, reason: 'sync_in_progress' });
+      isSyncing = true;
+
+      return new Promise(function(resolve, reject) {
+        var token = self.getValidToken();
+        if (!token) {
+          isSyncing = false;
+          reject(new Error('AUTH_EXPIRED'));
+          return;
+        }
+
+        var jsonString = typeof backupData === 'string' ? backupData : JSON.stringify(backupData, null, 2);
+
+        // 1. Procurar se já existe o arquivo
+        self.findExistingBackupFile(token).then(function(existingFile) {
+          if (existingFile && existingFile.id) {
+            // Atualizar arquivo existente (PATCH)
+            var updateUrl = 'https://www.googleapis.com/upload/drive/v3/files/' + existingFile.id + '?uploadType=media';
+            return fetch(updateUrl, {
+              method: 'PATCH',
+              headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': BACKUP_MIME_TYPE
+              },
+              body: jsonString
+            }).then(function(res) {
+              if (!res.ok) throw new Error('Falha ao atualizar backup no Drive (status ' + res.status + ')');
+              return res.json();
+            });
+          } else {
+            // Criar novo arquivo (POST multipart)
+            var metadata = {
+              name: BACKUP_FILENAME,
+              description: 'Backup de Segurança do Aplicativo CadernoFiado Zap',
+              mimeType: BACKUP_MIME_TYPE
+            };
+
+            var boundary = '-------CadernoFiadoBoundary' + Date.now();
+            var delimiter = '\r\n--' + boundary + '\r\n';
+            var closeDelimiter = '\r\n--' + boundary + '--';
+
+            var multipartBody = 
+              delimiter +
+              'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+              JSON.stringify(metadata) +
+              delimiter +
+              'Content-Type: ' + BACKUP_MIME_TYPE + '\r\n\r\n' +
+              jsonString +
+              closeDelimiter;
+
+            var createUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+            return fetch(createUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'multipart/related; boundary=' + boundary
+              },
+              body: multipartBody
+            }).then(function(res) {
+              if (!res.ok) throw new Error('Falha ao criar arquivo de backup no Drive (status ' + res.status + ')');
+              return res.json();
+            });
+          }
+        }).then(function(result) {
+          var nowIso = new Date().toISOString();
+          localStorage.setItem(STORAGE_KEYS.LAST_SYNC, nowIso);
+          isSyncing = false;
+          resolve({
+            success: true,
+            timestamp: nowIso,
+            fileId: result.id
+          });
+        }).catch(function(err) {
+          isSyncing = false;
+          reject(err);
+        });
+      });
+    },
+
+    /**
+     * Baixa o arquivo de backup salvo no Google Drive do usuário
+     */
+    downloadBackup: function() {
+      var self = this;
+      return new Promise(function(resolve, reject) {
+        var token = self.getValidToken();
+        if (!token) {
+          reject(new Error('AUTH_EXPIRED'));
+          return;
+        }
+
+        self.findExistingBackupFile(token).then(function(file) {
+          if (!file || !file.id) {
+            throw new Error('Nenhum arquivo de backup do CadernoFiado foi encontrado no seu Google Drive.');
+          }
+
+          var downloadUrl = 'https://www.googleapis.com/drive/v3/files/' + file.id + '?alt=media';
+          return fetch(downloadUrl, {
+            headers: { 'Authorization': 'Bearer ' + token }
+          }).then(function(res) {
+            if (!res.ok) throw new Error('Falha ao baixar o arquivo do Drive (status ' + res.status + ')');
+            return res.text();
+          }).then(function(textData) {
+            resolve({
+              success: true,
+              dataText: textData,
+              fileInfo: file
+            });
+          });
+        }).catch(reject);
+      });
+    },
+
+    /**
+     * Agenda sincronização automática silenciosa (Debounce de 4 segundos)
+     */
+    scheduleAutoSync: function(delayMs) {
+      var self = this;
+      if (!self.isConnected() || !self.isAutoSyncEnabled()) return;
+
+      var delay = delayMs || 4000;
+      if (autoSyncTimer) {
+        clearTimeout(autoSyncTimer);
+      }
+
+      autoSyncTimer = setTimeout(function() {
+        if (!window.AppState || typeof window.AppState.getBackupData !== 'function') return;
+        var data = window.AppState.getBackupData();
+        self.uploadBackup(data).then(function() {
+          console.log('[GoogleDrive] Backup automático enviado com sucesso.');
+        }).catch(function(err) {
+          if (err.message === 'AUTH_EXPIRED') {
+            console.warn('[GoogleDrive] Sessão expirada para auto-sync. Necessita reautenticação.');
+          } else {
+            console.warn('[GoogleDrive] Falha no auto-sync:', err.message);
+          }
+        });
+      }, delay);
+    },
+
+    /**
+     * Desconecta a conta e limpa todos os tokens locais
+     */
+    disconnect: function() {
+      var token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      if (token && window.google && window.google.accounts && window.google.accounts.oauth2) {
+        try {
+          window.google.accounts.oauth2.revoke(token, function() {});
+        } catch (e) {}
+      }
+
+      try {
+        localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+        localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRES);
+        localStorage.removeItem(STORAGE_KEYS.USER);
+        localStorage.removeItem(STORAGE_KEYS.LAST_SYNC);
+      } catch (e) {}
+
+      if (autoSyncTimer) {
+        clearTimeout(autoSyncTimer);
+        autoSyncTimer = null;
+      }
+      return true;
+    }
+  };
+
+  window.GoogleDriveService = GoogleDriveService;
+})();
+
+
+// ==========================================
 // Arquivo: js\state.js
 // ==========================================
 /**
@@ -1140,12 +1602,27 @@ window.AppState = (function() {
     supportPhone: ''
   };
 
+  // WhatsApp oficial do Dono / Criador do aplicativo para solicitações de licença VIP
+  const OFFICIAL_ADMIN_WHATSAPP = '5551985661499';
+
+  function getAdminWhatsApp() {
+    if (window.CF_ADMIN_WHATSAPP && String(window.CF_ADMIN_WHATSAPP).trim()) {
+      return String(window.CF_ADMIN_WHATSAPP).trim();
+    }
+    return OFFICIAL_ADMIN_WHATSAPP;
+  }
+
   // Listeners de mudança de estado para render reativo
   const listeners = [];
   function notify() {
     listeners.forEach(fn => {
       try { fn(); } catch(e) { console.error('Erro em subscriber do AppState:', e); }
     });
+    try {
+      if (window.GoogleDriveService && typeof window.GoogleDriveService.scheduleAutoSync === 'function') {
+        window.GoogleDriveService.scheduleAutoSync();
+      }
+    } catch(e) {}
   }
 
   function subscribe(listener) {
@@ -2240,6 +2717,67 @@ window.AppState = (function() {
     notify();
   }
 
+  // --- MÉTODOS DE INTEGRAÇÃO COM GOOGLE DRIVE ---
+  function getGoogleDriveStatus() {
+    if (!window.GoogleDriveService) {
+      return { configured: false, connected: false, user: null, lastSync: null, autoSyncEnabled: false, clientId: '' };
+    }
+    return {
+      configured: window.GoogleDriveService.isConfigured(),
+      connected: window.GoogleDriveService.isConnected(),
+      user: window.GoogleDriveService.getUser(),
+      lastSync: window.GoogleDriveService.getLastSync(),
+      autoSyncEnabled: window.GoogleDriveService.isAutoSyncEnabled(),
+      clientId: window.GoogleDriveService.getClientId()
+    };
+  }
+
+  async function connectGoogleDrive(customClientId) {
+    if (!window.GoogleDriveService) throw new Error('Serviço Google Drive indisponível.');
+    const res = await window.GoogleDriveService.connect(customClientId);
+    notify();
+    return res;
+  }
+
+  function disconnectGoogleDrive() {
+    if (window.GoogleDriveService) {
+      window.GoogleDriveService.disconnect();
+      notify();
+    }
+  }
+
+  async function syncToGoogleDrive() {
+    if (!window.GoogleDriveService) throw new Error('Serviço Google Drive indisponível.');
+    const data = getBackupData();
+    const res = await window.GoogleDriveService.uploadBackup(data);
+    notify();
+    return res;
+  }
+
+  async function restoreFromGoogleDrive() {
+    if (!window.GoogleDriveService) throw new Error('Serviço Google Drive indisponível.');
+    const res = await window.GoogleDriveService.downloadBackup();
+    if (!res || !res.dataText) throw new Error('Dados vazios ou inválidos no Google Drive.');
+    const valResult = validateBackup(res.dataText);
+    if (!valResult.valid) {
+      return { valid: false, error: valResult.error };
+    }
+    return { valid: true, summary: valResult.summary, data: valResult.data, fileInfo: res.fileInfo };
+  }
+
+  function setGoogleDriveClientId(id) {
+    if (!window.GoogleDriveService) return false;
+    const ok = window.GoogleDriveService.setClientId(id);
+    notify();
+    return ok;
+  }
+
+  function setGoogleDriveAutoSync(enabled) {
+    if (!window.GoogleDriveService) return;
+    window.GoogleDriveService.setAutoSyncEnabled(enabled);
+    notify();
+  }
+
   return {
     subscribe,
     getClients,
@@ -2271,6 +2809,15 @@ window.AppState = (function() {
     validateBackup,
     restoreBackupData,
     importBackup,
+    // Google Drive
+    getGoogleDriveStatus,
+    connectGoogleDrive,
+    disconnectGoogleDrive,
+    syncToGoogleDrive,
+    restoreFromGoogleDrive,
+    setGoogleDriveClientId,
+    setGoogleDriveAutoSync,
+    getAdminWhatsApp,
     resetAll,
     isFirstUse
   };
@@ -2486,6 +3033,19 @@ window.Icons = {
       <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
     </svg>
   ),
+  RefreshCw: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
+      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/>
+    </svg>
+  ),
+  Google: (props = {}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" className={props.className || ''}>
+      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"/>
+      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.17 0 9.98 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/>
+      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+    </svg>
+  ),
   PenTool: (props = {}) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 20} height={props.size || 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={props.strokeWidth || 2} strokeLinecap="round" strokeLinejoin="round" className={props.className || ''}>
       <path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/>
@@ -2630,32 +3190,32 @@ const INTERNAL_BANNERS = [
   {
     tag: 'Dica',
     headline: 'Configure sua Chave PIX',
-    description: 'Cobranças com PIX automático direto no WhatsApp do cliente.',
+    description: 'Receba direto na sua conta bancária via WhatsApp.',
     cta: 'Configurar',
     action: 'settings',
     accent: 'text-emerald-400'
   },
   {
     tag: 'Pro',
-    headline: 'Extratos e Recibos em PDF Timbrados',
-    description: 'Gere comprovantes profissionais com a logo do seu negócio.',
+    headline: 'Extratos e Recibos em PDF',
+    description: 'Comprovantes profissionais com a logo do seu negócio.',
     cta: 'Conhecer',
     action: 'vip',
     accent: 'text-amber-400'
   },
   {
-    tag: 'Segurança',
-    headline: 'Faça Backup dos Seus Dados',
-    description: 'Proteja seus clientes e fiados contra perda do celular.',
+    tag: 'Nuvem',
+    headline: 'Backup no Google Drive',
+    description: 'Mantenha seus clientes e fiados 100% seguros.',
     cta: 'Salvar',
     action: 'backup',
     accent: 'text-blue-400'
   },
   {
     tag: 'Pro',
-    headline: 'Cobranças em Massa pelo WhatsApp',
-    description: 'Cobre todos os clientes atrasados de uma vez — recurso VIP.',
-    cta: 'Desbloquear',
+    headline: 'Cobrança em Massa no WhatsApp',
+    description: 'Cobre todos os clientes atrasados em 1 toque.',
+    cta: 'Liberar',
     action: 'vip',
     accent: 'text-purple-400'
   }
@@ -2761,46 +3321,46 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
   const { Crown, Settings, Moon, Sun, Clock, Cloud } = window.Icons || {};
 
   return (
-    <header className="sticky top-0 z-30 glass-panel px-4 py-3 transition-colors duration-200">
-      <div className="flex items-center justify-between">
+    <header className="sticky top-0 z-30 glass-panel px-3 sm:px-4 py-2.5 sm:py-3 transition-colors duration-200">
+      <div className="flex items-center justify-between gap-1">
         
-        {/* Lado Esquerdo: Identidade do App e Estabelecimento */}
-        <div className="flex items-center space-x-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        {/* Lado Esquerdo: Identidade do App e Estabelecimento com largura máxima */}
+        <div className="flex items-center space-x-1.5 sm:space-x-2 min-w-0 flex-1 mr-1">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/>
               <path d="M6 6h10"/>
               <path d="M6 10h7"/>
               <polygon points="17 12 14 17 17 17 16 21 21 15 18 15 19 12" fill="#34d399" stroke="none"/>
             </svg>
           </div>
-          <div className="min-w-0">
-            <h1 className="font-bold text-sm tracking-tight text-slate-900 dark:text-white leading-tight truncate">
-              {shopSettings?.shopName || 'CadernoFiado Zap'}
+          <div className="min-w-0 flex-1">
+            <h1 className="font-extrabold text-xs sm:text-sm tracking-tight text-slate-900 dark:text-white leading-tight truncate" title={shopSettings?.shopName || 'CadernoFiado Zap'}>
+              {shopSettings?.shopName || 'Meu Caderno'}
             </h1>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-              Gestão de Fiados & Cobrança
+            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tracking-wide truncate">
+              Caderno Fiado
             </p>
           </div>
         </div>
 
-        {/* Lado Direito: Badge VIP + Alternador de Tema + Configurações */}
-        <div className="flex items-center space-x-1.5 flex-shrink-0">
+        {/* Lado Direito: Ações Rápidas Compactas */}
+        <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
           
           {/* Badge de Status VIP */}
           {vipInfo.isVipPermanent ? (
             <button
               onClick={onOpenVip}
-              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-colors btn-smooth"
+              className="flex items-center space-x-1 px-1.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[11px] sm:text-xs font-semibold hover:bg-emerald-500/20 transition-colors btn-smooth"
               title="Plano VIP Pro Ativo"
             >
-              <Crown size={12} className="text-emerald-600 dark:text-emerald-400" />
+              <Crown size={11} className="text-emerald-600 dark:text-emerald-400" />
               <span>PRO</span>
             </button>
           ) : vipInfo.isPassActive ? (
             <button
               onClick={onOpenVip}
-              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-colors btn-smooth"
+              className="flex items-center space-x-1 px-1.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[11px] sm:text-xs font-semibold hover:bg-emerald-500/20 transition-colors btn-smooth"
               title="Passe 24h Ativo"
             >
               <Clock size={11} className="text-emerald-600 dark:text-emerald-400" />
@@ -2809,9 +3369,9 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
           ) : (
             <button
               onClick={onOpenVip}
-              className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors btn-smooth"
+              className="flex items-center space-x-1 px-1.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] sm:text-xs font-medium transition-colors btn-smooth"
             >
-              <Crown size={12} className="text-amber-500" />
+              <Crown size={11} className="text-amber-500" />
               <span>VIP</span>
             </button>
           )}
@@ -2819,31 +3379,34 @@ window.Header = function Header({ vipInfo, remainingTime, onOpenSettings, onOpen
           {/* Alternador de Tema Escuro / Claro */}
           <button
             onClick={onToggleTheme}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors btn-smooth"
+            className="p-1 sm:p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors btn-smooth"
             aria-label="Alternar Tema"
             title="Alternar Tema"
           >
-            {isDark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-slate-600" />}
+            {isDark ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} className="text-slate-600" />}
           </button>
 
-          {/* Botão de Nuvem (Backup) */}
+          {/* Botão de Nuvem (Backup & Google Drive) */}
           <button
             onClick={onOpenBackup}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 transition-colors btn-smooth"
+            className="p-1 sm:p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/20 transition-colors btn-smooth relative"
             aria-label="Backup de Segurança"
-            title="Backup de Segurança"
+            title="Backup de Segurança & Google Drive"
           >
-            <Cloud size={17} />
+            <Cloud size={16} className={window.GoogleDriveService && window.GoogleDriveService.isConnected() ? "text-emerald-500" : ""} />
+            {window.GoogleDriveService && window.GoogleDriveService.isConnected() && (
+              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-pulse"></span>
+            )}
           </button>
 
           {/* Botão de Configurações */}
           <button
             onClick={onOpenSettings}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors btn-smooth"
+            className="p-1 sm:p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors btn-smooth"
             aria-label="Configurações do Negócio"
             title="Configurações"
           >
-            <Settings size={17} />
+            <Settings size={16} />
           </button>
 
         </div>
@@ -3651,7 +4214,7 @@ window.PixModal = function PixModal({ isOpen, onClose, client, shopSettings, onO
  * Identidade visual comercial com suporte a exportação e importação por texto e arquivo (à prova de falhas no celular).
  */
 
-window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, onSaveSettings }) {
+window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, onSaveSettings, onOpenBackup }) {
   const [formData, setFormData] = React.useState({ ...shopSettings });
   const [saveSuccess, setSaveSuccess] = React.useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = React.useState(false);
@@ -3660,7 +4223,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   const [feedbackDialog, setFeedbackDialog] = React.useState({ isOpen: false, title: '', message: '', variant: 'info' });
   
   const fileInputRef = React.useRef(null);
-  const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck, Store, Phone, QrCode, Copy, FileText } = window.Icons || {};
+  const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck, Store, Phone, QrCode, Copy, FileText, Cloud } = window.Icons || {};
 
   const [confirmRestoreData, setConfirmRestoreData] = React.useState(null);
   const [sigPreview, setSigPreview] = React.useState(null);
@@ -3892,14 +4455,14 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
             </div>
 
             {/* Assinatura Digital Automática do Emissor / Proprietário */}
-            <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 transition-colors">
-              <div className="flex items-center justify-between">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 transition-colors">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <Check size={14} className="text-blue-600 dark:text-blue-400" />
-                  Sua Assinatura Digital (Recibo PDF):
+                  <Check size={14} className="text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                  <span>Assinatura Digital (Recibo PDF)</span>
                 </label>
-                <span className="text-[10px] text-blue-700 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-500/20">
-                  Assina Sempre Automático
+                <span className="text-[10px] text-blue-700 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-500/20 whitespace-nowrap flex-shrink-0">
+                  Automático
                 </span>
               </div>
               
@@ -3907,10 +4470,10 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
                 type="text"
                 value={formData.ownerName || ''}
                 onChange={e => handleChange('ownerName', e.target.value)}
-                placeholder="Ex: Seu Nome Completo / Responsável"
+                placeholder="Ex: Seu Nome / Nome da Empresa"
                 className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
               />
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-relaxed">
                 Digite seu nome ou da empresa. O sistema gera sua rubrica caligráfica e já assina automaticamente a via do emissor em todos os recibos.
               </span>
 
@@ -4000,6 +4563,35 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
               </div>
             </div>
 
+            {/* Backup & Nuvem Google Drive */}
+            <div className="p-3.5 bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-950/30 dark:to-blue-950/20 rounded-xl border border-emerald-200/80 dark:border-emerald-800/40 space-y-2.5 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Cloud size={16} className="text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Backup Automático & Nuvem
+                  </span>
+                </div>
+                <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">
+                  Google Drive
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight">
+                Mantenha suas vendas, clientes e fiados 100% seguros com backup automático na sua conta Google ou exporte cópias manuais.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (typeof onOpenBackup === 'function') onOpenBackup();
+                }}
+                className="w-full py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5"
+              >
+                <Cloud size={14} />
+                <span>Abrir Central de Backup & Drive</span>
+              </button>
+            </div>
+
             {/* Seção de Limpeza de Dados */}
             <div className="p-3.5 bg-rose-50/50 dark:bg-rose-950/20 rounded-xl border border-rose-100 dark:border-rose-900/30 transition-colors">
               <button
@@ -4016,16 +4608,16 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
         </div>
 
         {/* Rodapé com Salvar */}
-        <div className="p-3.5 bg-slate-50 dark:bg-slate-950/90 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors">
-          <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
-            <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
-            Dados 100% seguros • v2.1.0
+        <div className="p-3.5 bg-slate-50 dark:bg-slate-950/90 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 transition-colors">
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 min-w-0 truncate">
+            <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+            <span className="truncate">Dados seguros • v2.1.0</span>
           </span>
 
           <button
             type="submit"
             form="settings-form"
-            className="py-2.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all active:scale-95 shadow-md btn-smooth"
+            className="py-2.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all active:scale-95 shadow-md btn-smooth flex-shrink-0"
           >
             {saveSuccess ? (
               <>
@@ -5308,7 +5900,7 @@ window.ClientsTab = function ClientsTab({
         </div>
 
         {/* Filtros em Pílula */}
-        <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5">
+        <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5 pr-4">
           <button
             onClick={() => setStatusFilter('todos')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all btn-smooth ${
@@ -6474,16 +7066,14 @@ window.VipTab = function VipTab({
     }
   };
 
-  // Dispara pedido de assinatura no WhatsApp do Dono
+  // Dispara pedido de assinatura no WhatsApp oficial do Dono / Criador do App
   const handleOrderViaWhatsApp = (planKey = selectedPlan) => {
-    const ownerPhone = (shopSettings?.supportPhone || '').replace(/\D/g, '');
-    if (!ownerPhone || ownerPhone.length < 10) {
-      setActivationMessage({
-        success: false,
-        text: 'Configure seu WhatsApp nas Configurações do app primeiro. Depois, entre em contato com o suporte para solicitar seu código.'
-      });
-      return;
-    }
+    const rawTargetPhone = (typeof window.AppState?.getAdminWhatsApp === 'function'
+      ? window.AppState.getAdminWhatsApp()
+      : (window.CF_ADMIN_WHATSAPP || '5551985661499')
+    ).replace(/\D/g, '');
+
+    const targetPhone = rawTargetPhone.startsWith('55') ? rawTargetPhone : '55' + rawTargetPhone;
 
     const plansInfo = {
       monthly: { name: 'Plano VIP Mensal', price: 'R$ 9,90/mês' },
@@ -6491,11 +7081,11 @@ window.VipTab = function VipTab({
       lifetime: { name: 'Plano VIP Vitalício', price: 'R$ 97,00 (Acesso Único)' }
     };
     const current = plansInfo[planKey] || plansInfo.monthly;
+    const shopName = shopSettings?.shopName || 'Meu Estabelecimento';
 
-    const message = `Olá! Quero assinar o *${current.name} (${current.price})* do CadernoFiado.\n\n📲 *ID do meu aparelho:* \`${installationId}\`\n\nPode me enviar a chave PIX para eu fazer o pagamento e liberar meu código de ativação? Obrigado!`;
+    const message = `Olá! Quero assinar o *${current.name} (${current.price})* do CadernoFiado.\n\n🏪 *Estabelecimento:* ${shopName}\n📲 *ID do meu aparelho:* \`${installationId}\`\n\nPode me enviar a chave PIX para eu fazer o pagamento e liberar meu código de ativação? Obrigado!`;
 
-    const cleanPhone = ownerPhone.startsWith('55') ? ownerPhone : '55' + ownerPhone;
-    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+    window.open(`https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   // Ativação assíncrona do código digitado via Web Crypto ECDSA
@@ -6532,7 +7122,7 @@ window.VipTab = function VipTab({
               {triggerReason === 'pix' && 'Cobrança PIX Automática é um recurso VIP!'}
               {triggerReason === 'pdf' && 'Emissão de Recibos em PDF é um recurso VIP!'}
               {triggerReason === 'signature' && 'A Assinatura de Termos é um recurso VIP!'}
-              {triggerReason === 'backup' && 'O Backup de Segurança é um recurso VIP!'}
+              {triggerReason === 'backup' && 'O Backup Automático no Google Drive é um recurso VIP!'}
               {triggerReason === 'mass_billing' && 'A Cobrança em Massa é um recurso VIP!'}
               {(!triggerReason || !['pix', 'pdf', 'signature', 'backup', 'mass_billing'].includes(triggerReason)) && 'Esse é um recurso VIP exclusivo!'}
             </span>
@@ -6620,7 +7210,7 @@ window.VipTab = function VipTab({
               <ul className="text-left text-xs text-slate-700 dark:text-slate-300 mt-3 mx-auto max-w-xs space-y-2">
                 <li className="flex items-center gap-2"><FileText size={14} className="text-emerald-500" /> Extratos em PDF com a Logo do negócio</li>
                 <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> Assinatura de Termo de Compromisso</li>
-                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-emerald-500" /> Backup de segurança na nuvem</li>
+                <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-emerald-500" /> Backup automático no Google Drive</li>
                 <li className="flex items-center gap-2"><Star size={14} className="text-emerald-500" /> Zero propagandas no aplicativo</li>
               </ul>
             </div>
@@ -7063,25 +7653,56 @@ window.MassBillingModal = function MassBillingModal({ isOpen, onClose, clients, 
 // Arquivo: js\components\BackupModal.js
 // ==========================================
 /**
- * Modal de Backup Seguro e Sincronização
- * Permite exportar (copiar código, compartilhar no WhatsApp, baixar arquivo .txt)
- * e restaurar dados facilmente no celular ou computador sem depender de seletor de arquivos.
+ * Modal de Backup Seguro e Sincronização em Nuvem (Google Drive)
+ * Permite backup automático com Google Drive (1-clique),
+ * além de exportação e restauração manuais (WhatsApp, código e arquivo .txt).
  */
 
 window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPaywall }) {
-  const [activeTab, setActiveTab] = React.useState('export'); // 'export' | 'restore'
+  const [activeTab, setActiveTab] = React.useState('drive'); // 'drive' | 'export' | 'restore'
   const [copiedCode, setCopiedCode] = React.useState(false);
   const [showRawCode, setShowRawCode] = React.useState(false);
   const [pastedJson, setPastedJson] = React.useState('');
   const [confirmRestoreData, setConfirmRestoreData] = React.useState(null);
   const [feedbackDialog, setFeedbackDialog] = React.useState({ isOpen: false, title: '', message: '', variant: 'info', onConfirm: null });
 
+  // Estados do Google Drive
+  const [driveStatus, setDriveStatus] = React.useState(() => {
+    return window.AppState && typeof window.AppState.getGoogleDriveStatus === 'function'
+      ? window.AppState.getGoogleDriveStatus()
+      : { configured: false, connected: false, user: null, lastSync: null, autoSyncEnabled: true, clientId: '' };
+  });
+  const [isDriveConnecting, setIsDriveConnecting] = React.useState(false);
+  const [isDriveSyncing, setIsDriveSyncing] = React.useState(false);
+  const [isDriveRestoring, setIsDriveRestoring] = React.useState(false);
+  const [showDriveConfig, setShowDriveConfig] = React.useState(false);
+  const [customClientId, setCustomClientId] = React.useState(() => {
+    return (window.AppState && typeof window.AppState.getGoogleDriveStatus === 'function'
+      ? window.AppState.getGoogleDriveStatus().clientId
+      : '') || '';
+  });
+
   const fileInputRef = React.useRef(null);
-  const { X, Cloud, Download, Upload, ShieldCheck, Lock, Copy, Check, Share2, FileText, CheckCircle2, AlertTriangle } = window.Icons || {};
+  const { X, Cloud, Download, Upload, ShieldCheck, Lock, Copy, Check, Share2, FileText, CheckCircle2, AlertTriangle, RefreshCw, Google } = window.Icons || {};
 
   window.useModalHistory(isOpen, onClose, 'backupMainModal');
   window.useModalHistory(feedbackDialog.isOpen, () => setFeedbackDialog(prev => ({ ...prev, isOpen: false })), 'backupFeedback');
   window.useModalHistory(!!confirmRestoreData, () => setConfirmRestoreData(null), 'backupConfirmRestore');
+
+  // Subscrever a alterações no estado para atualizar status do Drive em tempo real
+  React.useEffect(() => {
+    if (!window.AppState || typeof window.AppState.subscribe !== 'function') return;
+    const unsub = window.AppState.subscribe(() => {
+      if (typeof window.AppState.getGoogleDriveStatus === 'function') {
+        const st = window.AppState.getGoogleDriveStatus();
+        setDriveStatus(st);
+        if (!customClientId && st.clientId) {
+          setCustomClientId(st.clientId);
+        }
+      }
+    });
+    return unsub;
+  }, []);
 
   if (!isOpen) return null;
 
@@ -7115,7 +7736,118 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     return success;
   };
 
-  // 1. Copiar Código de Backup para a Área de Transferência
+  // --- AÇÕES DO GOOGLE DRIVE ---
+  const handleConnectDrive = async () => {
+    if (!isVip) {
+      onTriggerPaywall('backup');
+      return;
+    }
+
+    setIsDriveConnecting(true);
+    try {
+      const res = await window.AppState.connectGoogleDrive(customClientId ? customClientId.trim() : null);
+      if (res && res.success) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Google Drive Conectado!',
+          message: `Conta ${res.user?.email || 'Google'} conectada com sucesso!\n\nSeu primeiro backup em nuvem já foi salvo de forma automática. Todas as futuras alterações serão sincronizadas silenciosamente.`,
+          variant: 'success'
+        });
+      }
+    } catch (err) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Conexão Google Drive',
+        message: err.message || 'Não foi possível conectar ao Google Drive.',
+        variant: 'danger'
+      });
+    } finally {
+      setIsDriveConnecting(false);
+    }
+  };
+
+  const handleSyncDriveNow = async () => {
+    if (!isVip) {
+      onTriggerPaywall('backup');
+      return;
+    }
+    setIsDriveSyncing(true);
+    try {
+      const res = await window.AppState.syncToGoogleDrive();
+      if (res && res.success) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Sincronizado com Sucesso!',
+          message: 'Todos os seus clientes, vendas e pagamentos foram salvos no seu Google Drive com segurança.',
+          variant: 'success'
+        });
+      }
+    } catch (err) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Erro na Sincronização',
+        message: err.message === 'AUTH_EXPIRED'
+          ? 'Sua sessão do Google expirou. Por favor, conecte novamente sua conta.'
+          : ('Falha ao enviar backup: ' + err.message),
+        variant: 'danger'
+      });
+    } finally {
+      setIsDriveSyncing(false);
+    }
+  };
+
+  const handleRestoreFromDrive = async () => {
+    setIsDriveRestoring(true);
+    try {
+      const res = await window.AppState.restoreFromGoogleDrive();
+      if (!res.valid) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Backup Inválido',
+          message: 'O arquivo encontrado no seu Google Drive está corrompido ou é inválido:\n' + res.error,
+          variant: 'danger'
+        });
+        return;
+      }
+      setConfirmRestoreData(res);
+    } catch (err) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Falha ao Restaurar',
+        message: err.message === 'AUTH_EXPIRED'
+          ? 'Sua sessão do Google expirou. Conecte sua conta novamente.'
+          : (err.message || 'Erro ao buscar backup do Google Drive.'),
+        variant: 'danger'
+      });
+    } finally {
+      setIsDriveRestoring(false);
+    }
+  };
+
+  const handleDisconnectDrive = () => {
+    window.AppState.disconnectGoogleDrive();
+    setFeedbackDialog({
+      isOpen: true,
+      title: 'Google Drive Desconectado',
+      message: 'Sua conta Google foi desvinculada deste aparelho. O backup automático em nuvem foi pausado.',
+      variant: 'info'
+    });
+  };
+
+  const handleSaveClientId = () => {
+    if (window.AppState && typeof window.AppState.setGoogleDriveClientId === 'function') {
+      window.AppState.setGoogleDriveClientId(customClientId.trim());
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Configuração Salva',
+        message: 'Google Client ID atualizado com sucesso.',
+        variant: 'success'
+      });
+      setShowDriveConfig(false);
+    }
+  };
+
+  // --- AÇÕES MANUAIS DE BACKUP ---
   const handleCopyBackupCode = async () => {
     if (!isVip) {
       onTriggerPaywall('backup');
@@ -7136,7 +7868,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     });
   };
 
-  // 2. Compartilhar Código como Mensagem de Texto no WhatsApp
   const handleShareWhatsApp = async () => {
     if (!isVip) {
       onTriggerPaywall('backup');
@@ -7167,7 +7898,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     });
   };
 
-  // 3. Exportar como Arquivo de Texto (.txt)
   const handleExportFile = async () => {
     if (!isVip) {
       onTriggerPaywall('backup');
@@ -7197,7 +7927,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     }
   };
 
-  // 4. Colar da Área de Transferência
   const handlePasteFromClipboard = async () => {
     let pasted = false;
     if (navigator.clipboard && navigator.clipboard.readText) {
@@ -7221,7 +7950,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     }
   };
 
-  // 5. Validar e Solicitar Confirmação de Restauração
   const handlePromptRestore = () => {
     if (!pastedJson.trim()) {
       setFeedbackDialog({
@@ -7247,7 +7975,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     setConfirmRestoreData(validation);
   };
 
-  // 6. Confirmar e Aplicar a Restauração
   const handleConfirmRestore = () => {
     if (!confirmRestoreData || !confirmRestoreData.data) return;
 
@@ -7275,7 +8002,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     }
   };
 
-  // 7. Seleção de Arquivo (para Desktop / Computador)
   const handleFileSelect = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -7327,7 +8053,7 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
             <div>
               <h3 className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
                 Backup & Sincronização
-                {!isVip && activeTab === 'export' && <Lock size={12} className="text-white/70" />}
+                {!isVip && activeTab === 'drive' && <Lock size={12} className="text-white/70" />}
               </h3>
               <p className="text-[11px] text-emerald-100 mt-0.5">Google Drive, WhatsApp & Celular</p>
             </div>
@@ -7338,32 +8064,47 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
           </button>
         </div>
 
-        {/* Segmented Control de Abas: Exportar vs Restaurar */}
-        <div className="px-4 pt-3 pb-1 bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
-          <div className="flex bg-slate-200/70 dark:bg-slate-800/80 p-1 rounded-xl">
+        {/* Segmented Control de Abas: Google Drive vs Exportar vs Restaurar */}
+        <div className="px-3 pt-3 pb-1 bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+          <div className="flex bg-slate-200/70 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('drive')}
+              className={`flex-1 py-2 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                activeTab === 'drive'
+                  ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Cloud size={13} />
+              <span>Nuvem</span>
+              {driveStatus.connected && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5"></span>
+              )}
+            </button>
             <button
               type="button"
               onClick={() => setActiveTab('export')}
-              className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 ${
                 activeTab === 'export'
                   ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
-              <Download size={14} />
-              <span>1. Salvar Dados</span>
+              <Download size={13} />
+              <span>Salvar</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('restore')}
-              className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 ${
                 activeTab === 'restore'
                   ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
-              <Upload size={14} />
-              <span>2. Restaurar</span>
+              <Upload size={13} />
+              <span>Restaurar</span>
             </button>
           </div>
         </div>
@@ -7371,7 +8112,191 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
         {/* Conteúdo com Scroll */}
         <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 hide-scrollbar">
           
-          {/* ================= ABA 1: EXPORTAR / SALVAR ================= */}
+          {/* ================= ABA 0: GOOGLE DRIVE (NUVEM AUTOMÁTICA) ================= */}
+          {activeTab === 'drive' && (
+            <div className="space-y-4 animate-fadeIn">
+              
+              {driveStatus.connected ? (
+                /* ESTADO CONECTADO */
+                <div className="space-y-3.5">
+                  {/* Card do Usuário Conectado */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50/50 dark:from-emerald-950/40 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800/60 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      {driveStatus.user?.picture ? (
+                        <img
+                          src={driveStatus.user.picture}
+                          alt="Google"
+                          className="w-11 h-11 rounded-full border-2 border-emerald-500 shadow-sm object-cover"
+                        />
+                      ) : (
+                        <div className="w-11 h-11 rounded-full bg-emerald-600 text-white font-black text-base flex items-center justify-center shadow-sm">
+                          {(driveStatus.user?.name || driveStatus.user?.email || 'G')[0].toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
+                            Google Drive Conectado
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate mt-0.5">
+                          {driveStatus.user?.name || 'Comerciante'}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {driveStatus.user?.email}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-emerald-200/60 dark:border-emerald-800/40 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500 dark:text-slate-400">Último backup:</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-200">
+                        {driveStatus.lastSync
+                          ? new Date(driveStatus.lastSync).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+                          : 'Pendente (ao salvar)'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Toggle de Auto-Sync */}
+                  <label className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 cursor-pointer">
+                    <div className="space-y-0.5 pr-2">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                        Backup Automático
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block leading-tight">
+                        Salva no Drive a cada nova venda ou quitação
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={driveStatus.autoSyncEnabled}
+                      onChange={(e) => {
+                        if (window.AppState && typeof window.AppState.setGoogleDriveAutoSync === 'function') {
+                          window.AppState.setGoogleDriveAutoSync(e.target.checked);
+                        }
+                      }}
+                      className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 rounded-md"
+                    />
+                  </label>
+
+                  {/* Botões de Ação para Conta Conectada */}
+                  <div className="space-y-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleSyncDriveNow}
+                      disabled={isDriveSyncing}
+                      className="w-full py-3 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                    >
+                      <RefreshCw size={15} className={isDriveSyncing ? 'animate-spin' : ''} />
+                      <span>{isDriveSyncing ? 'Salvando no Drive...' : 'Sincronizar Agora no Drive'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRestoreFromDrive}
+                      disabled={isDriveRestoring}
+                      className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                    >
+                      <Download size={15} className={isDriveRestoring ? 'animate-bounce' : 'text-emerald-600 dark:text-emerald-400'} />
+                      <span>{isDriveRestoring ? 'Baixando Dados...' : 'Restaurar Backup do Drive'}</span>
+                    </button>
+                  </div>
+
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={handleDisconnectDrive}
+                      className="text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 font-medium underline underline-offset-2"
+                    >
+                      Desconectar Conta Google
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* ESTADO DESCONECTADO */
+                <div className="space-y-3.5">
+                  <div className="p-3.5 bg-gradient-to-br from-blue-50 to-emerald-50/60 dark:from-slate-800/80 dark:to-slate-900 border border-blue-200/80 dark:border-slate-700/80 rounded-2xl text-center space-y-2">
+                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 shadow-md border border-slate-200 dark:border-slate-700 flex items-center justify-center mx-auto">
+                      <Google size={26} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                        Backup Automático em Nuvem
+                      </h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                        Conecte sua conta do Google Drive para que todas as suas vendas e clientes fiquem salvos <strong>automaticamente</strong> na sua própria nuvem.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Vantagens em bullet points */}
+                  <div className="space-y-2 px-1 text-xs text-slate-700 dark:text-slate-300">
+                    <div className="flex items-start gap-2">
+                      <ShieldCheck size={16} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                      <span><strong>100% Automático:</strong> Salva em segundo plano sem que você precise lembrar.</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <Lock size={16} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                      <span><strong>Privacidade Total:</strong> Fica guardado na sua conta Google pessoal.</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                      <span><strong>Troca de Aparelho:</strong> Perdeu ou trocou de telefone? Basta conectar e recuperar tudo em 1 toque.</span>
+                    </div>
+                  </div>
+
+                  {/* Botão de Conexão com Google */}
+                  <button
+                    type="button"
+                    onClick={handleConnectDrive}
+                    disabled={isDriveConnecting}
+                    className="w-full py-3.5 px-4 rounded-2xl font-bold text-xs sm:text-sm bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border-2 border-slate-300 dark:border-slate-600 shadow-md active:scale-95 transition-all flex items-center justify-center gap-2.5 disabled:opacity-60"
+                  >
+                    <Google size={20} />
+                    <span>{isDriveConnecting ? 'Conectando ao Google...' : 'Conectar com Google Drive'}</span>
+                  </button>
+
+                  {/* Opção Avançada de Client ID */}
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowDriveConfig(!showDriveConfig)}
+                      className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline"
+                    >
+                      {showDriveConfig ? 'Ocultar Configuração Avançada' : '⚙️ Configurar Google Client ID'}
+                    </button>
+                  </div>
+
+                  {showDriveConfig && (
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/70 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2 animate-fadeIn text-xs">
+                      <span className="font-bold text-slate-700 dark:text-slate-300 block">
+                        OAuth 2.0 Client ID (Google Cloud)
+                      </span>
+                      <input
+                        type="text"
+                        value={customClientId}
+                        onChange={(e) => setCustomClientId(e.target.value)}
+                        placeholder="ex: 123456789.apps.googleusercontent.com"
+                        className="w-full p-2 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveClientId}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors text-xs"
+                      >
+                        Salvar Client ID
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* ================= ABA 1: EXPORTAR / SALVAR MANUAL ================= */}
           {activeTab === 'export' && (
             <div className="space-y-3.5 animate-fadeIn">
               
@@ -7381,7 +8306,7 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
                 </p>
               </div>
 
-              {/* Botão Destaque Principal: Copiar Código (Zero Dependência de Arquivos) */}
+              {/* Botão Destaque Principal: Copiar Código */}
               <button
                 type="button"
                 onClick={handleCopyBackupCode}
@@ -7412,128 +8337,101 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
                   className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700"
                 >
                   <FileText size={15} className="text-emerald-600 dark:text-emerald-400" />
-                  <span>Arquivo .txt</span>
+                  <span>Baixar Arquivo</span>
                 </button>
               </div>
 
-              {/* Opção de Visualizar Código Diretamente na Tela */}
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+              {/* Pré-visualização do Código */}
+              <div className="pt-2">
                 <button
                   type="button"
                   onClick={() => setShowRawCode(!showRawCode)}
-                  className="w-full text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline py-1"
+                  className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline block mx-auto"
                 >
-                  {showRawCode ? '▲ Ocultar código na tela' : '▼ Ver código de backup na tela'}
+                  {showRawCode ? 'Ocultar código de texto' : 'Ver código de texto bruto'}
                 </button>
 
                 {showRawCode && (
-                  <div className="mt-2 space-y-2 animate-fadeIn">
-                    <textarea
-                      readOnly
-                      value={window.AppState.getBackupJsonString()}
-                      rows={4}
-                      className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-700 dark:text-slate-300 select-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleCopyBackupCode}
-                      className="w-full py-2 rounded-xl bg-slate-800 dark:bg-slate-700 text-white text-xs font-bold hover:bg-slate-700 transition-colors"
-                    >
-                      Copiar Todo o Código
-                    </button>
+                  <div className="mt-2 p-2.5 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[10px] font-mono max-h-32 overflow-y-auto break-all select-all text-slate-600 dark:text-slate-400">
+                    {window.AppState.getBackupJsonString()}
                   </div>
                 )}
               </div>
 
-              {!isVip && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl text-xs text-amber-800 dark:text-amber-300 text-center space-y-1">
-                  <p className="font-semibold flex items-center justify-center gap-1.5">
-                    <ShieldCheck size={14} /> Recurso Exclusivo VIP
-                  </p>
-                  <p className="text-[11px] opacity-90">
-                    O backup garante que você nunca perca o controle dos seus clientes e fiados.
-                  </p>
-                </div>
-              )}
             </div>
           )}
 
-          {/* ================= ABA 2: RESTAURAR / RECUPERAR ================= */}
+          {/* ================= ABA 2: RESTAURAR MANUAL ================= */}
           {activeTab === 'restore' && (
             <div className="space-y-3.5 animate-fadeIn">
               
-              <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Cole o código de backup gerado no seu celular antigo para restaurar seus clientes, fiados e plano VIP.
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-2xl border border-amber-200/80 dark:border-amber-800/40 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                <p className="leading-tight">
+                  A restauração substituirá todos os clientes e vendas atuais pelos dados do backup.
+                </p>
               </div>
 
-              {/* Botões de Apoio para Colar */}
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={handlePasteFromClipboard}
-                  className="py-1.5 px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center gap-1.5"
-                >
-                  <Copy size={13} />
-                  <span>Colar da Área de Transferência</span>
-                </button>
-
-                {pastedJson && (
+              {/* Opção Principal de Restauração: Colar Código */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Cole o código de backup aqui:
+                  </label>
                   <button
                     type="button"
-                    onClick={() => setPastedJson('')}
-                    className="text-[11px] text-rose-500 hover:underline font-medium"
+                    onClick={handlePasteFromClipboard}
+                    className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
                   >
-                    Limpar
+                    <Copy size={12} />
+                    <span>Colar</span>
                   </button>
-                )}
-              </div>
+                </div>
 
-              {/* Caixa de Texto Principal */}
-              <div>
                 <textarea
                   value={pastedJson}
-                  onChange={e => setPastedJson(e.target.value)}
-                  placeholder="Pressione e segure aqui para colar o código de backup..."
-                  rows={5}
-                  className="w-full p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 transition-colors"
+                  onChange={(e) => setPastedJson(e.target.value)}
+                  placeholder="Cole aqui o código que você salvou no WhatsApp ou bloco de notas..."
+                  rows={4}
+                  className="w-full p-3 rounded-2xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-none"
                 />
+
+                <button
+                  type="button"
+                  onClick={handlePromptRestore}
+                  disabled={!pastedJson.trim()}
+                  className="w-full py-3 px-4 rounded-2xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <CheckCircle2 size={16} />
+                  <span>Validar e Restaurar Dados</span>
+                </button>
               </div>
 
-              {/* Botão de Ação: Restaurar Dados */}
-              <button
-                type="button"
-                onClick={handlePromptRestore}
-                className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                <Upload size={18} />
-                <span>Restaurar Dados Agora</span>
-              </button>
-
-              {/* Seção Secundária: Para Usuários no Computador */}
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                <div className="text-center">
-                  <span className="text-[11px] text-slate-400 dark:text-slate-500 block mb-2">
-                    Ou selecione um arquivo se estiver no computador:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-slate-700 transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <FileText size={14} />
-                    <span>Selecionar arquivo .txt ou .json</span>
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".txt,.json,text/plain,application/json"
-                    onChange={handleFileSelect}
-                    style={{ display: 'none' }}
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    (No celular, utilize o campo de colar código acima)
-                  </p>
+              {/* Divisor */}
+              <div className="relative py-2">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-800"></div></div>
+                <div className="relative flex justify-center text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 px-2">
+                  ou
                 </div>
+              </div>
+
+              {/* Opção Alternativa: Carregar Arquivo de Texto */}
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-slate-700 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <FileText size={14} />
+                  <span>Selecionar arquivo .txt ou .json</span>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.json,text/plain,application/json"
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
               </div>
 
             </div>
@@ -7787,7 +8685,7 @@ window.OnboardingFlow = function OnboardingFlow({ onComplete }) {
       pixKeyType,
       pixKey: pixKey.trim(),
       city: city.trim(),
-      supportPhone: phone.replace(/\D/g, '')
+      supportPhone: ''
     };
     window.AppState.saveSettings(settings);
     onComplete();
@@ -8308,6 +9206,7 @@ function App() {
           onClose={() => setSettingsModalOpen(false)}
           shopSettings={shopSettings}
           onSaveSettings={(newSettings) => window.AppState.saveSettings(newSettings)}
+          onOpenBackup={() => setBackupModalOpen(true)}
         />
 
         {/* Modal de Instalação do Aplicativo (PWA) */}

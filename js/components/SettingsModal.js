@@ -3,7 +3,7 @@
  * Identidade visual comercial com suporte a exportação e importação por texto e arquivo (à prova de falhas no celular).
  */
 
-window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, onSaveSettings }) {
+window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, onSaveSettings, onOpenBackup }) {
   const [formData, setFormData] = React.useState({ ...shopSettings });
   const [saveSuccess, setSaveSuccess] = React.useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = React.useState(false);
@@ -12,7 +12,7 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
   const [feedbackDialog, setFeedbackDialog] = React.useState({ isOpen: false, title: '', message: '', variant: 'info' });
   
   const fileInputRef = React.useRef(null);
-  const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck, Store, Phone, QrCode, Copy, FileText } = window.Icons || {};
+  const { X, Settings, Download, Upload, Check, Trash2, ShieldCheck, Store, Phone, QrCode, Copy, FileText, Cloud } = window.Icons || {};
 
   const [confirmRestoreData, setConfirmRestoreData] = React.useState(null);
   const [sigPreview, setSigPreview] = React.useState(null);
@@ -244,14 +244,14 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
             </div>
 
             {/* Assinatura Digital Automática do Emissor / Proprietário */}
-            <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 transition-colors">
-              <div className="flex items-center justify-between">
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 transition-colors">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <Check size={14} className="text-blue-600 dark:text-blue-400" />
-                  Sua Assinatura Digital (Recibo PDF):
+                  <Check size={14} className="text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                  <span>Assinatura Digital (Recibo PDF)</span>
                 </label>
-                <span className="text-[10px] text-blue-700 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-500/20">
-                  Assina Sempre Automático
+                <span className="text-[10px] text-blue-700 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-500/20 whitespace-nowrap flex-shrink-0">
+                  Automático
                 </span>
               </div>
               
@@ -259,10 +259,10 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
                 type="text"
                 value={formData.ownerName || ''}
                 onChange={e => handleChange('ownerName', e.target.value)}
-                placeholder="Ex: Seu Nome Completo / Responsável"
+                placeholder="Ex: Seu Nome / Nome da Empresa"
                 className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
               />
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-relaxed">
                 Digite seu nome ou da empresa. O sistema gera sua rubrica caligráfica e já assina automaticamente a via do emissor em todos os recibos.
               </span>
 
@@ -352,6 +352,35 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
               </div>
             </div>
 
+            {/* Backup & Nuvem Google Drive */}
+            <div className="p-3.5 bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-950/30 dark:to-blue-950/20 rounded-xl border border-emerald-200/80 dark:border-emerald-800/40 space-y-2.5 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Cloud size={16} className="text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Backup Automático & Nuvem
+                  </span>
+                </div>
+                <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">
+                  Google Drive
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight">
+                Mantenha suas vendas, clientes e fiados 100% seguros com backup automático na sua conta Google ou exporte cópias manuais.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (typeof onOpenBackup === 'function') onOpenBackup();
+                }}
+                className="w-full py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5"
+              >
+                <Cloud size={14} />
+                <span>Abrir Central de Backup & Drive</span>
+              </button>
+            </div>
+
             {/* Seção de Limpeza de Dados */}
             <div className="p-3.5 bg-rose-50/50 dark:bg-rose-950/20 rounded-xl border border-rose-100 dark:border-rose-900/30 transition-colors">
               <button
@@ -368,16 +397,16 @@ window.SettingsModal = function SettingsModal({ isOpen, onClose, shopSettings, o
         </div>
 
         {/* Rodapé com Salvar */}
-        <div className="p-3.5 bg-slate-50 dark:bg-slate-950/90 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors">
-          <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
-            <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
-            Dados 100% seguros • v2.1.0
+        <div className="p-3.5 bg-slate-50 dark:bg-slate-950/90 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 transition-colors">
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 min-w-0 truncate">
+            <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+            <span className="truncate">Dados seguros • v2.1.0</span>
           </span>
 
           <button
             type="submit"
             form="settings-form"
-            className="py-2.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all active:scale-95 shadow-md btn-smooth"
+            className="py-2.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all active:scale-95 shadow-md btn-smooth flex-shrink-0"
           >
             {saveSuccess ? (
               <>
