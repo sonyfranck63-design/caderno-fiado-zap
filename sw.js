@@ -11,7 +11,6 @@ const PRECACHE_ASSETS = [
   './manifest.json',
   './css/styles.css',
   './js/bundle.js',
-  './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './vendor/tailwindcss.js',

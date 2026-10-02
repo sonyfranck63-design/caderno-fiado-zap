@@ -423,7 +423,7 @@ window.ClientDetailModal = function ClientDetailModal({
               </span>
             )}
             <PenTool size={16} />
-            <span className="font-bold text-xs">Formalizar Acordo Anticalote</span>
+            <span className="font-bold text-xs">Assinar Termo de Compromisso</span>
           </button>
         </div>
 
@@ -982,8 +982,8 @@ window.ClientDetailModal = function ClientDetailModal({
               if (result && result.success && result.blob) {
                 // Converte em objeto File válido e passa para a Web Share API
                 const cleanClientName = (client.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
-                const filename = `Acordo_Anticalote_${cleanClientName}.pdf`;
-                const title = `Acordo Anticalote - ${client.name}`;
+                const filename = `Termo_de_Compromisso_${cleanClientName}.pdf`;
+                const title = `Termo de Compromisso - ${client.name}`;
                 const text = `Olá ${client.name}! Segue o Acordo de Confissão de Dívida formalizado e assinado.`;
 
                 // Compartilhamento com suporte nativo Android e Web Share API

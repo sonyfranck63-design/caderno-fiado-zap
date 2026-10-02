@@ -116,7 +116,7 @@ window.VipTab = function VipTab({
             <span className="font-bold block">
               {triggerReason === 'pix' && 'Cobrança PIX Automática é um recurso VIP!'}
               {triggerReason === 'pdf' && 'Emissão de Recibos em PDF é um recurso VIP!'}
-              {triggerReason === 'signature' && 'A Assinatura Anticalote é um recurso VIP!'}
+              {triggerReason === 'signature' && 'A Assinatura de Termos é um recurso VIP!'}
               {triggerReason === 'backup' && 'O Backup de Segurança é um recurso VIP!'}
               {triggerReason === 'mass_billing' && 'A Cobrança em Massa é um recurso VIP!'}
               {(!triggerReason || !['pix', 'pdf', 'signature', 'backup', 'mass_billing'].includes(triggerReason)) && 'Esse é um recurso VIP exclusivo!'}
@@ -204,7 +204,7 @@ window.VipTab = function VipTab({
               </h2>
               <ul className="text-left text-xs text-slate-700 dark:text-slate-300 mt-3 mx-auto max-w-xs space-y-2">
                 <li className="flex items-center gap-2"><FileText size={14} className="text-emerald-500" /> Extratos em PDF com a Logo do negócio</li>
-                <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> Assinatura Anticalote de Clientes</li>
+                <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> Assinatura de Termo de Compromisso</li>
                 <li className="flex items-center gap-2"><ShieldCheck size={14} className="text-emerald-500" /> Backup de segurança na nuvem</li>
                 <li className="flex items-center gap-2"><Star size={14} className="text-emerald-500" /> Zero propagandas no aplicativo</li>
               </ul>
