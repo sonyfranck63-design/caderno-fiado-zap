@@ -50,6 +50,55 @@
     })();
   </script>
 
+  <!-- Captura e Tratamento Elegante de Redirecionamento OAuth Google Drive -->
+  <script>
+    (function() {
+      try {
+        var hash = window.location.hash || '';
+        if (hash.indexOf('access_token=') !== -1) {
+          var match = hash.match(/access_token=([^&]+)/);
+          if (match && match[1]) {
+            var token = decodeURIComponent(match[1]);
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(token).catch(function() {});
+            }
+            window.addEventListener('DOMContentLoaded', function() {
+              var overlay = document.createElement('div');
+              overlay.id = 'oauth-success-overlay';
+              overlay.style.cssText = 'position:fixed;inset:0;background:#090d16;color:#fff;z-index:9999999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:sans-serif;';
+              overlay.innerHTML = 
+                '<div style="width:84px;height:84px;border-radius:26px;background:linear-gradient(135deg,#059669,#10b981);display:flex;align-items:center;justify-content:center;margin-bottom:20px;box-shadow:0 12px 30px rgba(16,185,129,0.4);">' +
+                  '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>' +
+                '</div>' +
+                '<h2 style="font-size:22px;font-weight:800;margin-bottom:8px;color:#fff;">Google Drive Autorizado!</h2>' +
+                '<p style="font-size:13px;color:#94a3b8;margin-bottom:20px;max-width:320px;line-height:1.5;">Sua autorização foi concluída com sucesso no Google. A chave de acesso já foi copiada.</p>' +
+                '<button id="btn-return-app" style="width:100%;max-width:320px;padding:15px;background:#10b981;color:#fff;border:none;border-radius:16px;font-size:14px;font-weight:700;margin-bottom:12px;cursor:pointer;box-shadow:0 4px 14px rgba(16,185,129,0.3);">' +
+                  '📱 VOLTAR AO APLICATIVO' +
+                '</button>' +
+                '<p id="copy-status" style="font-size:12px;color:#10b981;font-weight:600;">✓ Chave copiada! Basta retornar ao app</p>';
+              document.body.appendChild(overlay);
+
+              var btn = document.getElementById('btn-return-app');
+              if (btn) {
+                btn.onclick = function() {
+                  if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(token).catch(function() {});
+                  }
+                  try {
+                    window.location.href = 'intent://#Intent;package=net.mikespub.mywebview;scheme=mywebview;end;';
+                  } catch(e) {}
+                  setTimeout(function() {
+                    window.close();
+                  }, 600);
+                };
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    })();
+  </script>
+
   <!-- Tailwind CSS Local (Offline) -->
   <script src="vendor/tailwindcss.js"></script>
   <script>

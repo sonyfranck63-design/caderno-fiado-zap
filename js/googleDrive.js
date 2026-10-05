@@ -232,8 +232,8 @@
         'https://www.googleapis.com/auth/userinfo.profile'
       ].join(' ');
 
-      // Redirecionamento configurado no Google Cloud Console
-      var redirectUri = 'https://sonyfranck63.github.io/caderno-fiado-zap';
+      // Redirecionamento oficial registrado no Google Cloud Console
+      var redirectUri = 'https://sonyfranck63-design.github.io/caderno-fiado-zap';
 
       return 'https://accounts.google.com/o/oauth2/v2/auth' +
         '?client_id=' + encodeURIComponent(clientId) +
