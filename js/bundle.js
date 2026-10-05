@@ -1092,20 +1092,38 @@ window.PdfService = (function() {
 
         self.fetchUserInfo(cleanToken).then(function(user) {
           localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
-          if (window.AppState && typeof window.AppState.getBackupData === 'function') {
-            self.uploadBackup(window.AppState.getBackupData()).catch(function(e) {
-              console.warn('[GoogleDrive] Sync inicial falhou silenciosamente:', e);
-            });
-          }
+
+          // Verificação inteligente da nuvem (NÃO faz upload cego para não apagar backup se o celular for novo/zerado!)
+          self.findExistingBackupFile(cleanToken).then(function(file) {
+            if (file && file.id) {
+              var downloadUrl = 'https://www.googleapis.com/drive/v3/files/' + file.id + '?alt=media';
+              fetch(downloadUrl, { headers: { 'Authorization': 'Bearer ' + cleanToken } })
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(cloudData) {
+                  if (cloudData) {
+                    // Blindagem antifraude: se o backup na nuvem já tem histórico de clientes ou trial usado, bloqueia o teste neste aparelho
+                    if (cloudData.trialUsed || (Array.isArray(cloudData.clients) && cloudData.clients.length > 0)) {
+                      try { localStorage.setItem('cf_trial_used', 'true'); } catch(e) {}
+                    }
+                    if (cloudData.license && cloudData.deviceId) {
+                      try {
+                        localStorage.setItem('cf_device_id', cloudData.deviceId);
+                        localStorage.setItem('cf_vip_license', JSON.stringify(cloudData.license));
+                        localStorage.setItem('cf_vip_pro', 'true');
+                      } catch(e) {}
+                    }
+                    if (window.AppState && typeof window.AppState.notify === 'function') {
+                      window.AppState.notify();
+                    }
+                  }
+                }).catch(function() {});
+            }
+          }).catch(function() {});
+
           resolve({ success: true, user: user });
         }).catch(function(err) {
           var fallbackUser = { email: 'Conta Conectada', name: 'Usuário Google' };
           localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(fallbackUser));
-          if (window.AppState && typeof window.AppState.getBackupData === 'function') {
-            self.uploadBackup(window.AppState.getBackupData()).catch(function(e) {
-              console.warn('[GoogleDrive] Sync inicial falhou silenciosamente:', e);
-            });
-          }
           resolve({ success: true, user: fallbackUser });
         });
       });
@@ -1304,11 +1322,23 @@ window.PdfService = (function() {
         }
 
         var jsonString = typeof backupData === 'string' ? backupData : JSON.stringify(backupData, null, 2);
+        var parsed = null;
+        try { parsed = typeof backupData === 'string' ? JSON.parse(backupData) : backupData; } catch (e) {}
+        var localClientsCount = (parsed && Array.isArray(parsed.clients)) ? parsed.clients.length : 0;
 
         // 1. Procurar o arquivo de backup existente (ou usar o ID já em cache)
         self.findExistingBackupFile(token).then(function(existingFile) {
           if (existingFile && existingFile.id) {
             try { localStorage.setItem(STORAGE_KEYS.FILE_ID, existingFile.id); } catch (e) {}
+
+            // TRAVA DE SEGURANÇA: Se a base local está vazia (0 clientes) e o arquivo no Drive já tem dados,
+            // NÃO permite sobrescrever a nuvem com dados vazios para proteger o usuário de perder seu backup!
+            if (localClientsCount === 0 && existingFile.size && parseInt(existingFile.size, 10) > 300) {
+              console.warn('[GoogleDrive] Trava de segurança: tentativa de sobrescrever nuvem com dados locais vazios bloqueada.');
+              isSyncing = false;
+              resolve({ skipped: true, reason: 'protected_empty_local', timestamp: new Date().toISOString() });
+              return;
+            }
 
             // Atualizar o arquivo existente (PATCH sobrescreve o conteúdo sem criar arquivo novo)
             var updateUrl = 'https://www.googleapis.com/upload/drive/v3/files/' + existingFile.id + '?uploadType=media';
@@ -1444,6 +1474,10 @@ window.PdfService = (function() {
       autoSyncTimer = setTimeout(function() {
         if (!window.AppState || typeof window.AppState.getBackupData !== 'function') return;
         var data = window.AppState.getBackupData();
+        // Não faz auto-sync se a base local estiver vazia (evita apagar backup existente)
+        if (!data || !Array.isArray(data.clients) || data.clients.length === 0) {
+          return;
+        }
         self.uploadBackup(data).then(function() {
           console.log('[GoogleDrive] Backup automático enviado com sucesso.');
         }).catch(function(err) {
