@@ -901,7 +901,8 @@ window.PdfService = (function() {
     TOKEN_EXPIRES: 'cf_gdrive_token_expires',
     USER: 'cf_gdrive_user',
     LAST_SYNC: 'cf_gdrive_last_sync',
-    AUTO_SYNC_ENABLED: 'cf_gdrive_autosync_enabled'
+    AUTO_SYNC_ENABLED: 'cf_gdrive_autosync_enabled',
+    FILE_ID: 'cf_gdrive_file_id'
   };
 
   var BACKUP_FILENAME = 'cadernofiado_backup.json';
@@ -1216,31 +1217,78 @@ window.PdfService = (function() {
 
     /**
      * Localiza o arquivo de backup existente no Google Drive
+     * Mantém sempre 1 único arquivo no Drive, ordenando pelo mais recente e limpando duplicatas
      */
     findExistingBackupFile: function(token) {
       var self = this;
-      var query = encodeURIComponent("name = '" + BACKUP_FILENAME + "' and trashed = false");
-      var url = 'https://www.googleapis.com/drive/v3/files?q=' + query + '&fields=files(id,name,modifiedTime,size)&spaces=drive';
+      var cachedId = null;
+      try {
+        cachedId = localStorage.getItem(STORAGE_KEYS.FILE_ID);
+      } catch (e) {}
 
-      return fetch(url, {
-        headers: { 'Authorization': 'Bearer ' + token }
-      }).then(function(res) {
-        if (!res.ok) {
-          return self.parseGoogleError(res, 'Falha ao buscar arquivo no Google Drive').then(function(err) {
-            throw err;
-          });
+      // Verificação rápida por ID em cache para evitar latência de busca e indexação
+      var checkCachedPromise = cachedId
+        ? fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(cachedId) + '?fields=id,name,trashed', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          }).then(function(res) {
+            if (res.ok) {
+              return res.json().then(function(meta) {
+                if (meta && !meta.trashed && meta.id) {
+                  return meta;
+                }
+                return null;
+              });
+            }
+            return null;
+          }).catch(function() { return null; })
+        : Promise.resolve(null);
+
+      return checkCachedPromise.then(function(cachedFile) {
+        if (cachedFile && cachedFile.id) {
+          return cachedFile;
         }
-        return res.json();
-      }).then(function(data) {
-        if (data.files && data.files.length > 0) {
-          return data.files[0];
-        }
-        return null;
+
+        // Se não encontrou pelo ID em cache, pesquisa por nome ordenando pelo mais recente
+        var query = encodeURIComponent("name = '" + BACKUP_FILENAME + "' and trashed = false");
+        var url = 'https://www.googleapis.com/drive/v3/files?q=' + query + '&fields=files(id,name,modifiedTime,size)&orderBy=modifiedTime%20desc&spaces=drive';
+
+        return fetch(url, {
+          headers: { 'Authorization': 'Bearer ' + token }
+        }).then(function(res) {
+          if (!res.ok) {
+            return self.parseGoogleError(res, 'Falha ao buscar arquivo no Google Drive').then(function(err) {
+              throw err;
+            });
+          }
+          return res.json();
+        }).then(function(data) {
+          if (data.files && data.files.length > 0) {
+            var primaryFile = data.files[0];
+            try {
+              localStorage.setItem(STORAGE_KEYS.FILE_ID, primaryFile.id);
+            } catch (e) {}
+
+            // Se existirem duplicatas anteriores, remove em segundo plano para manter o Drive 100% limpo com apenas 1 arquivo
+            if (data.files.length > 1) {
+              for (var i = 1; i < data.files.length; i++) {
+                (function(dupId) {
+                  fetch('https://www.googleapis.com/drive/v3/files/' + dupId, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                  }).catch(function() {});
+                })(data.files[i].id);
+              }
+            }
+
+            return primaryFile;
+          }
+          return null;
+        });
       });
     },
 
     /**
-     * Envia os dados de backup para o Google Drive (cria ou atualiza)
+     * Envia os dados de backup para o Google Drive (atualiza o arquivo existente ou cria o único)
      */
     uploadBackup: function(backupData) {
       var self = this;
@@ -1257,10 +1305,12 @@ window.PdfService = (function() {
 
         var jsonString = typeof backupData === 'string' ? backupData : JSON.stringify(backupData, null, 2);
 
-        // 1. Procurar se já existe o arquivo
+        // 1. Procurar o arquivo de backup existente (ou usar o ID já em cache)
         self.findExistingBackupFile(token).then(function(existingFile) {
           if (existingFile && existingFile.id) {
-            // Atualizar arquivo existente (PATCH simples uploadType=media)
+            try { localStorage.setItem(STORAGE_KEYS.FILE_ID, existingFile.id); } catch (e) {}
+
+            // Atualizar o arquivo existente (PATCH sobrescreve o conteúdo sem criar arquivo novo)
             var updateUrl = 'https://www.googleapis.com/upload/drive/v3/files/' + existingFile.id + '?uploadType=media';
             return fetch(updateUrl, {
               method: 'PATCH',
@@ -1278,7 +1328,7 @@ window.PdfService = (function() {
               return res.json();
             });
           } else {
-            // Criar novo arquivo (2-passos oficiais da Google Drive REST API v3: metadados JSON + uploadType=media)
+            // Criar arquivo inicial único (2-passos oficiais da Google Drive REST API v3: metadados JSON + uploadType=media)
             var metadata = {
               name: BACKUP_FILENAME,
               description: 'Backup de Segurança do Aplicativo CadernoFiado Zap',
@@ -1304,6 +1354,9 @@ window.PdfService = (function() {
               if (!newFile || !newFile.id) {
                 throw new Error('Falha ao obter ID do novo arquivo criado no Google Drive.');
               }
+
+              try { localStorage.setItem(STORAGE_KEYS.FILE_ID, newFile.id); } catch (e) {}
+
               var uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files/' + newFile.id + '?uploadType=media';
               return fetch(uploadUrl, {
                 method: 'PATCH',
@@ -1419,6 +1472,7 @@ window.PdfService = (function() {
         localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRES);
         localStorage.removeItem(STORAGE_KEYS.USER);
         localStorage.removeItem(STORAGE_KEYS.LAST_SYNC);
+        localStorage.removeItem(STORAGE_KEYS.FILE_ID);
       } catch (e) {}
 
       if (autoSyncTimer) {
