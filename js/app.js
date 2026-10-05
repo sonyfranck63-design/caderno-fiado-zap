@@ -176,6 +176,7 @@ function App() {
               onWatchRewarded={() => setRewardedModalOpen(true)}
               triggerReason={paywallReason}
               shopSettings={shopSettings}
+              onOpenBackup={() => setBackupModalOpen(true)}
             />
           )}
         </main>

@@ -8,7 +8,8 @@ window.VipTab = function VipTab({
   vipInfo,
   onWatchRewarded,
   triggerReason,
-  shopSettings
+  shopSettings,
+  onOpenBackup
 }) {
   const [selectedPlan, setSelectedPlan] = React.useState('monthly'); // 'monthly' | 'annual' | 'lifetime'
   const [licenseCode, setLicenseCode] = React.useState('');
@@ -18,7 +19,7 @@ window.VipTab = function VipTab({
 
   const {
     Crown, Sparkles, Check, QrCode, FileText, ShieldCheck,
-    Play, Clock, Star, Users, CheckCircle2, DollarSign, Copy, MessageCircle, AlertTriangle
+    Play, Clock, Star, Users, CheckCircle2, DollarSign, Copy, MessageCircle, AlertTriangle, Cloud
   } = window.Icons || {};
 
   const installationId = vipInfo.installationId || (window.AppState ? window.AppState.getInstallationId() : '');
@@ -327,6 +328,44 @@ window.VipTab = function VipTab({
                 {activating ? 'Validando código...' : 'Ativar Código'}
               </button>
             </form>
+          </div>
+
+          {/* Já assinou anteriormente ou trocou de aparelho? */}
+          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-500/20 text-center space-y-2">
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block">
+              Já é assinante ou trocou de celular?
+            </span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+              Recupere todas as suas vendas e seu plano VIP do Google Drive ou da memória deste aparelho:
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              {onOpenBackup && (
+                <button
+                  type="button"
+                  onClick={onOpenBackup}
+                  className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm btn-smooth"
+                >
+                  <Cloud size={14} />
+                  <span>Restaurar da Nuvem (Drive)</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.AppState) {
+                    const info = window.AppState.getVipInfo();
+                    if (info && info.isVip) {
+                      alert('Licença VIP reconhecida e restaurada com sucesso!');
+                    } else {
+                      alert('ID deste aparelho verificado: ' + installationId + '\n\nPara restaurar suas vendas e plano, toque em "Restaurar da Nuvem (Drive)" e conecte sua conta Google.');
+                    }
+                  }
+                }}
+                className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
+              >
+                Checar Aparelho
+              </button>
+            </div>
           </div>
 
           {/* Opção Gratuita: Vídeo Premiado 24h (Degustação única por aparelho) */}

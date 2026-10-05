@@ -684,7 +684,26 @@ window.AppState = (function() {
   function getStoredLicense() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY_LICENSE);
-      return raw ? JSON.parse(raw) : null;
+      if (raw) return JSON.parse(raw);
+
+      // Auto-restauração por Hardware: se o usuário limpou dados ou reinstalou o app,
+      // busca o arquivo persistente de licença gravado no armazenamento do aparelho
+      if (typeof window !== 'undefined' && window.androidAppProxy && typeof window.androidAppProxy.getLicenseData === 'function') {
+        const persisted = window.androidAppProxy.getLicenseData();
+        if (persisted && typeof persisted === 'string' && persisted.trim()) {
+          const lic = JSON.parse(persisted);
+          if (lic && lic.key) {
+            localStorage.setItem(STORAGE_KEY_LICENSE, persisted);
+            localStorage.setItem(STORAGE_KEY_VIP, 'true');
+            if (lic.deviceId) {
+              localStorage.setItem(STORAGE_KEY_DEVICE_ID, lic.deviceId);
+            }
+            console.log('[AppState] Licença VIP restaurada automaticamente do hardware do aparelho!');
+            return lic;
+          }
+        }
+      }
+      return null;
     } catch(e) {
       return null;
     }
@@ -692,8 +711,21 @@ window.AppState = (function() {
 
   function saveLicense(licenseObj) {
     try {
-      localStorage.setItem(STORAGE_KEY_LICENSE, JSON.stringify(licenseObj));
-      localStorage.setItem(STORAGE_KEY_VIP, licenseObj ? 'true' : 'false');
+      if (licenseObj) {
+        const json = JSON.stringify(licenseObj);
+        localStorage.setItem(STORAGE_KEY_LICENSE, json);
+        localStorage.setItem(STORAGE_KEY_VIP, 'true');
+        // Salva cópia de segurança em armazenamento persistente do Android (sobrevive a "limpar dados" e desinstalação)
+        if (typeof window !== 'undefined' && window.androidAppProxy && typeof window.androidAppProxy.saveLicenseData === 'function') {
+          window.androidAppProxy.saveLicenseData(json);
+        }
+      } else {
+        localStorage.removeItem(STORAGE_KEY_LICENSE);
+        localStorage.setItem(STORAGE_KEY_VIP, 'false');
+        if (typeof window !== 'undefined' && window.androidAppProxy && typeof window.androidAppProxy.saveLicenseData === 'function') {
+          window.androidAppProxy.saveLicenseData('');
+        }
+      }
       notify();
     } catch(e) {}
   }
@@ -1497,4 +1529,22 @@ window.AppState = (function() {
     resetAll,
     isFirstUse
   };
+})();
+
+// Sincronização e Auto-Restauração Imediata por Hardware Android
+(function initPersistentState() {
+  function syncHardware() {
+    try {
+      if (window.AppState) {
+        window.AppState.getInstallationId();
+        window.AppState.getVipInfo();
+      }
+    } catch(e) {}
+  }
+  syncHardware();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('DOMContentLoaded', syncHardware);
+    setTimeout(syncHardware, 200);
+    setTimeout(syncHardware, 800);
+  }
 })();

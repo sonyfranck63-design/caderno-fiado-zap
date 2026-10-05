@@ -105,11 +105,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
 
   // --- AÇÕES DO GOOGLE DRIVE ---
   const handleConnectDrive = async () => {
-    if (!isVip) {
-      onTriggerPaywall('backup');
-      return;
-    }
-
     setIsDriveConnecting(true);
     try {
       const res = await window.AppState.connectGoogleDrive(customClientId ? customClientId.trim() : null);
@@ -514,7 +509,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
             <div>
               <h3 className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
                 Backup & Sincronização
-                {!isVip && activeTab === 'drive' && <Lock size={12} className="text-white/70" />}
               </h3>
               <p className="text-[11px] text-emerald-100 mt-0.5">Google Drive, WhatsApp & Celular</p>
             </div>

@@ -2240,7 +2240,26 @@ window.AppState = (function() {
   function getStoredLicense() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY_LICENSE);
-      return raw ? JSON.parse(raw) : null;
+      if (raw) return JSON.parse(raw);
+
+      // Auto-restauração por Hardware: se o usuário limpou dados ou reinstalou o app,
+      // busca o arquivo persistente de licença gravado no armazenamento do aparelho
+      if (typeof window !== 'undefined' && window.androidAppProxy && typeof window.androidAppProxy.getLicenseData === 'function') {
+        const persisted = window.androidAppProxy.getLicenseData();
+        if (persisted && typeof persisted === 'string' && persisted.trim()) {
+          const lic = JSON.parse(persisted);
+          if (lic && lic.key) {
+            localStorage.setItem(STORAGE_KEY_LICENSE, persisted);
+            localStorage.setItem(STORAGE_KEY_VIP, 'true');
+            if (lic.deviceId) {
+              localStorage.setItem(STORAGE_KEY_DEVICE_ID, lic.deviceId);
+            }
+            console.log('[AppState] Licença VIP restaurada automaticamente do hardware do aparelho!');
+            return lic;
+          }
+        }
+      }
+      return null;
     } catch(e) {
       return null;
     }
@@ -2248,8 +2267,21 @@ window.AppState = (function() {
 
   function saveLicense(licenseObj) {
     try {
-      localStorage.setItem(STORAGE_KEY_LICENSE, JSON.stringify(licenseObj));
-      localStorage.setItem(STORAGE_KEY_VIP, licenseObj ? 'true' : 'false');
+      if (licenseObj) {
+        const json = JSON.stringify(licenseObj);
+        localStorage.setItem(STORAGE_KEY_LICENSE, json);
+        localStorage.setItem(STORAGE_KEY_VIP, 'true');
+        // Salva cópia de segurança em armazenamento persistente do Android (sobrevive a "limpar dados" e desinstalação)
+        if (typeof window !== 'undefined' && window.androidAppProxy && typeof window.androidAppProxy.saveLicenseData === 'function') {
+          window.androidAppProxy.saveLicenseData(json);
+        }
+      } else {
+        localStorage.removeItem(STORAGE_KEY_LICENSE);
+        localStorage.setItem(STORAGE_KEY_VIP, 'false');
+        if (typeof window !== 'undefined' && window.androidAppProxy && typeof window.androidAppProxy.saveLicenseData === 'function') {
+          window.androidAppProxy.saveLicenseData('');
+        }
+      }
       notify();
     } catch(e) {}
   }
@@ -3053,6 +3085,24 @@ window.AppState = (function() {
     resetAll,
     isFirstUse
   };
+})();
+
+// Sincronização e Auto-Restauração Imediata por Hardware Android
+(function initPersistentState() {
+  function syncHardware() {
+    try {
+      if (window.AppState) {
+        window.AppState.getInstallationId();
+        window.AppState.getVipInfo();
+      }
+    } catch(e) {}
+  }
+  syncHardware();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('DOMContentLoaded', syncHardware);
+    setTimeout(syncHardware, 200);
+    setTimeout(syncHardware, 800);
+  }
 })();
 
 
@@ -7247,7 +7297,8 @@ window.VipTab = function VipTab({
   vipInfo,
   onWatchRewarded,
   triggerReason,
-  shopSettings
+  shopSettings,
+  onOpenBackup
 }) {
   const [selectedPlan, setSelectedPlan] = React.useState('monthly'); // 'monthly' | 'annual' | 'lifetime'
   const [licenseCode, setLicenseCode] = React.useState('');
@@ -7257,7 +7308,7 @@ window.VipTab = function VipTab({
 
   const {
     Crown, Sparkles, Check, QrCode, FileText, ShieldCheck,
-    Play, Clock, Star, Users, CheckCircle2, DollarSign, Copy, MessageCircle, AlertTriangle
+    Play, Clock, Star, Users, CheckCircle2, DollarSign, Copy, MessageCircle, AlertTriangle, Cloud
   } = window.Icons || {};
 
   const installationId = vipInfo.installationId || (window.AppState ? window.AppState.getInstallationId() : '');
@@ -7566,6 +7617,44 @@ window.VipTab = function VipTab({
                 {activating ? 'Validando código...' : 'Ativar Código'}
               </button>
             </form>
+          </div>
+
+          {/* Já assinou anteriormente ou trocou de aparelho? */}
+          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-500/20 text-center space-y-2">
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block">
+              Já é assinante ou trocou de celular?
+            </span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+              Recupere todas as suas vendas e seu plano VIP do Google Drive ou da memória deste aparelho:
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              {onOpenBackup && (
+                <button
+                  type="button"
+                  onClick={onOpenBackup}
+                  className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm btn-smooth"
+                >
+                  <Cloud size={14} />
+                  <span>Restaurar da Nuvem (Drive)</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.AppState) {
+                    const info = window.AppState.getVipInfo();
+                    if (info && info.isVip) {
+                      alert('Licença VIP reconhecida e restaurada com sucesso!');
+                    } else {
+                      alert('ID deste aparelho verificado: ' + installationId + '\n\nPara restaurar suas vendas e plano, toque em "Restaurar da Nuvem (Drive)" e conecte sua conta Google.');
+                    }
+                  }
+                }}
+                className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs border border-slate-300 dark:border-slate-700 transition-colors btn-smooth"
+              >
+                Checar Aparelho
+              </button>
+            </div>
           </div>
 
           {/* Opção Gratuita: Vídeo Premiado 24h (Degustação única por aparelho) */}
@@ -7991,11 +8080,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
 
   // --- AÇÕES DO GOOGLE DRIVE ---
   const handleConnectDrive = async () => {
-    if (!isVip) {
-      onTriggerPaywall('backup');
-      return;
-    }
-
     setIsDriveConnecting(true);
     try {
       const res = await window.AppState.connectGoogleDrive(customClientId ? customClientId.trim() : null);
@@ -8400,7 +8484,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
             <div>
               <h3 className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
                 Backup & Sincronização
-                {!isVip && activeTab === 'drive' && <Lock size={12} className="text-white/70" />}
               </h3>
               <p className="text-[11px] text-emerald-100 mt-0.5">Google Drive, WhatsApp & Celular</p>
             </div>
@@ -9521,6 +9604,7 @@ function App() {
               onWatchRewarded={() => setRewardedModalOpen(true)}
               triggerReason={paywallReason}
               shopSettings={shopSettings}
+              onOpenBackup={() => setBackupModalOpen(true)}
             />
           )}
         </main>

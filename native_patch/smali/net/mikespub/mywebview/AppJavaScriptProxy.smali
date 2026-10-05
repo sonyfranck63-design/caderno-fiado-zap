@@ -566,7 +566,7 @@
 .end method
 
 .method public getHardwareId()Ljava/lang/String;
-    .locals 3
+    .locals 4
     .annotation runtime Landroid/webkit/JavascriptInterface;
     .end annotation
 
@@ -583,17 +583,202 @@
 
     move-result-object v0
 
-    if-eqz v0, :cond_empty
+    if-eqz v0, :cond_check_fallback
+
+    invoke-virtual {v0}, Ljava/lang/String;->trim()Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-virtual {v1}, Ljava/lang/String;->isEmpty()Z
+
+    move-result v1
+
+    if-nez v1, :cond_check_fallback
+
+    const-string v1, "9774d56d682e549c"
+
+    invoke-virtual {v1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+
+    move-result v1
+
+    if-nez v1, :cond_check_fallback
 
     return-object v0
 
-    :cond_empty
+    :cond_check_fallback
     :try_end_hwid
-    .catch Ljava/lang/Exception; {:try_start_hwid .. :try_end_hwid} :catch_hwid
+    .catch Ljava/lang/Throwable; {:try_start_hwid .. :try_end_hwid} :catch_hwid
+
+    goto :cond_build_fallback
 
     :catch_hwid
+    move-exception v1
+
+    :cond_build_fallback
+    :try_start_build
+    new-instance v0, Ljava/lang/StringBuilder;
+
+    invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
+
+    sget-object v1, Landroid/os/Build;->MANUFACTURER:Ljava/lang/String;
+
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    const-string v1, "_"
+
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    sget-object v1, Landroid/os/Build;->MODEL:Ljava/lang/String;
+
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    const-string v1, "_"
+
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    sget-object v1, Landroid/os/Build;->BOARD:Ljava/lang/String;
+
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v0
+
+    return-object v0
+    :try_end_build
+    .catch Ljava/lang/Throwable; {:try_start_build .. :try_end_build} :catch_build
+
+    :catch_build
+    move-exception v1
+
+    const-string v0, "CF_DEVICE_HARDWARE_STABLE"
+
+    return-object v0
+.end method
+
+.method public saveLicenseData(Ljava/lang/String;)Z
+    .locals 5
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
+
+    const/4 v0, 0x0
+
+    if-nez p1, :cond_check_empty
+
+    const-string p1, ""
+
+    :cond_check_empty
+    :try_start_lic_save
+    sget-object v1, Landroid/os/Environment;->DIRECTORY_DOWNLOADS:Ljava/lang/String;
+
+    invoke-static {v1}, Landroid/os/Environment;->getExternalStoragePublicDirectory(Ljava/lang/String;)Ljava/io/File;
+
+    move-result-object v1
+
+    if-eqz v1, :cond_exit_lic
+
+    invoke-virtual {v1}, Ljava/io/File;->exists()Z
+
+    move-result v2
+
+    if-nez v2, :cond_mkdir_lic
+
+    invoke-virtual {v1}, Ljava/io/File;->mkdirs()Z
+
+    :cond_mkdir_lic
+    new-instance v2, Ljava/io/File;
+
+    const-string v3, ".cf_license_backup.json"
+
+    invoke-direct {v2, v1, v3}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+
+    new-instance v1, Ljava/io/FileOutputStream;
+
+    invoke-direct {v1, v2}, Ljava/io/FileOutputStream;-><init>(Ljava/io/File;)V
+
+    const-string v2, "UTF-8"
+
+    invoke-virtual {p1, v2}, Ljava/lang/String;->getBytes(Ljava/lang/String;)[B
+
+    move-result-object v2
+
+    invoke-virtual {v1, v2}, Ljava/io/FileOutputStream;->write([B)V
+
+    invoke-virtual {v1}, Ljava/io/FileOutputStream;->flush()V
+
+    invoke-virtual {v1}, Ljava/io/FileOutputStream;->close()V
+    :try_end_lic_save
+    .catch Ljava/lang/Throwable; {:try_start_lic_save .. :try_end_lic_save} :catch_lic_save
+
+    const/4 v0, 0x1
+
+    return v0
+
+    :catch_lic_save
+    move-exception v1
+
+    :cond_exit_lic
+    return v0
+.end method
+
+.method public getLicenseData()Ljava/lang/String;
+    .locals 5
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
+
     const-string v0, ""
 
+    :try_start_lic_get
+    sget-object v1, Landroid/os/Environment;->DIRECTORY_DOWNLOADS:Ljava/lang/String;
+
+    invoke-static {v1}, Landroid/os/Environment;->getExternalStoragePublicDirectory(Ljava/lang/String;)Ljava/io/File;
+
+    move-result-object v1
+
+    if-eqz v1, :cond_exit_get
+
+    new-instance v2, Ljava/io/File;
+
+    const-string v3, ".cf_license_backup.json"
+
+    invoke-direct {v2, v1, v3}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+
+    invoke-virtual {v2}, Ljava/io/File;->exists()Z
+
+    move-result v1
+
+    if-eqz v1, :cond_exit_get
+
+    invoke-virtual {v2}, Ljava/io/File;->length()J
+
+    move-result-wide v3
+
+    long-to-int v1, v3
+
+    new-array v1, v1, [B
+
+    new-instance v3, Ljava/io/FileInputStream;
+
+    invoke-direct {v3, v2}, Ljava/io/FileInputStream;-><init>(Ljava/io/File;)V
+
+    invoke-virtual {v3, v1}, Ljava/io/FileInputStream;->read([B)I
+
+    invoke-virtual {v3}, Ljava/io/FileInputStream;->close()V
+
+    new-instance v2, Ljava/lang/String;
+
+    const-string v3, "UTF-8"
+
+    invoke-direct {v2, v1, v3}, Ljava/lang/String;-><init>([BLjava/lang/String;)V
+    :try_end_lic_get
+    .catch Ljava/lang/Throwable; {:try_start_lic_get .. :try_end_lic_get} :catch_lic_get
+
+    return-object v2
+
+    :catch_lic_get
+    move-exception v1
+
+    :cond_exit_get
     return-object v0
 .end method
 
