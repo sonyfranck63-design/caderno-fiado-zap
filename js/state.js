@@ -651,6 +651,25 @@ window.AppState = (function() {
 
   // --- MONETIZAÇÃO, LICENÇAS & GESTÃO CRIPTOGRÁFICA VIP ---
   function getInstallationId() {
+    // 1. Identificador de Hardware Imutável do Android (Permanece idêntico mesmo desinstalando e reinstalando)
+    try {
+      if (typeof window !== 'undefined' && window.androidAppProxy && typeof window.androidAppProxy.getHardwareId === 'function') {
+        const rawHwId = window.androidAppProxy.getHardwareId();
+        if (rawHwId && typeof rawHwId === 'string' && rawHwId.trim()) {
+          const cleanHw = rawHwId.trim().toLowerCase();
+          const hashHex = sha256Hex(cleanHw);
+          const p1 = hashHex.substring(0, 4);
+          const p2 = hashHex.substring(4, 8);
+          const permanentId = `CF-${p1}-${p2}`;
+          localStorage.setItem(STORAGE_KEY_DEVICE_ID, permanentId);
+          return permanentId;
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao obter hardware ID nativo:', e);
+    }
+
+    // 2. Fallback no localStorage para ambiente Web/Desktop
     let id = localStorage.getItem(STORAGE_KEY_DEVICE_ID);
     if (!id || /^CF-\d{4}$/.test(id)) {
       // Gera ID curto e seguro de 8 caracteres hexadecimais no formato CF-XXXX-YYYY

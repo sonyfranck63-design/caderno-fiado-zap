@@ -564,3 +564,36 @@
     :cond_exit
     return v0
 .end method
+
+.method public getHardwareId()Ljava/lang/String;
+    .locals 3
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
+
+    :try_start_hwid
+    iget-object v0, p0, Lnet/mikespub/mywebview/AppJavaScriptProxy;->activity:Landroidx/appcompat/app/AppCompatActivity;
+
+    invoke-virtual {v0}, Landroidx/appcompat/app/AppCompatActivity;->getContentResolver()Landroid/content/ContentResolver;
+
+    move-result-object v0
+
+    const-string v1, "android_id"
+
+    invoke-static {v0, v1}, Landroid/provider/Settings$Secure;->getString(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;
+
+    move-result-object v0
+
+    if-eqz v0, :cond_empty
+
+    return-object v0
+
+    :cond_empty
+    :try_end_hwid
+    .catch Ljava/lang/Exception; {:try_start_hwid .. :try_end_hwid} :catch_hwid
+
+    :catch_hwid
+    const-string v0, ""
+
+    return-object v0
+.end method
+
