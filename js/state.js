@@ -1388,6 +1388,13 @@ window.AppState = (function() {
     return res;
   }
 
+  async function connectGoogleDriveWithToken(token, expiresIn) {
+    if (!window.GoogleDriveService) throw new Error('Serviço Google Drive indisponível.');
+    const res = await window.GoogleDriveService.connectWithToken(token, expiresIn);
+    notify();
+    return res;
+  }
+
   function disconnectGoogleDrive() {
     if (window.GoogleDriveService) {
       window.GoogleDriveService.disconnect();
@@ -1461,6 +1468,7 @@ window.AppState = (function() {
     // Google Drive
     getGoogleDriveStatus,
     connectGoogleDrive,
+    connectGoogleDriveWithToken,
     disconnectGoogleDrive,
     syncToGoogleDrive,
     restoreFromGoogleDrive,

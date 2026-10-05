@@ -1063,7 +1063,77 @@ window.PdfService = (function() {
     },
 
     /**
-     * Abre o fluxo de autenticação do Google e salva o token
+     * Conecta diretamente com um token OAuth 2.0 (Bearer ya29...)
+     */
+    connectWithToken: function(token, expiresInSeconds) {
+      var self = this;
+      return new Promise(function(resolve, reject) {
+        if (!token || !token.trim()) {
+          reject(new Error('Token de acesso inválido ou vazio.'));
+          return;
+        }
+
+        var cleanToken = token.trim();
+        // Se o usuário colou a URL inteira retornada pelo Google
+        if (cleanToken.indexOf('access_token=') !== -1) {
+          var match = cleanToken.match(/access_token=([^&]+)/);
+          if (match) cleanToken = decodeURIComponent(match[1]);
+        }
+        if (cleanToken.startsWith('Bearer ')) {
+          cleanToken = cleanToken.replace(/^Bearer\s+/i, '');
+        }
+
+        var expiresIn = parseInt(expiresInSeconds, 10) || 3600;
+        var expiresAt = Date.now() + (expiresIn * 1000) - (60 * 1000);
+
+        localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, cleanToken);
+        localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRES, expiresAt.toString());
+
+        self.fetchUserInfo(cleanToken).then(function(user) {
+          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+          if (window.AppState && typeof window.AppState.getBackupData === 'function') {
+            self.uploadBackup(window.AppState.getBackupData()).catch(function(e) {
+              console.warn('[GoogleDrive] Sync inicial falhou silenciosamente:', e);
+            });
+          }
+          resolve({ success: true, user: user });
+        }).catch(function(err) {
+          var fallbackUser = { email: 'Conta Conectada', name: 'Usuário Google' };
+          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(fallbackUser));
+          if (window.AppState && typeof window.AppState.getBackupData === 'function') {
+            self.uploadBackup(window.AppState.getBackupData()).catch(function(e) {
+              console.warn('[GoogleDrive] Sync inicial falhou silenciosamente:', e);
+            });
+          }
+          resolve({ success: true, user: fallbackUser });
+        });
+      });
+    },
+
+    /**
+     * Obtém a URL oficial de autorização OAuth 2.0 do Google (Fluxo Direto Web / Android)
+     */
+    getDirectAuthUrl: function(customClientId) {
+      var clientId = customClientId || this.getClientId();
+      var scopes = [
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile'
+      ].join(' ');
+
+      // Redirecionamento configurado no Google Cloud Console
+      var redirectUri = 'https://sonyfranck63.github.io/caderno-fiado-zap';
+
+      return 'https://accounts.google.com/o/oauth2/v2/auth' +
+        '?client_id=' + encodeURIComponent(clientId) +
+        '&redirect_uri=' + encodeURIComponent(redirectUri) +
+        '&response_type=token' +
+        '&scope=' + encodeURIComponent(scopes) +
+        '&prompt=consent';
+    },
+
+    /**
+     * Abre o fluxo de autenticação direta do Google no navegador (sem popup travando)
      */
     connect: function(customClientId) {
       var self = this;
@@ -1075,70 +1145,17 @@ window.PdfService = (function() {
           return;
         }
 
-        self.ensureGisLoaded().then(function(oauth2) {
-          try {
-            var hasResponded = false;
-            var safetyTimer = setTimeout(function() {
-              if (!hasResponded) {
-                hasResponded = true;
-                reject(new Error('Tempo limite excedido na janela do Google. No aplicativo instalado no celular, utilize a aba "Salvar" para enviar sua cópia diretamente ao Google Drive nativo com 1 toque.'));
-              }
-            }, 35000);
-
-            var tokenClient = oauth2.initTokenClient({
-              client_id: clientId,
-              scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
-              callback: function(tokenResponse) {
-                if (hasResponded) return;
-                hasResponded = true;
-                clearTimeout(safetyTimer);
-
-                if (tokenResponse.error) {
-                  var errText = tokenResponse.error_description || tokenResponse.error;
-                  if (tokenResponse.error === 'popup_closed_by_user') {
-                    errText = 'O login foi cancelado antes de ser concluído.';
-                  } else if (tokenResponse.error === 'access_denied') {
-                    errText = 'Permissão de acesso ao Google Drive negada pelo usuário.';
-                  }
-                  reject(new Error(errText));
-                  return;
-                }
-
-                var token = tokenResponse.access_token;
-                var expiresIn = parseInt(tokenResponse.expires_in, 10) || 3600;
-                var expiresAt = Date.now() + (expiresIn * 1000) - (60 * 1000); // margem de 1min
-
-                localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
-                localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRES, expiresAt.toString());
-
-                // Buscar perfil do usuário para exibir na tela
-                self.fetchUserInfo(token).then(function(user) {
-                  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
-                  // Dispara primeiro sync automático
-                  if (window.AppState && typeof window.AppState.getBackupData === 'function') {
-                    self.uploadBackup(window.AppState.getBackupData()).catch(function(e) {
-                      console.warn('[GoogleDrive] Sync inicial falhou silenciosamente:', e);
-                    });
-                  }
-                  resolve({ success: true, user: user });
-                }).catch(function(err) {
-                  // Fallback se perfil falhar, ainda salva com email genérico
-                  var fallbackUser = { email: 'Conta Conectada', name: 'Usuário Google' };
-                  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(fallbackUser));
-                  resolve({ success: true, user: fallbackUser });
-                });
-              },
-              error_callback: function(err) {
-                console.error('[GoogleDrive] Erro GIS:', err);
-                reject(new Error(err.message || 'Erro ao inicializar janela do Google'));
-              }
-            });
-
-            tokenClient.requestAccessToken({ prompt: 'consent' });
-          } catch (e) {
-            reject(new Error('Erro ao iniciar login Google: ' + e.message));
-          }
-        }).catch(reject);
+        try {
+          var authUrl = self.getDirectAuthUrl(clientId);
+          window.open(authUrl, '_blank');
+          resolve({
+            opened: true,
+            authUrl: authUrl,
+            message: 'Janela oficial de autorização do Google aberta no navegador.'
+          });
+        } catch (e) {
+          reject(new Error('Erro ao abrir autorização do Google: ' + e.message));
+        }
       });
     },
 
@@ -1351,11 +1368,41 @@ window.PdfService = (function() {
         autoSyncTimer = null;
       }
       return true;
+    },
+
+    /**
+     * Detecta e processa automaticamente token retornado na URL (#access_token=...)
+     */
+    checkUrlHashToken: function() {
+      try {
+        var hash = window.location.hash || '';
+        if (hash && hash.indexOf('access_token=') !== -1) {
+          var match = hash.match(/access_token=([^&]+)/);
+          if (match && match[1]) {
+            var token = decodeURIComponent(match[1]);
+            var expiresMatch = hash.match(/expires_in=([^&]+)/);
+            var expiresIn = expiresMatch ? parseInt(expiresMatch[1], 10) : 3600;
+            if (window.history && window.history.replaceState) {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+            return this.connectWithToken(token, expiresIn);
+          }
+        }
+      } catch (e) {
+        console.warn('[GoogleDrive] Erro ao verificar token na URL:', e);
+      }
+      return Promise.resolve(null);
     }
   };
 
   window.GoogleDriveService = GoogleDriveService;
+
+  // Auto-detectar token na carga inicial se retornado por OAuth redirect
+  try {
+    GoogleDriveService.checkUrlHashToken();
+  } catch (e) {}
 })();
+
 
 
 // ==========================================
@@ -2751,6 +2798,13 @@ window.AppState = (function() {
     return res;
   }
 
+  async function connectGoogleDriveWithToken(token, expiresIn) {
+    if (!window.GoogleDriveService) throw new Error('Serviço Google Drive indisponível.');
+    const res = await window.GoogleDriveService.connectWithToken(token, expiresIn);
+    notify();
+    return res;
+  }
+
   function disconnectGoogleDrive() {
     if (window.GoogleDriveService) {
       window.GoogleDriveService.disconnect();
@@ -2824,6 +2878,7 @@ window.AppState = (function() {
     // Google Drive
     getGoogleDriveStatus,
     connectGoogleDrive,
+    connectGoogleDriveWithToken,
     disconnectGoogleDrive,
     syncToGoogleDrive,
     restoreFromGoogleDrive,
@@ -7693,6 +7748,8 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
       ? window.AppState.getGoogleDriveStatus().clientId
       : '') || '';
   });
+  const [inputToken, setInputToken] = React.useState('');
+  const [showTokenInput, setShowTokenInput] = React.useState(false);
 
   const fileInputRef = React.useRef(null);
   const { X, Cloud, Download, Upload, ShieldCheck, Lock, Copy, Check, Share2, FileText, CheckCircle2, AlertTriangle, RefreshCw, Google } = window.Icons || {};
@@ -7715,6 +7772,25 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     });
     return unsub;
   }, []);
+
+  // Verificar área de transferência ao retornar para o aplicativo (após autorizar no Google)
+  React.useEffect(() => {
+    if (!isOpen || driveStatus.connected) return;
+
+    const checkClipboardForToken = async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const clipText = await navigator.clipboard.readText();
+          if (clipText && (clipText.includes('ya29.') || clipText.includes('access_token='))) {
+            await handleConnectWithToken(clipText);
+          }
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('focus', checkClipboardForToken);
+    return () => window.removeEventListener('focus', checkClipboardForToken);
+  }, [isOpen, driveStatus.connected]);
 
   if (!isOpen) return null;
 
@@ -7765,6 +7841,14 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
           message: `Conta ${res.user?.email || 'Google'} conectada com sucesso!\n\nSeu primeiro backup em nuvem já foi salvo de forma automática. Todas as futuras alterações serão sincronizadas silenciosamente.`,
           variant: 'success'
         });
+      } else if (res && res.opened) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Autorização Google Aberta',
+          message: 'A página oficial do Google foi aberta no navegador.\n\n1. Selecione sua conta e toque em "Permitir" / "Continuar".\n2. Quando concluir a autorização, copie o código ou retorne aqui para confirmar!',
+          variant: 'info'
+        });
+        setShowTokenInput(true);
       }
     } catch (err) {
       setFeedbackDialog({
@@ -7776,6 +7860,92 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     } finally {
       setIsDriveConnecting(false);
     }
+  };
+
+  const handleConnectWithToken = async (tokenToUse) => {
+    const raw = tokenToUse || inputToken;
+    if (!raw || !raw.trim()) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Token Necessário',
+        message: 'Por favor, cole o token de acesso retornado pelo Google.',
+        variant: 'warning'
+      });
+      return;
+    }
+    setIsDriveConnecting(true);
+    try {
+      const res = await window.AppState.connectGoogleDriveWithToken(raw.trim());
+      if (res && res.success) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Google Drive Conectado!',
+          message: `Conta ${res.user?.email || 'Google'} conectada com sucesso!\n\nBackup automático em segundo plano está 100% ATIVO a cada venda ou pagamento.`,
+          variant: 'success'
+        });
+        setShowTokenInput(false);
+        setInputToken('');
+      }
+    } catch (err) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Validação do Token',
+        message: 'Não foi possível validar o token: ' + err.message,
+        variant: 'danger'
+      });
+    } finally {
+      setIsDriveConnecting(false);
+    }
+  };
+
+  const handleSaveToGoogleDriveNative = async () => {
+    if (!isVip) {
+      onTriggerPaywall('backup');
+      return;
+    }
+    const jsonStr = window.AppState.getBackupJsonString();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `cadernofiado_backup_${dateStr}.json`;
+    const base64Data = 'data:application/json;base64,' + btoa(unescape(encodeURIComponent(jsonStr)));
+
+    // Salvar nativamente no Android abrindo menu com Google Drive
+    if (window.androidAppProxy && typeof window.androidAppProxy.shareBase64File === 'function') {
+      const ok = window.androidAppProxy.shareBase64File(
+        base64Data,
+        filename,
+        'application/json',
+        'Salvar no Google Drive',
+        'Backup Seguro Caderno Fiado'
+      );
+      if (ok) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Salvar no Google Drive',
+          message: 'Menu oficial aberto!\n\nToque no ícone do "Google Drive" (Fazer upload no Drive) para salvar seus dados com segurança.',
+          variant: 'success'
+        });
+        return;
+      }
+    }
+
+    if (navigator.share) {
+      try {
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const file = new File([blob], filename, { type: 'application/json' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: 'Backup CadernoFiado',
+            files: [file]
+          });
+          return;
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    // Fallback: baixar arquivo
+    handleExportFile();
   };
 
   const handleSyncDriveNow = async () => {
@@ -8270,6 +8440,40 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
                     <span>{isDriveConnecting ? 'Conectando ao Google...' : 'Conectar com Google Drive'}</span>
                   </button>
 
+                  {/* Entrada do Token para vinculação direta */}
+                  <div className="pt-1 text-center space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowTokenInput(!showTokenInput)}
+                      className="text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-1"
+                    >
+                      <span>{showTokenInput ? '▲ Ocultar entrada de token' : '🔑 Já autorizou no Google? Vincular Token'}</span>
+                    </button>
+
+                    {showTokenInput && (
+                      <div className="p-3 bg-emerald-50/60 dark:bg-slate-800/80 rounded-xl border border-emerald-200 dark:border-slate-700 space-y-2 text-left animate-fadeIn">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                          Cole aqui o token ou URL gerada no navegador:
+                        </label>
+                        <input
+                          type="text"
+                          value={inputToken}
+                          onChange={(e) => setInputToken(e.target.value)}
+                          placeholder="Cole aqui (ex: ya29... ou a URL inteira)"
+                          className="w-full p-2 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleConnectWithToken()}
+                          disabled={isDriveConnecting}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs shadow-sm transition-colors disabled:opacity-60"
+                        >
+                          {isDriveConnecting ? 'Vinculando...' : 'Ativar Backup Automático'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Opção Avançada de Client ID */}
                   <div className="pt-1 text-center">
                     <button
@@ -8314,7 +8518,7 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
               
               <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/40 text-xs text-slate-700 dark:text-slate-300">
                 <p className="leading-relaxed">
-                  Gere uma cópia segura dos seus clientes e dívidas para guardar no <strong>WhatsApp</strong> ou transferir para um celular novo.
+                  Gere uma cópia segura dos seus clientes e dívidas para guardar no <strong>WhatsApp</strong>, no <strong>Google Drive</strong> ou transferir para um celular novo.
                 </p>
               </div>
 
@@ -8327,8 +8531,18 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
                 {copiedCode ? <Check size={18} className="text-emerald-200" /> : <Copy size={18} />}
                 <span>{copiedCode ? '✅ Código Copiado com Sucesso!' : 'Copiar Código do Backup'}</span>
               </button>
+
+              {/* Botão Salvar Cópia no Google Drive Nativo */}
+              <button
+                type="button"
+                onClick={handleSaveToGoogleDriveNative}
+                className="w-full py-3 px-4 rounded-2xl font-bold text-xs sm:text-sm bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border-2 border-slate-200 dark:border-slate-700 shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Google size={18} />
+                <span>Salvar Cópia no Google Drive</span>
+              </button>
               <p className="text-[11px] text-center text-slate-500 dark:text-slate-400 -mt-1 leading-tight">
-                Recomendado para celular: copie e cole em uma mensagem do WhatsApp para guardar com segurança.
+                Salva o arquivo diretamente no aplicativo do Google Drive do seu celular com 1 toque.
               </p>
 
               <div className="grid grid-cols-2 gap-2 pt-1">

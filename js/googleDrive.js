@@ -174,7 +174,77 @@
     },
 
     /**
-     * Abre o fluxo de autenticação do Google e salva o token
+     * Conecta diretamente com um token OAuth 2.0 (Bearer ya29...)
+     */
+    connectWithToken: function(token, expiresInSeconds) {
+      var self = this;
+      return new Promise(function(resolve, reject) {
+        if (!token || !token.trim()) {
+          reject(new Error('Token de acesso inválido ou vazio.'));
+          return;
+        }
+
+        var cleanToken = token.trim();
+        // Se o usuário colou a URL inteira retornada pelo Google
+        if (cleanToken.indexOf('access_token=') !== -1) {
+          var match = cleanToken.match(/access_token=([^&]+)/);
+          if (match) cleanToken = decodeURIComponent(match[1]);
+        }
+        if (cleanToken.startsWith('Bearer ')) {
+          cleanToken = cleanToken.replace(/^Bearer\s+/i, '');
+        }
+
+        var expiresIn = parseInt(expiresInSeconds, 10) || 3600;
+        var expiresAt = Date.now() + (expiresIn * 1000) - (60 * 1000);
+
+        localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, cleanToken);
+        localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRES, expiresAt.toString());
+
+        self.fetchUserInfo(cleanToken).then(function(user) {
+          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+          if (window.AppState && typeof window.AppState.getBackupData === 'function') {
+            self.uploadBackup(window.AppState.getBackupData()).catch(function(e) {
+              console.warn('[GoogleDrive] Sync inicial falhou silenciosamente:', e);
+            });
+          }
+          resolve({ success: true, user: user });
+        }).catch(function(err) {
+          var fallbackUser = { email: 'Conta Conectada', name: 'Usuário Google' };
+          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(fallbackUser));
+          if (window.AppState && typeof window.AppState.getBackupData === 'function') {
+            self.uploadBackup(window.AppState.getBackupData()).catch(function(e) {
+              console.warn('[GoogleDrive] Sync inicial falhou silenciosamente:', e);
+            });
+          }
+          resolve({ success: true, user: fallbackUser });
+        });
+      });
+    },
+
+    /**
+     * Obtém a URL oficial de autorização OAuth 2.0 do Google (Fluxo Direto Web / Android)
+     */
+    getDirectAuthUrl: function(customClientId) {
+      var clientId = customClientId || this.getClientId();
+      var scopes = [
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile'
+      ].join(' ');
+
+      // Redirecionamento configurado no Google Cloud Console
+      var redirectUri = 'https://sonyfranck63.github.io/caderno-fiado-zap';
+
+      return 'https://accounts.google.com/o/oauth2/v2/auth' +
+        '?client_id=' + encodeURIComponent(clientId) +
+        '&redirect_uri=' + encodeURIComponent(redirectUri) +
+        '&response_type=token' +
+        '&scope=' + encodeURIComponent(scopes) +
+        '&prompt=consent';
+    },
+
+    /**
+     * Abre o fluxo de autenticação direta do Google no navegador (sem popup travando)
      */
     connect: function(customClientId) {
       var self = this;
@@ -186,70 +256,17 @@
           return;
         }
 
-        self.ensureGisLoaded().then(function(oauth2) {
-          try {
-            var hasResponded = false;
-            var safetyTimer = setTimeout(function() {
-              if (!hasResponded) {
-                hasResponded = true;
-                reject(new Error('Tempo limite excedido na janela do Google. No aplicativo instalado no celular, utilize a aba "Salvar" para enviar sua cópia diretamente ao Google Drive nativo com 1 toque.'));
-              }
-            }, 35000);
-
-            var tokenClient = oauth2.initTokenClient({
-              client_id: clientId,
-              scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
-              callback: function(tokenResponse) {
-                if (hasResponded) return;
-                hasResponded = true;
-                clearTimeout(safetyTimer);
-
-                if (tokenResponse.error) {
-                  var errText = tokenResponse.error_description || tokenResponse.error;
-                  if (tokenResponse.error === 'popup_closed_by_user') {
-                    errText = 'O login foi cancelado antes de ser concluído.';
-                  } else if (tokenResponse.error === 'access_denied') {
-                    errText = 'Permissão de acesso ao Google Drive negada pelo usuário.';
-                  }
-                  reject(new Error(errText));
-                  return;
-                }
-
-                var token = tokenResponse.access_token;
-                var expiresIn = parseInt(tokenResponse.expires_in, 10) || 3600;
-                var expiresAt = Date.now() + (expiresIn * 1000) - (60 * 1000); // margem de 1min
-
-                localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
-                localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRES, expiresAt.toString());
-
-                // Buscar perfil do usuário para exibir na tela
-                self.fetchUserInfo(token).then(function(user) {
-                  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
-                  // Dispara primeiro sync automático
-                  if (window.AppState && typeof window.AppState.getBackupData === 'function') {
-                    self.uploadBackup(window.AppState.getBackupData()).catch(function(e) {
-                      console.warn('[GoogleDrive] Sync inicial falhou silenciosamente:', e);
-                    });
-                  }
-                  resolve({ success: true, user: user });
-                }).catch(function(err) {
-                  // Fallback se perfil falhar, ainda salva com email genérico
-                  var fallbackUser = { email: 'Conta Conectada', name: 'Usuário Google' };
-                  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(fallbackUser));
-                  resolve({ success: true, user: fallbackUser });
-                });
-              },
-              error_callback: function(err) {
-                console.error('[GoogleDrive] Erro GIS:', err);
-                reject(new Error(err.message || 'Erro ao inicializar janela do Google'));
-              }
-            });
-
-            tokenClient.requestAccessToken({ prompt: 'consent' });
-          } catch (e) {
-            reject(new Error('Erro ao iniciar login Google: ' + e.message));
-          }
-        }).catch(reject);
+        try {
+          var authUrl = self.getDirectAuthUrl(clientId);
+          window.open(authUrl, '_blank');
+          resolve({
+            opened: true,
+            authUrl: authUrl,
+            message: 'Janela oficial de autorização do Google aberta no navegador.'
+          });
+        } catch (e) {
+          reject(new Error('Erro ao abrir autorização do Google: ' + e.message));
+        }
       });
     },
 
@@ -462,8 +479,38 @@
         autoSyncTimer = null;
       }
       return true;
+    },
+
+    /**
+     * Detecta e processa automaticamente token retornado na URL (#access_token=...)
+     */
+    checkUrlHashToken: function() {
+      try {
+        var hash = window.location.hash || '';
+        if (hash && hash.indexOf('access_token=') !== -1) {
+          var match = hash.match(/access_token=([^&]+)/);
+          if (match && match[1]) {
+            var token = decodeURIComponent(match[1]);
+            var expiresMatch = hash.match(/expires_in=([^&]+)/);
+            var expiresIn = expiresMatch ? parseInt(expiresMatch[1], 10) : 3600;
+            if (window.history && window.history.replaceState) {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+            return this.connectWithToken(token, expiresIn);
+          }
+        }
+      } catch (e) {
+        console.warn('[GoogleDrive] Erro ao verificar token na URL:', e);
+      }
+      return Promise.resolve(null);
     }
   };
 
   window.GoogleDriveService = GoogleDriveService;
+
+  // Auto-detectar token na carga inicial se retornado por OAuth redirect
+  try {
+    GoogleDriveService.checkUrlHashToken();
+  } catch (e) {}
 })();
+

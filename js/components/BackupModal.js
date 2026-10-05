@@ -27,6 +27,8 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
       ? window.AppState.getGoogleDriveStatus().clientId
       : '') || '';
   });
+  const [inputToken, setInputToken] = React.useState('');
+  const [showTokenInput, setShowTokenInput] = React.useState(false);
 
   const fileInputRef = React.useRef(null);
   const { X, Cloud, Download, Upload, ShieldCheck, Lock, Copy, Check, Share2, FileText, CheckCircle2, AlertTriangle, RefreshCw, Google } = window.Icons || {};
@@ -49,6 +51,25 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     });
     return unsub;
   }, []);
+
+  // Verificar área de transferência ao retornar para o aplicativo (após autorizar no Google)
+  React.useEffect(() => {
+    if (!isOpen || driveStatus.connected) return;
+
+    const checkClipboardForToken = async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const clipText = await navigator.clipboard.readText();
+          if (clipText && (clipText.includes('ya29.') || clipText.includes('access_token='))) {
+            await handleConnectWithToken(clipText);
+          }
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('focus', checkClipboardForToken);
+    return () => window.removeEventListener('focus', checkClipboardForToken);
+  }, [isOpen, driveStatus.connected]);
 
   if (!isOpen) return null;
 
@@ -99,6 +120,14 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
           message: `Conta ${res.user?.email || 'Google'} conectada com sucesso!\n\nSeu primeiro backup em nuvem já foi salvo de forma automática. Todas as futuras alterações serão sincronizadas silenciosamente.`,
           variant: 'success'
         });
+      } else if (res && res.opened) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Autorização Google Aberta',
+          message: 'A página oficial do Google foi aberta no navegador.\n\n1. Selecione sua conta e toque em "Permitir" / "Continuar".\n2. Quando concluir a autorização, copie o código ou retorne aqui para confirmar!',
+          variant: 'info'
+        });
+        setShowTokenInput(true);
       }
     } catch (err) {
       setFeedbackDialog({
@@ -110,6 +139,92 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
     } finally {
       setIsDriveConnecting(false);
     }
+  };
+
+  const handleConnectWithToken = async (tokenToUse) => {
+    const raw = tokenToUse || inputToken;
+    if (!raw || !raw.trim()) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Token Necessário',
+        message: 'Por favor, cole o token de acesso retornado pelo Google.',
+        variant: 'warning'
+      });
+      return;
+    }
+    setIsDriveConnecting(true);
+    try {
+      const res = await window.AppState.connectGoogleDriveWithToken(raw.trim());
+      if (res && res.success) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Google Drive Conectado!',
+          message: `Conta ${res.user?.email || 'Google'} conectada com sucesso!\n\nBackup automático em segundo plano está 100% ATIVO a cada venda ou pagamento.`,
+          variant: 'success'
+        });
+        setShowTokenInput(false);
+        setInputToken('');
+      }
+    } catch (err) {
+      setFeedbackDialog({
+        isOpen: true,
+        title: 'Validação do Token',
+        message: 'Não foi possível validar o token: ' + err.message,
+        variant: 'danger'
+      });
+    } finally {
+      setIsDriveConnecting(false);
+    }
+  };
+
+  const handleSaveToGoogleDriveNative = async () => {
+    if (!isVip) {
+      onTriggerPaywall('backup');
+      return;
+    }
+    const jsonStr = window.AppState.getBackupJsonString();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `cadernofiado_backup_${dateStr}.json`;
+    const base64Data = 'data:application/json;base64,' + btoa(unescape(encodeURIComponent(jsonStr)));
+
+    // Salvar nativamente no Android abrindo menu com Google Drive
+    if (window.androidAppProxy && typeof window.androidAppProxy.shareBase64File === 'function') {
+      const ok = window.androidAppProxy.shareBase64File(
+        base64Data,
+        filename,
+        'application/json',
+        'Salvar no Google Drive',
+        'Backup Seguro Caderno Fiado'
+      );
+      if (ok) {
+        setFeedbackDialog({
+          isOpen: true,
+          title: 'Salvar no Google Drive',
+          message: 'Menu oficial aberto!\n\nToque no ícone do "Google Drive" (Fazer upload no Drive) para salvar seus dados com segurança.',
+          variant: 'success'
+        });
+        return;
+      }
+    }
+
+    if (navigator.share) {
+      try {
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const file = new File([blob], filename, { type: 'application/json' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: 'Backup CadernoFiado',
+            files: [file]
+          });
+          return;
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    // Fallback: baixar arquivo
+    handleExportFile();
   };
 
   const handleSyncDriveNow = async () => {
@@ -604,6 +719,40 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
                     <span>{isDriveConnecting ? 'Conectando ao Google...' : 'Conectar com Google Drive'}</span>
                   </button>
 
+                  {/* Entrada do Token para vinculação direta */}
+                  <div className="pt-1 text-center space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowTokenInput(!showTokenInput)}
+                      className="text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-1"
+                    >
+                      <span>{showTokenInput ? '▲ Ocultar entrada de token' : '🔑 Já autorizou no Google? Vincular Token'}</span>
+                    </button>
+
+                    {showTokenInput && (
+                      <div className="p-3 bg-emerald-50/60 dark:bg-slate-800/80 rounded-xl border border-emerald-200 dark:border-slate-700 space-y-2 text-left animate-fadeIn">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                          Cole aqui o token ou URL gerada no navegador:
+                        </label>
+                        <input
+                          type="text"
+                          value={inputToken}
+                          onChange={(e) => setInputToken(e.target.value)}
+                          placeholder="Cole aqui (ex: ya29... ou a URL inteira)"
+                          className="w-full p-2 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleConnectWithToken()}
+                          disabled={isDriveConnecting}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs shadow-sm transition-colors disabled:opacity-60"
+                        >
+                          {isDriveConnecting ? 'Vinculando...' : 'Ativar Backup Automático'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Opção Avançada de Client ID */}
                   <div className="pt-1 text-center">
                     <button
@@ -648,7 +797,7 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
               
               <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/40 text-xs text-slate-700 dark:text-slate-300">
                 <p className="leading-relaxed">
-                  Gere uma cópia segura dos seus clientes e dívidas para guardar no <strong>WhatsApp</strong> ou transferir para um celular novo.
+                  Gere uma cópia segura dos seus clientes e dívidas para guardar no <strong>WhatsApp</strong>, no <strong>Google Drive</strong> ou transferir para um celular novo.
                 </p>
               </div>
 
@@ -661,8 +810,18 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
                 {copiedCode ? <Check size={18} className="text-emerald-200" /> : <Copy size={18} />}
                 <span>{copiedCode ? '✅ Código Copiado com Sucesso!' : 'Copiar Código do Backup'}</span>
               </button>
+
+              {/* Botão Salvar Cópia no Google Drive Nativo */}
+              <button
+                type="button"
+                onClick={handleSaveToGoogleDriveNative}
+                className="w-full py-3 px-4 rounded-2xl font-bold text-xs sm:text-sm bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border-2 border-slate-200 dark:border-slate-700 shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Google size={18} />
+                <span>Salvar Cópia no Google Drive</span>
+              </button>
               <p className="text-[11px] text-center text-slate-500 dark:text-slate-400 -mt-1 leading-tight">
-                Recomendado para celular: copie e cole em uma mensagem do WhatsApp para guardar com segurança.
+                Salva o arquivo diretamente no aplicativo do Google Drive do seu celular com 1 toque.
               </p>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
