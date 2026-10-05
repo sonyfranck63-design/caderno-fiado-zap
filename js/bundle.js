@@ -1680,9 +1680,10 @@ window.AppState = (function() {
   const STORAGE_KEY_TIME_OFFSET = 'cadernofiado_time_offset_v1';
 
   // --- MOTOR DE TEMPO BLINDADO (Anti-Adulteração de Data & Sincronização em Nuvem) ---
-  const sessionStartPerf = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+  let sessionStartPerf = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
   let sessionBaseTime = Date.now();
   let timeOffsetMs = 0;
+  let isNetworkSynced = false;
 
   try {
     const rawLastSeen = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
@@ -1691,7 +1692,7 @@ window.AppState = (function() {
     if (rawOffset) timeOffsetMs = parseInt(rawOffset, 10) || 0;
 
     // Se o relógio do aparelho estiver marcando um horário ANTERIOR ao último horário já registrado,
-    // o usuário atrasou a data do celular! O tempo é ancorado no último horário e avança monotonicamente.
+    // o usuário atrasou a data do celular enquanto offline! O tempo é ancorado no último horário e avança monotonicamente.
     if (lastSeen && (sessionBaseTime + timeOffsetMs) < lastSeen) {
       sessionBaseTime = lastSeen;
       timeOffsetMs = 0;
@@ -1712,7 +1713,8 @@ window.AppState = (function() {
       const lastSeen = raw ? parseInt(raw, 10) : 0;
       if (current > lastSeen) {
         localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, Math.floor(current).toString());
-      } else if (lastSeen && current < lastSeen) {
+      } else if (!isNetworkSynced && lastSeen && current < lastSeen) {
+        // Bloqueio antifraude ativo apenas em modo OFFLINE: impede atrasar relógio do celular
         current = lastSeen;
       }
     } catch(e) {}
@@ -1720,7 +1722,7 @@ window.AppState = (function() {
     return Math.floor(current);
   }
 
-  // Sincronização em segundo plano com servidor de tempo real (Cloudflare / WorldTimeAPI)
+  // Sincronização em segundo plano com servidor de tempo real (Cloudflare / TimeAPI / WorldTimeAPI)
   async function syncNetworkTime() {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     try {
@@ -1744,45 +1746,67 @@ window.AppState = (function() {
         }
       }
     } catch(e) {
+      // Fallback 1: timeapi.io
       try {
         const controller2 = new AbortController();
         const timer2 = setTimeout(() => controller2.abort(), 3500);
-        const res2 = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC', {
+        const res2 = await fetch('https://timeapi.io/api/time/current/zone?timeZone=UTC', {
           cache: 'no-store',
           signal: controller2.signal
         });
         clearTimeout(timer2);
         if (res2.ok) {
-          const data = await res2.json();
-          if (data && data.unixtime) {
-            applyNetworkTime(data.unixtime * 1000);
+          const data2 = await res2.json();
+          if (data2 && data2.dateTime) {
+            const serverNow = new Date(data2.dateTime + (data2.dateTime.endsWith('Z') ? '' : 'Z')).getTime();
+            if (serverNow && !isNaN(serverNow)) {
+              applyNetworkTime(serverNow);
+              return;
+            }
           }
         }
-      } catch(err) {}
+      } catch(err2) {
+        // Fallback 2: worldtimeapi.org
+        try {
+          const controller3 = new AbortController();
+          const timer3 = setTimeout(() => controller3.abort(), 3500);
+          const res3 = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC', {
+            cache: 'no-store',
+            signal: controller3.signal
+          });
+          clearTimeout(timer3);
+          if (res3.ok) {
+            const data3 = await res3.json();
+            if (data3 && data3.unixtime) {
+              applyNetworkTime(data3.unixtime * 1000);
+            }
+          }
+        } catch(err3) {}
+      }
     }
   }
 
   function applyNetworkTime(realTimeMs) {
     if (!realTimeMs || isNaN(realTimeMs)) return;
-    const currentDeviceNow = (sessionStartPerf > 0 && performance.now) 
-      ? sessionBaseTime + (performance.now() - sessionStartPerf)
-      : Date.now();
+    isNetworkSynced = true;
 
-    const diff = realTimeMs - currentDeviceNow;
-    timeOffsetMs = diff;
+    // A hora da rede é a autoridade absoluta: ancora a base de tempo da sessão no tempo verificado
+    sessionBaseTime = realTimeMs;
+    sessionStartPerf = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    timeOffsetMs = 0;
+
     try {
-      localStorage.setItem(STORAGE_KEY_TIME_OFFSET, diff.toString());
-      const raw = localStorage.getItem(STORAGE_KEY_LAST_SEEN_TIME);
-      const lastSeen = raw ? parseInt(raw, 10) : 0;
-      if (realTimeMs > lastSeen) {
-        localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, realTimeMs.toString());
-      }
+      localStorage.setItem(STORAGE_KEY_TIME_OFFSET, '0');
+      // Destrava e alinha o último horário visto com a hora real confirmada pela rede
+      localStorage.setItem(STORAGE_KEY_LAST_SEEN_TIME, Math.floor(realTimeMs).toString());
     } catch(e) {}
+
     notify();
   }
 
   if (typeof window !== 'undefined') {
-    setTimeout(syncNetworkTime, 1200);
+    setTimeout(syncNetworkTime, 100);
+    setTimeout(syncNetworkTime, 1500);
     window.addEventListener('online', syncNetworkTime);
     setInterval(syncNetworkTime, 10 * 60 * 1000);
   }
@@ -2491,11 +2515,11 @@ window.AppState = (function() {
 
       if (planCode === 'M') {
         planType = '30D';
-        planName = 'VIP Pro Mensal (30 Dias)';
+        planName = 'Plano VIP Mensal (30 Dias)';
         expiresAt = now + 30 * 24 * 60 * 60 * 1000;
       } else if (planCode === 'A') {
         planType = '365D';
-        planName = 'VIP Pro Anual (1 Ano)';
+        planName = 'Plano VIP Anual (1 Ano)';
         expiresAt = now + 365 * 24 * 60 * 60 * 1000;
       } else if (planCode === 'L') {
         planType = 'LIFETIME';
