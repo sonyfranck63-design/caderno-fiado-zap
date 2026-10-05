@@ -289,9 +289,47 @@
     },
 
     /**
+     * Interpreta erros da API do Google e gera mensagens humanas claras e resolutivas
+     */
+    parseGoogleError: function(res, defaultAction) {
+      return res.text().then(function(text) {
+        var errObj = null;
+        try { errObj = JSON.parse(text); } catch (e) {}
+
+        var errMsg = (errObj && errObj.error && errObj.error.message) ? errObj.error.message : '';
+        var errReason = '';
+        if (errObj && errObj.error && errObj.error.errors && errObj.error.errors.length > 0) {
+          errReason = errObj.error.errors[0].reason || '';
+        } else if (errObj && errObj.error && errObj.error.details && errObj.error.details[0]) {
+          errReason = errObj.error.details[0].reason || '';
+        }
+
+        if (res.status === 401) {
+          return new Error('AUTH_EXPIRED');
+        }
+
+        if (res.status === 403) {
+          if (errReason === 'accessNotConfigured' || errReason === 'SERVICE_DISABLED' || errMsg.indexOf('Drive API has not been used') !== -1 || errMsg.indexOf('disabled') !== -1) {
+            return new Error('A API do Google Drive está DESATIVADA no projeto do Google Cloud. Acesse https://console.cloud.google.com/apis/library/drive.googleapis.com e clique no botão azul "ATIVAR".');
+          }
+          if (errReason === 'storageQuotaExceeded' || errMsg.indexOf('quota') !== -1) {
+            return new Error('O armazenamento da sua conta Google está CHEIO (15 GB esgotados). Libere espaço no Google Drive.');
+          }
+          if (errReason === 'insufficientPermissions' || errReason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' || errMsg.indexOf('permission') !== -1 || errMsg.indexOf('insufficient') !== -1) {
+            return new Error('Permissão do Google Drive não autorizada. No app, clique em "Desconectar Conta Google" e conecte novamente, certificando-se de marcar a caixinha de permissão do Google Drive.');
+          }
+        }
+
+        var msg = errMsg ? (defaultAction + ': ' + errMsg) : (defaultAction + ' (status ' + res.status + ')');
+        return new Error(msg);
+      });
+    },
+
+    /**
      * Localiza o arquivo de backup existente no Google Drive
      */
     findExistingBackupFile: function(token) {
+      var self = this;
       var query = encodeURIComponent("name = '" + BACKUP_FILENAME + "' and trashed = false");
       var url = 'https://www.googleapis.com/drive/v3/files?q=' + query + '&fields=files(id,name,modifiedTime,size)&spaces=drive';
 
@@ -299,8 +337,9 @@
         headers: { 'Authorization': 'Bearer ' + token }
       }).then(function(res) {
         if (!res.ok) {
-          if (res.status === 401) throw new Error('AUTH_EXPIRED');
-          throw new Error('Falha ao buscar arquivo no Google Drive (status ' + res.status + ')');
+          return self.parseGoogleError(res, 'Falha ao buscar arquivo no Google Drive').then(function(err) {
+            throw err;
+          });
         }
         return res.json();
       }).then(function(data) {
@@ -332,7 +371,7 @@
         // 1. Procurar se já existe o arquivo
         self.findExistingBackupFile(token).then(function(existingFile) {
           if (existingFile && existingFile.id) {
-            // Atualizar arquivo existente (PATCH)
+            // Atualizar arquivo existente (PATCH simples uploadType=media)
             var updateUrl = 'https://www.googleapis.com/upload/drive/v3/files/' + existingFile.id + '?uploadType=media';
             return fetch(updateUrl, {
               method: 'PATCH',
@@ -342,41 +381,56 @@
               },
               body: jsonString
             }).then(function(res) {
-              if (!res.ok) throw new Error('Falha ao atualizar backup no Drive (status ' + res.status + ')');
+              if (!res.ok) {
+                return self.parseGoogleError(res, 'Falha ao atualizar backup no Drive').then(function(err) {
+                  throw err;
+                });
+              }
               return res.json();
             });
           } else {
-            // Criar novo arquivo (POST multipart)
+            // Criar novo arquivo (2-passos oficiais da Google Drive REST API v3: metadados JSON + uploadType=media)
             var metadata = {
               name: BACKUP_FILENAME,
               description: 'Backup de Segurança do Aplicativo CadernoFiado Zap',
               mimeType: BACKUP_MIME_TYPE
             };
 
-            var boundary = '-------CadernoFiadoBoundary' + Date.now();
-            var delimiter = '\r\n--' + boundary + '\r\n';
-            var closeDelimiter = '\r\n--' + boundary + '--';
-
-            var multipartBody = 
-              delimiter +
-              'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-              JSON.stringify(metadata) +
-              delimiter +
-              'Content-Type: ' + BACKUP_MIME_TYPE + '\r\n\r\n' +
-              jsonString +
-              closeDelimiter;
-
-            var createUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+            var createUrl = 'https://www.googleapis.com/drive/v3/files';
             return fetch(createUrl, {
               method: 'POST',
               headers: {
                 'Authorization': 'Bearer ' + token,
-                'Content-Type': 'multipart/related; boundary=' + boundary
+                'Content-Type': 'application/json; charset=UTF-8'
               },
-              body: multipartBody
+              body: JSON.stringify(metadata)
             }).then(function(res) {
-              if (!res.ok) throw new Error('Falha ao criar arquivo de backup no Drive (status ' + res.status + ')');
+              if (!res.ok) {
+                return self.parseGoogleError(res, 'Falha ao criar arquivo de backup no Drive').then(function(err) {
+                  throw err;
+                });
+              }
               return res.json();
+            }).then(function(newFile) {
+              if (!newFile || !newFile.id) {
+                throw new Error('Falha ao obter ID do novo arquivo criado no Google Drive.');
+              }
+              var uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files/' + newFile.id + '?uploadType=media';
+              return fetch(uploadUrl, {
+                method: 'PATCH',
+                headers: {
+                  'Authorization': 'Bearer ' + token,
+                  'Content-Type': BACKUP_MIME_TYPE
+                },
+                body: jsonString
+              }).then(function(upRes) {
+                if (!upRes.ok) {
+                  return self.parseGoogleError(upRes, 'Falha ao gravar dados do backup no Drive').then(function(err) {
+                    throw err;
+                  });
+                }
+                return upRes.json();
+              });
             });
           }
         }).then(function(result) {
@@ -416,7 +470,11 @@
           return fetch(downloadUrl, {
             headers: { 'Authorization': 'Bearer ' + token }
           }).then(function(res) {
-            if (!res.ok) throw new Error('Falha ao baixar o arquivo do Drive (status ' + res.status + ')');
+            if (!res.ok) {
+              return self.parseGoogleError(res, 'Falha ao baixar arquivo do Drive').then(function(err) {
+                throw err;
+              });
+            }
             return res.text();
           }).then(function(textData) {
             resolve({
