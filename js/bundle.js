@@ -8020,12 +8020,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
   const [isDriveConnecting, setIsDriveConnecting] = React.useState(false);
   const [isDriveSyncing, setIsDriveSyncing] = React.useState(false);
   const [isDriveRestoring, setIsDriveRestoring] = React.useState(false);
-  const [showDriveConfig, setShowDriveConfig] = React.useState(false);
-  const [customClientId, setCustomClientId] = React.useState(() => {
-    return (window.AppState && typeof window.AppState.getGoogleDriveStatus === 'function'
-      ? window.AppState.getGoogleDriveStatus().clientId
-      : '') || '';
-  });
   const [inputToken, setInputToken] = React.useState('');
   const [showTokenInput, setShowTokenInput] = React.useState(false);
 
@@ -8043,9 +8037,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
       if (typeof window.AppState.getGoogleDriveStatus === 'function') {
         const st = window.AppState.getGoogleDriveStatus();
         setDriveStatus(st);
-        if (!customClientId && st.clientId) {
-          setCustomClientId(st.clientId);
-        }
       }
     });
     return unsub;
@@ -8106,7 +8097,7 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
   const handleConnectDrive = async () => {
     setIsDriveConnecting(true);
     try {
-      const res = await window.AppState.connectGoogleDrive(customClientId ? customClientId.trim() : null);
+      const res = await window.AppState.connectGoogleDrive();
       if (res && res.success) {
         setFeedbackDialog({
           isOpen: true,
@@ -8287,19 +8278,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
       message: 'Sua conta Google foi desvinculada deste aparelho. O backup automático em nuvem foi pausado.',
       variant: 'info'
     });
-  };
-
-  const handleSaveClientId = () => {
-    if (window.AppState && typeof window.AppState.setGoogleDriveClientId === 'function') {
-      window.AppState.setGoogleDriveClientId(customClientId.trim());
-      setFeedbackDialog({
-        isOpen: true,
-        title: 'Configuração Salva',
-        message: 'Google Client ID atualizado com sucesso.',
-        variant: 'success'
-      });
-      setShowDriveConfig(false);
-    }
   };
 
   // --- AÇÕES MANUAIS DE BACKUP ---
@@ -8745,39 +8723,6 @@ window.BackupModal = function BackupModal({ isOpen, onClose, isVip, onTriggerPay
                       </div>
                     )}
                   </div>
-
-                  {/* Opção Avançada de Client ID */}
-                  <div className="pt-1 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setShowDriveConfig(!showDriveConfig)}
-                      className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline"
-                    >
-                      {showDriveConfig ? 'Ocultar Configuração Avançada' : '⚙️ Configurar Google Client ID'}
-                    </button>
-                  </div>
-
-                  {showDriveConfig && (
-                    <div className="p-3 bg-slate-50 dark:bg-slate-800/70 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2 animate-fadeIn text-xs">
-                      <span className="font-bold text-slate-700 dark:text-slate-300 block">
-                        OAuth 2.0 Client ID (Google Cloud)
-                      </span>
-                      <input
-                        type="text"
-                        value={customClientId}
-                        onChange={(e) => setCustomClientId(e.target.value)}
-                        placeholder="ex: 123456789.apps.googleusercontent.com"
-                        className="w-full p-2 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSaveClientId}
-                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors text-xs"
-                      >
-                        Salvar Client ID
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
 

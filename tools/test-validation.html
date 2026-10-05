@@ -96,7 +96,7 @@
         // 5b. Testar ativação de chave gerada sem o hífen (ex: CF1352 para aparelho CF-1352)
         const unhyphenatedId = currentId.replace('-', '');
         const payloadUnhyphenated = { d: unhyphenatedId, p: '30D', e: Date.now() + 30*86400000, t: Date.now() };
-        const payloadUnhyphenatedB64 = stringToBase64Url(JSON.stringify(payloadUnhyphenated));
+        const payloadUnhyphenatedB64 = toBase64Url(new TextEncoder().encode(JSON.stringify(payloadUnhyphenated)));
         const sigUnhyphenated = await window.crypto.subtle.sign(
           { name: "ECDSA", hash: { name: "SHA-256" } },
           privKey,
