@@ -72,8 +72,8 @@ if (Test-Path $nativePatchDir) {
 Write-Host "[4/7] Aplicando identidade visual, ícones e permissões do CadernoFiado..." -ForegroundColor Yellow
 
 # A. Atualizar Versão do Aplicativo (versionCode e versionName) para forçar atualização no Android
-$targetVersionCode = 46
-$targetVersionName = "2.1.3"
+$targetVersionCode = 47
+$targetVersionName = "2.1.4"
 
 $ymlPath = Join-Path $buildDir "apktool.yml"
 if (Test-Path $ymlPath) {

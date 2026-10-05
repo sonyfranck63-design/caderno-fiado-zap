@@ -73,29 +73,29 @@ window.ClientsTab = function ClientsTab({
         </div>
 
         <div className="grid grid-cols-2 gap-3 pt-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-shrink-0">
-              <AlertTriangle size={15} />
+              <AlertTriangle size={16} />
             </div>
             <div>
               <span className="text-xs font-bold text-slate-900 dark:text-white block">
                 {overdueClientsCount} {overdueClientsCount === 1 ? 'cliente' : 'clientes'}
               </span>
-              <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium block">
+              <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium block">
                 Cobrança pendente
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center flex-shrink-0">
-              <Users size={15} />
+              <Users size={16} />
             </div>
             <div>
               <span className="text-xs font-bold text-slate-900 dark:text-white block">
                 {clients.length} {clients.length === 1 ? 'cliente' : 'clientes'}
               </span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium block">
                 Cadastrados
               </span>
             </div>
