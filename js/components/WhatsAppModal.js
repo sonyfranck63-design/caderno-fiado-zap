@@ -58,7 +58,7 @@ window.WhatsAppModal = function WhatsAppModal({
 
   } else if (hasTarget && !targetInstallment.isInstallment) {
     // Cobrança de Venda Avulsa Específica
-    const desc = targetInstallment.baseDescription || 'Compra no fiado';
+    const desc = targetInstallment.baseDescription || 'Venda / Serviço';
     const due = targetInstallment.dueDateFormatted || '-';
     const partialNotice = (targetInstallment.paidAmount > 0)
       ? ` (Restante de ${formattedCharge})`
@@ -82,7 +82,7 @@ window.WhatsAppModal = function WhatsAppModal({
       : 'compras registradas';
 
     if (tone === 'amigavel') {
-      defaultMessage = `Oi ${client.name}, tudo bem? O total do seu caderno fechou em ${formattedCharge}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
+      defaultMessage = `Oi ${client.name}, tudo bem? O total da sua conta fechou em ${formattedCharge}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
     } else if (tone === 'hoje') {
       defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nHoje é a data combinada para o acerto da sua conta na *${shopName}*:\n\n• Saldo a acertar: ${formattedCharge}\n\nPodemos acertar via PIX ou pessoalmente. Muito obrigado!`;
     } else if (tone === 'acordo') {

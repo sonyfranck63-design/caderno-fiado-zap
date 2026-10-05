@@ -265,7 +265,7 @@ window.PdfService = (function() {
     const totalPaid = payments.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
     const balance = Math.max(0, totalSales - totalPaid);
 
-    let text = `🧾 *COMPROVANTE DE EXTRATO DE FIADO*\n`;
+    let text = `🧾 *EXTRATO DE CONTA & DEMONSTRATIVO*\n`;
     text += `🏬 *${shopInfo.shopName || 'Meu Estabelecimento'}*\n`;
     if (shopInfo.phone) text += `📞 Contato: ${shopInfo.phone}\n`;
     if (shopInfo.pixKey) text += `🔑 Chave PIX: ${shopInfo.pixKey}\n`;
@@ -292,9 +292,9 @@ window.PdfService = (function() {
     text += `--------------------------------\n`;
     text += `💰 *Total Compras:* ${formatMoney(totalSales)}\n`;
     text += `✅ *Total Pago:* ${formatMoney(totalPaid)}\n`;
-    text += `📌 *SALDO DEVEDOR:* ${formatMoney(balance)}\n`;
+    text += `📌 *SALDO A PAGAR:* ${formatMoney(balance)}\n`;
     text += `--------------------------------\n`;
-    text += `_Emitido via CadernoFiado & Cobrança Zap_`;
+    text += `_Documento gerado eletronicamente_`;
 
     return text;
   }
@@ -342,7 +342,7 @@ window.PdfService = (function() {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(100, 116, 139); // Slate 500
-      doc.text('Comprovante de Extrato de Conta & Registro de Fiado • CadernoFiado Pro', margin, y + 5);
+      doc.text('Comprovante de Extrato de Conta & Demonstrativo Financeiro', margin, y + 5);
 
       // Contato e PIX do lojista no topo direito
       doc.setFontSize(8.5);
@@ -403,11 +403,11 @@ window.PdfService = (function() {
 
       y += 28;
 
-      // --- TABELA DE ITENS COMPRADOS NO FIADO ---
+      // --- TABELA DE ITENS / SERVIÇOS ---
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
-      doc.text('1. Discriminação das Compras / Serviços Realizados no Fiado', margin, y);
+      doc.text('1. Discriminação das Compras / Serviços Realizados', margin, y);
       y += 5;
 
       // Cabeçalho da Tabela
@@ -481,7 +481,7 @@ window.PdfService = (function() {
         payments.forEach((p) => {
           doc.text(formatDate(p.date), margin + 3, y + 4.5);
           doc.text(p.paymentMethod || 'Dinheiro / PIX', margin + 55, y + 4.5);
-          doc.text(p.notes || 'Abatimento de dívida', margin + 95, y + 4.5);
+          doc.text(p.notes || 'Abatimento de saldo', margin + 95, y + 4.5);
           doc.setTextColor(22, 101, 52);
           doc.text(`- ${formatMoney(p.amount)}`, pageWidth - margin - 3, y + 4.5, { align: 'right' });
           doc.setTextColor(30, 41, 59);
@@ -518,7 +518,7 @@ window.PdfService = (function() {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10.5);
       doc.setTextColor(isPaidOff ? 22 : 185, isPaidOff ? 101 : 28, isPaidOff ? 52 : 28);
-      doc.text('SALDO DEVEDOR:', pageWidth - margin - 80, y + 20);
+      doc.text(isPaidOff ? 'SALDO RESTANTE:' : 'SALDO A PAGAR:', pageWidth - margin - 80, y + 20);
       doc.text(formatMoney(balance), pageWidth - margin - 5, y + 20, { align: 'right' });
 
       y += 38;
@@ -575,10 +575,10 @@ window.PdfService = (function() {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
       doc.setTextColor(148, 163, 184);
-      doc.text('Documento gerado eletronicamente pelo CadernoFiado & Cobrança Zap Pro • Autenticidade Garantida', pageWidth / 2, 287, { align: 'center' });
+      doc.text('Documento gerado eletronicamente • Autenticidade Garantida', pageWidth / 2, 287, { align: 'center' });
 
       const cleanClientName = (client.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
-      const filename = `Recibo_Fiado_${cleanClientName}_${new Date().toISOString().split('T')[0]}.pdf`;
+      const filename = `Extrato_${cleanClientName}_${new Date().toISOString().split('T')[0]}.pdf`;
       const pdfBlob = doc.output('blob');
       const blobUrl = URL.createObjectURL(pdfBlob);
       
@@ -749,9 +749,9 @@ window.PdfService = (function() {
    * Compartilha o arquivo PDF através da Ponte Nativa Android ou Web Share API
    */
   async function sharePdfFile(blob, filename, title, text) {
-    const safeFilename = filename || 'recibo-fiado.pdf';
-    const safeTitle = title || 'Recibo / Acordo Fiado';
-    const safeText = text || 'Documento em PDF gerado pelo CadernoFiado.';
+    const safeFilename = filename || 'extrato.pdf';
+    const safeTitle = title || 'Comprovante / Extrato';
+    const safeText = text || 'Extrato e demonstrativo financeiro atualizado.';
 
     // 1. Ponte Nativa Android APK (Alta Prioridade - Abre gaveta nativa do Android para WhatsApp, Drive, etc.)
     const bridge = getNativeBridge();
@@ -805,7 +805,7 @@ window.PdfService = (function() {
    * Baixa e salva o arquivo PDF no aparelho (Downloads)
    */
   async function downloadPdf(blob, filename) {
-    const safeFilename = filename || 'recibo-fiado.pdf';
+    const safeFilename = filename || 'extrato.pdf';
     
     try {
       // 1. Ponte Nativa Android APK (Salva diretamente na pasta Downloads pública do celular)
@@ -4031,7 +4031,7 @@ window.WhatsAppModal = function WhatsAppModal({
 
   } else if (hasTarget && !targetInstallment.isInstallment) {
     // Cobrança de Venda Avulsa Específica
-    const desc = targetInstallment.baseDescription || 'Compra no fiado';
+    const desc = targetInstallment.baseDescription || 'Venda / Serviço';
     const due = targetInstallment.dueDateFormatted || '-';
     const partialNotice = (targetInstallment.paidAmount > 0)
       ? ` (Restante de ${formattedCharge})`
@@ -4055,7 +4055,7 @@ window.WhatsAppModal = function WhatsAppModal({
       : 'compras registradas';
 
     if (tone === 'amigavel') {
-      defaultMessage = `Oi ${client.name}, tudo bem? O total do seu caderno fechou em ${formattedCharge}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
+      defaultMessage = `Oi ${client.name}, tudo bem? O total da sua conta fechou em ${formattedCharge}. Quando puder acertar, segue a minha chave Pix abaixo. Qualquer dúvida, é só me chamar!`;
     } else if (tone === 'hoje') {
       defaultMessage = `Olá, ${client.name}! Tudo bem?\n\nHoje é a data combinada para o acerto da sua conta na *${shopName}*:\n\n• Saldo a acertar: ${formattedCharge}\n\nPodemos acertar via PIX ou pessoalmente. Muito obrigado!`;
     } else if (tone === 'acordo') {
@@ -5151,7 +5151,7 @@ window.ClientDetailModal = function ClientDetailModal({
   const handleFullPayoff = () => {
     if (debt <= 0) return;
     setPayAmount(debt.toFixed(2));
-    setPayNotes('Quitação integral de fiado');
+    setPayNotes('Quitação integral de saldo');
     setTargetSaleId(null);
     setActiveSubTab('abater');
   };
@@ -5194,9 +5194,9 @@ window.ClientDetailModal = function ClientDetailModal({
     if (!pdfModalData || !pdfModalData.blob) return;
 
     try {
-      const fileName = pdfModalData.filename || `recibo_${(client.name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      const title = `Recibo Fiado - ${client.name}`;
-      const text = `Extrato detalhado de fiado de ${client.name} - CadernoFiado`;
+      const fileName = pdfModalData.filename || `extrato_${(client.name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      const title = `Extrato de Conta - ${client.name}`;
+      const text = `Extrato detalhado de conta de ${client.name}`;
 
       // 1. Tenta compartilhamento nativo direto (WhatsApp / Share Sheet)
       const shareResult = await window.PdfService.sharePdfFile(pdfModalData.blob, fileName, title, text);
@@ -5840,7 +5840,7 @@ window.ClientDetailModal = function ClientDetailModal({
               <div className="p-3.5 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <FileText size={18} className="text-emerald-600 dark:text-emerald-400" />
-                  <span className="font-bold text-xs text-slate-800 dark:text-white">Extrato Timbrado de Fiado</span>
+                  <span className="font-bold text-xs text-slate-800 dark:text-white">Extrato Timbrado de Conta</span>
                 </div>
                 <button
                   type="button"
@@ -5865,7 +5865,7 @@ window.ClientDetailModal = function ClientDetailModal({
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">Chave PIX: {shopSettings.pixKey}</p>
                   )}
                   <div className="mt-2 inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                    EXTRATO DE CONTA FIADO
+                    EXTRATO DE CONTA & DEMONSTRATIVO
                   </div>
                 </div>
 
@@ -5903,7 +5903,7 @@ window.ClientDetailModal = function ClientDetailModal({
                           <div key={tx.id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px]">
                             <div className="min-w-0 flex-1 pr-2">
                               <div className="font-medium truncate text-slate-800 dark:text-slate-200">
-                                {isSale ? (tx.description || 'Compra no Fiado') : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
+                                {isSale ? (tx.description || 'Venda / Serviço') : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
                               </div>
                               <div className="text-[10px] text-slate-400">
                                 {txDate} {tx.dueDate ? `• Venc: ${tx.dueDate.split('-').reverse().join('/')}` : ''}

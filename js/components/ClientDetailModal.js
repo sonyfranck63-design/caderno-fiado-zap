@@ -127,7 +127,7 @@ window.ClientDetailModal = function ClientDetailModal({
   const handleFullPayoff = () => {
     if (debt <= 0) return;
     setPayAmount(debt.toFixed(2));
-    setPayNotes('Quitação integral de fiado');
+    setPayNotes('Quitação integral de saldo');
     setTargetSaleId(null);
     setActiveSubTab('abater');
   };
@@ -170,9 +170,9 @@ window.ClientDetailModal = function ClientDetailModal({
     if (!pdfModalData || !pdfModalData.blob) return;
 
     try {
-      const fileName = pdfModalData.filename || `recibo_${(client.name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      const title = `Recibo Fiado - ${client.name}`;
-      const text = `Extrato detalhado de fiado de ${client.name} - CadernoFiado`;
+      const fileName = pdfModalData.filename || `extrato_${(client.name || 'cliente').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      const title = `Extrato de Conta - ${client.name}`;
+      const text = `Extrato detalhado de conta de ${client.name}`;
 
       // 1. Tenta compartilhamento nativo direto (WhatsApp / Share Sheet)
       const shareResult = await window.PdfService.sharePdfFile(pdfModalData.blob, fileName, title, text);
@@ -816,7 +816,7 @@ window.ClientDetailModal = function ClientDetailModal({
               <div className="p-3.5 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <FileText size={18} className="text-emerald-600 dark:text-emerald-400" />
-                  <span className="font-bold text-xs text-slate-800 dark:text-white">Extrato Timbrado de Fiado</span>
+                  <span className="font-bold text-xs text-slate-800 dark:text-white">Extrato Timbrado de Conta</span>
                 </div>
                 <button
                   type="button"
@@ -841,7 +841,7 @@ window.ClientDetailModal = function ClientDetailModal({
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">Chave PIX: {shopSettings.pixKey}</p>
                   )}
                   <div className="mt-2 inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                    EXTRATO DE CONTA FIADO
+                    EXTRATO DE CONTA & DEMONSTRATIVO
                   </div>
                 </div>
 
@@ -879,7 +879,7 @@ window.ClientDetailModal = function ClientDetailModal({
                           <div key={tx.id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px]">
                             <div className="min-w-0 flex-1 pr-2">
                               <div className="font-medium truncate text-slate-800 dark:text-slate-200">
-                                {isSale ? (tx.description || 'Compra no Fiado') : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
+                                {isSale ? (tx.description || 'Venda / Serviço') : `Abatimento (${tx.paymentMethod || 'Dinheiro'})`}
                               </div>
                               <div className="text-[10px] text-slate-400">
                                 {txDate} {tx.dueDate ? `• Venc: ${tx.dueDate.split('-').reverse().join('/')}` : ''}

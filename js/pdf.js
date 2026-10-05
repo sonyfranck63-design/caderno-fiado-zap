@@ -112,7 +112,7 @@ window.PdfService = (function() {
     const totalPaid = payments.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
     const balance = Math.max(0, totalSales - totalPaid);
 
-    let text = `🧾 *COMPROVANTE DE EXTRATO DE FIADO*\n`;
+    let text = `🧾 *EXTRATO DE CONTA & DEMONSTRATIVO*\n`;
     text += `🏬 *${shopInfo.shopName || 'Meu Estabelecimento'}*\n`;
     if (shopInfo.phone) text += `📞 Contato: ${shopInfo.phone}\n`;
     if (shopInfo.pixKey) text += `🔑 Chave PIX: ${shopInfo.pixKey}\n`;
@@ -139,9 +139,9 @@ window.PdfService = (function() {
     text += `--------------------------------\n`;
     text += `💰 *Total Compras:* ${formatMoney(totalSales)}\n`;
     text += `✅ *Total Pago:* ${formatMoney(totalPaid)}\n`;
-    text += `📌 *SALDO DEVEDOR:* ${formatMoney(balance)}\n`;
+    text += `📌 *SALDO A PAGAR:* ${formatMoney(balance)}\n`;
     text += `--------------------------------\n`;
-    text += `_Emitido via CadernoFiado & Cobrança Zap_`;
+    text += `_Documento gerado eletronicamente_`;
 
     return text;
   }
@@ -189,7 +189,7 @@ window.PdfService = (function() {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(100, 116, 139); // Slate 500
-      doc.text('Comprovante de Extrato de Conta & Registro de Fiado • CadernoFiado Pro', margin, y + 5);
+      doc.text('Comprovante de Extrato de Conta & Demonstrativo Financeiro', margin, y + 5);
 
       // Contato e PIX do lojista no topo direito
       doc.setFontSize(8.5);
@@ -250,11 +250,11 @@ window.PdfService = (function() {
 
       y += 28;
 
-      // --- TABELA DE ITENS COMPRADOS NO FIADO ---
+      // --- TABELA DE ITENS / SERVIÇOS ---
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
-      doc.text('1. Discriminação das Compras / Serviços Realizados no Fiado', margin, y);
+      doc.text('1. Discriminação das Compras / Serviços Realizados', margin, y);
       y += 5;
 
       // Cabeçalho da Tabela
@@ -328,7 +328,7 @@ window.PdfService = (function() {
         payments.forEach((p) => {
           doc.text(formatDate(p.date), margin + 3, y + 4.5);
           doc.text(p.paymentMethod || 'Dinheiro / PIX', margin + 55, y + 4.5);
-          doc.text(p.notes || 'Abatimento de dívida', margin + 95, y + 4.5);
+          doc.text(p.notes || 'Abatimento de saldo', margin + 95, y + 4.5);
           doc.setTextColor(22, 101, 52);
           doc.text(`- ${formatMoney(p.amount)}`, pageWidth - margin - 3, y + 4.5, { align: 'right' });
           doc.setTextColor(30, 41, 59);
@@ -365,7 +365,7 @@ window.PdfService = (function() {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10.5);
       doc.setTextColor(isPaidOff ? 22 : 185, isPaidOff ? 101 : 28, isPaidOff ? 52 : 28);
-      doc.text('SALDO DEVEDOR:', pageWidth - margin - 80, y + 20);
+      doc.text(isPaidOff ? 'SALDO RESTANTE:' : 'SALDO A PAGAR:', pageWidth - margin - 80, y + 20);
       doc.text(formatMoney(balance), pageWidth - margin - 5, y + 20, { align: 'right' });
 
       y += 38;
@@ -422,10 +422,10 @@ window.PdfService = (function() {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
       doc.setTextColor(148, 163, 184);
-      doc.text('Documento gerado eletronicamente pelo CadernoFiado & Cobrança Zap Pro • Autenticidade Garantida', pageWidth / 2, 287, { align: 'center' });
+      doc.text('Documento gerado eletronicamente • Autenticidade Garantida', pageWidth / 2, 287, { align: 'center' });
 
       const cleanClientName = (client.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
-      const filename = `Recibo_Fiado_${cleanClientName}_${new Date().toISOString().split('T')[0]}.pdf`;
+      const filename = `Extrato_${cleanClientName}_${new Date().toISOString().split('T')[0]}.pdf`;
       const pdfBlob = doc.output('blob');
       const blobUrl = URL.createObjectURL(pdfBlob);
       
@@ -596,9 +596,9 @@ window.PdfService = (function() {
    * Compartilha o arquivo PDF através da Ponte Nativa Android ou Web Share API
    */
   async function sharePdfFile(blob, filename, title, text) {
-    const safeFilename = filename || 'recibo-fiado.pdf';
-    const safeTitle = title || 'Recibo / Acordo Fiado';
-    const safeText = text || 'Documento em PDF gerado pelo CadernoFiado.';
+    const safeFilename = filename || 'extrato.pdf';
+    const safeTitle = title || 'Comprovante / Extrato';
+    const safeText = text || 'Extrato e demonstrativo financeiro atualizado.';
 
     // 1. Ponte Nativa Android APK (Alta Prioridade - Abre gaveta nativa do Android para WhatsApp, Drive, etc.)
     const bridge = getNativeBridge();
@@ -652,7 +652,7 @@ window.PdfService = (function() {
    * Baixa e salva o arquivo PDF no aparelho (Downloads)
    */
   async function downloadPdf(blob, filename) {
-    const safeFilename = filename || 'recibo-fiado.pdf';
+    const safeFilename = filename || 'extrato.pdf';
     
     try {
       // 1. Ponte Nativa Android APK (Salva diretamente na pasta Downloads pública do celular)
